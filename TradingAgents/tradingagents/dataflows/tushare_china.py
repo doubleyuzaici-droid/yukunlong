@@ -1,5 +1,7 @@
 import os
 
+import pandas as pd
+
 from tradingagents.markets.china import normalize_china_symbol
 from tradingagents.markets.hongkong import normalize_hk_symbol
 
@@ -20,6 +22,60 @@ def _fmt_date(value: str) -> str:
 
 def _display_date(value: str) -> str:
     return f"{value[:4]}-{value[4:6]}-{value[6:]}"
+
+
+def _standardize_daily_frame(
+    frame: pd.DataFrame,
+    symbol: str,
+    market: str,
+    source: str = "tushare",
+) -> pd.DataFrame:
+    columns = [
+        "date",
+        "symbol",
+        "market",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "amount",
+        "source",
+    ]
+    if frame is None or frame.empty:
+        return pd.DataFrame(columns=columns)
+
+    result = frame.copy()
+    result = result.sort_values("trade_date")
+    result["date"] = result["trade_date"].astype(str).map(_display_date)
+    result["symbol"] = symbol
+    result["market"] = market
+    result["volume"] = result["vol"] if "vol" in result else pd.NA
+    result["amount"] = result["amount"] if "amount" in result else pd.NA
+    result["source"] = source
+    return result[columns].reset_index(drop=True)
+
+
+def get_china_stock_data_frame(
+    symbol: str, start_date: str, end_date: str
+) -> pd.DataFrame:
+    ts_code = normalize_china_symbol(symbol)
+    pro = _get_tushare_pro()
+    frame = pro.daily(
+        ts_code=ts_code, start_date=_fmt_date(start_date), end_date=_fmt_date(end_date)
+    )
+    return _standardize_daily_frame(frame, ts_code, "CHINA")
+
+
+def get_hk_stock_data_frame(
+    symbol: str, start_date: str, end_date: str
+) -> pd.DataFrame:
+    hk_code = normalize_hk_symbol(symbol)
+    pro = _get_tushare_pro()
+    frame = pro.hk_daily(
+        ts_code=hk_code, start_date=_fmt_date(start_date), end_date=_fmt_date(end_date)
+    )
+    return _standardize_daily_frame(frame, hk_code, "HONGKONG")
 
 
 def get_china_stock_data(symbol: str, start_date: str, end_date: str) -> str:

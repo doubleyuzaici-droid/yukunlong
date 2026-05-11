@@ -4,7 +4,6 @@ import logging
 import re
 import urllib.parse
 
-
 logger = logging.getLogger(__name__)
 
 _DEFAULT_HEADERS = {
