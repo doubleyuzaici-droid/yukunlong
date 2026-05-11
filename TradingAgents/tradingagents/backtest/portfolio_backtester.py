@@ -9,6 +9,7 @@ from tradingagents.backtest.execution_model import (
     is_executable_entry,
     is_executable_exit,
 )
+from tradingagents.research.features.liquidity import avg_amount, is_low_liquidity
 from tradingagents.research.db import get_connection, init_db
 
 
@@ -39,6 +40,11 @@ def _load_bars(symbol: str) -> pd.DataFrame:
             (symbol,),
         ).fetchall()
     return pd.DataFrame([dict(row) for row in rows])
+
+
+def _is_low_liquidity_entry(bars: pd.DataFrame, entry_position: int, market: str) -> bool:
+    history = bars.iloc[max(0, entry_position - 20) : entry_position]
+    return is_low_liquidity(market, avg_amount(history))
 
 
 def _insert_trade(
@@ -111,6 +117,8 @@ def run_portfolio_backtest(
     cash = initial_cash
     trade_count = 0
     peak_equity = initial_cash
+    drawdowns = [0.0]
+    trade_returns: list[float] = []
     _insert_equity(strategy_version, start, cash, cash)
 
     for signal in _load_entry_signals(start, end):
@@ -124,6 +132,8 @@ def run_portfolio_backtest(
             continue
         entry = bars.iloc[entry_position]
         exit_row = bars.iloc[exit_position]
+        if _is_low_liquidity_entry(bars, entry_position, signal["market"]):
+            continue
         if not is_executable_entry(entry) or not is_executable_exit(exit_row):
             continue
 
@@ -151,6 +161,7 @@ def run_portfolio_backtest(
         exit_notional = quantity * exit_price
         exit_cost = estimate_cost(signal["market"], "exit", exit_notional)
         cash += exit_notional - exit_cost
+        trade_returns.append((exit_notional - exit_cost) / (entry_notional + entry_cost) - 1)
         _insert_trade(
             f"{signal['signal_id']}-exit",
             strategy_version,
@@ -166,7 +177,18 @@ def run_portfolio_backtest(
         trade_count += 1
         peak_equity = max(peak_equity, cash)
         drawdown = cash / peak_equity - 1
+        drawdowns.append(drawdown)
         _insert_equity(strategy_version, exit_row["date"], cash, cash, 0.0, drawdown)
+
+    wins = [value for value in trade_returns if value > 0]
+    losses = [value for value in trade_returns if value < 0]
+    gross_profit = sum(wins)
+    gross_loss = abs(sum(losses))
+    profit_loss_ratio = (
+        gross_profit / gross_loss
+        if gross_loss > 0
+        else (float("inf") if gross_profit > 0 else 0.0)
+    )
 
     return {
         "strategy_version": strategy_version,
@@ -175,5 +197,8 @@ def run_portfolio_backtest(
             "final_equity": cash,
             "trade_count": trade_count,
             "total_return": cash / initial_cash - 1,
+            "max_drawdown": min(drawdowns),
+            "win_rate": len(wins) / len(trade_returns) if trade_returns else 0.0,
+            "profit_loss_ratio": profit_loss_ratio,
         },
     }

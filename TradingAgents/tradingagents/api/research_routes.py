@@ -4,9 +4,14 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from tradingagents.api.schemas import ApiResponse
+from tradingagents.optimizer.ablation_test import list_ablation_steps
 from tradingagents.optimizer.candidate_generator import generate_candidate_strategy_yaml
-from tradingagents.optimizer.diagnostics import summarize_signal_effectiveness
+from tradingagents.optimizer.diagnostics import (
+    summarize_failure_reasons,
+    summarize_signal_effectiveness,
+)
 from tradingagents.optimizer.optimizer_report import render_optimizer_report
+from tradingagents.optimizer.walk_forward import split_walk_forward_periods
 from tradingagents.research.quality import list_quality_issues
 from tradingagents.research.repository import (
     deactivate_watchlist_symbol,
@@ -56,13 +61,21 @@ async def get_data_quality():
 
 
 @router.get("/optimizer", response_model=ApiResponse)
-async def get_optimizer_diagnostics():
+async def get_optimizer_diagnostics(
+    start: str = "2024-01-01",
+    end: str = "2026-12-31",
+):
     summary = summarize_signal_effectiveness()
+    failures = summarize_failure_reasons()
+    ablation_steps = list_ablation_steps()
     return ApiResponse(
         success=True,
         data={
             "summary": summary,
+            "failures": failures,
+            "ablation_steps": ablation_steps,
+            "walk_forward_periods": split_walk_forward_periods(start, end),
             "candidate_yaml": generate_candidate_strategy_yaml(summary),
-            "markdown": render_optimizer_report(summary),
+            "markdown": render_optimizer_report(summary, failures, ablation_steps),
         },
     )

@@ -55,6 +55,11 @@ def test_research_health_and_optimizer_routes(monkeypatch, tmp_path):
     assert optimizer.status_code == 200
     optimizer_payload = optimizer.json()
     assert optimizer_payload["success"] is True
-    assert {"summary", "candidate_yaml", "markdown"} <= set(
-        optimizer_payload["data"]
-    )
+    assert {
+        "summary",
+        "failures",
+        "ablation_steps",
+        "walk_forward_periods",
+        "candidate_yaml",
+        "markdown",
+    } <= set(optimizer_payload["data"])

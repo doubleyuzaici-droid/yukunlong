@@ -46,3 +46,61 @@ def test_agent_review_routes_create_and_fetch_review(tmp_path, monkeypatch):
     fetched = client.get(f"/api/agent-reviews/{review_id}")
     assert fetched.status_code == 200
     assert fetched.json()["data"]["review_id"] == review_id
+
+
+def test_agent_review_performance_route(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRADINGAGENTS_DATA_DIR", str(tmp_path))
+
+    from tradingagents.api.server import create_app
+    from tradingagents.research.db import get_connection, init_db
+
+    init_db()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO event_return (
+                signal_id, entry_date, entry_price, ret_5d, ret_20d, ret_60d,
+                max_adverse_20d, max_favorable_20d, success_flag, fail_reason,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("sig-1", "2026-05-12", 100, 0.01, 0.05, 0.08, -0.02, 0.07, 1, None, "now"),
+        )
+        conn.execute(
+            """
+            INSERT INTO agent_decision_log (
+                review_id, signal_id, date, symbol, action, confidence,
+                bull_points_json, bear_points_json, risk_flags_json,
+                missing_data_json, review_summary, model_name, prompt_version,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "review-1",
+                "sig-1",
+                "2026-05-11",
+                "600519.SH",
+                "keep",
+                "medium",
+                "[]",
+                "[]",
+                "[]",
+                "[]",
+                "保留观察",
+                "fixture",
+                "v1",
+                "now",
+            ),
+        )
+        conn.commit()
+
+    client = TestClient(create_app())
+    response = client.get("/api/agent-reviews/performance")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["data"][0]["action"] == "keep"
+    assert payload["data"][0]["win_rate_20d"] == 1.0

@@ -12,6 +12,13 @@ interface ReviewPayload {
   review_summary: string;
 }
 
+const ACTION_LABELS: Record<string, string> = {
+  upgrade: "升级",
+  keep: "保留",
+  downgrade: "降级",
+  reject: "拒绝",
+};
+
 export default function AgentReviewPage() {
   const [signalId, setSignalId] = useState("");
   const [review, setReview] = useState<ReviewPayload | null>(null);
@@ -40,7 +47,7 @@ export default function AgentReviewPage() {
           <div className="metric-grid compact">
             <div className="metric-tile">
               <span>Action</span>
-              <strong>{review.action}</strong>
+              <strong>{ACTION_LABELS[review.action] || review.action}</strong>
             </div>
             <div className="metric-tile">
               <span>置信度</span>

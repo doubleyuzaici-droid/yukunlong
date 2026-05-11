@@ -20,3 +20,20 @@ def summarize_signal_effectiveness() -> list[dict]:
             ORDER BY sample_count DESC, mean_ret_20d DESC
             """).fetchall()
     return [dict(row) for row in rows]
+
+
+def summarize_failure_reasons() -> list[dict]:
+    init_db()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                fail_reason,
+                COUNT(*) AS sample_count
+            FROM event_return
+            WHERE fail_reason IS NOT NULL
+            GROUP BY fail_reason
+            ORDER BY sample_count DESC, fail_reason
+            """
+        ).fetchall()
+    return [dict(row) for row in rows]

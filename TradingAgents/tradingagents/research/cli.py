@@ -5,6 +5,7 @@ import json
 
 from .data_sync import sync_watchlist_bars
 from .db import init_db
+from .factor_pipeline import compute_watchlist_factors
 from .quality import list_quality_issues
 from .repository import list_watchlist, upsert_watchlist_symbols
 
@@ -24,6 +25,10 @@ def build_parser() -> argparse.ArgumentParser:
     sync_bars = subparsers.add_parser("sync-bars")
     sync_bars.add_argument("--start", required=True)
     sync_bars.add_argument("--end", required=True)
+
+    compute_factors = subparsers.add_parser("compute-factors")
+    compute_factors.add_argument("--start", required=True)
+    compute_factors.add_argument("--end", required=True)
 
     subparsers.add_parser("data-quality")
     return parser
@@ -51,6 +56,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "sync-bars":
         rows_synced = sync_watchlist_bars(args.start, args.end)
         print(f"synced {rows_synced} daily bars")
+        return 0
+
+    if args.command == "compute-factors":
+        rows_computed = compute_watchlist_factors(args.start, args.end)
+        print(f"computed {rows_computed} factor rows")
         return 0
 
     if args.command == "data-quality":
