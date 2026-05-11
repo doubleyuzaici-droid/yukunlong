@@ -12,6 +12,7 @@ node_modules/
 
 # Local data
 local_data/
+.worktrees/
 
 # Environment
 .env
