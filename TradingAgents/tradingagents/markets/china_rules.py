@@ -25,7 +25,9 @@ class ChinaTradingRuleResult:
     warnings: list[str] = field(default_factory=list)
 
 
-def _price_limit(symbol: str, is_st: bool, is_first_five_listing_days: bool) -> Optional[float]:
+def _price_limit(
+    symbol: str, is_st: bool, is_first_five_listing_days: bool
+) -> Optional[float]:
     if is_first_five_listing_days:
         return None
     board = classify_china_symbol(symbol)
@@ -36,7 +38,9 @@ def _price_limit(symbol: str, is_st: bool, is_first_five_listing_days: bool) -> 
     return 0.10 if not is_st else 0.05
 
 
-def evaluate_china_trade_constraints(inp: ChinaTradingRuleInput) -> ChinaTradingRuleResult:
+def evaluate_china_trade_constraints(
+    inp: ChinaTradingRuleInput,
+) -> ChinaTradingRuleResult:
     reasons: list[str] = []
     warnings: list[str] = []
 
@@ -59,4 +63,6 @@ def evaluate_china_trade_constraints(inp: ChinaTradingRuleInput) -> ChinaTrading
     if inp.is_st:
         warnings.append("security is ST-labelled, higher delisting risk")
 
-    return ChinaTradingRuleResult(allowed=not reasons, reasons=reasons, warnings=warnings)
+    return ChinaTradingRuleResult(
+        allowed=not reasons, reasons=reasons, warnings=warnings
+    )

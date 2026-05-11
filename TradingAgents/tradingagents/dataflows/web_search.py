@@ -4,8 +4,6 @@ import logging
 import re
 import urllib.parse
 
-import requests
-
 logger = logging.getLogger(__name__)
 
 _DEFAULT_HEADERS = {
@@ -51,6 +49,7 @@ def web_search(query: str, limit: int = 8, engine: str = "auto") -> str:
 def _baidu_search(query: str, limit: int = 8) -> str:
     """Search Baidu and return titles + URLs + snippets."""
     import requests as req
+
     encoded = urllib.parse.quote(query)
     url = f"https://www.baidu.com/s?wd={encoded}&rn={limit}"
     try:
@@ -66,9 +65,15 @@ def _baidu_search(query: str, limit: int = 8) -> str:
     # Extract title and URL using regex patterns
     patterns = [
         # Pattern 1: h3 with title and link
-        (r'<h3[^>]*class="[^"]*t[^"]*"[^>]*>.*?<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', 1),
+        (
+            r'<h3[^>]*class="[^"]*t[^"]*"[^>]*>.*?<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>',
+            1,
+        ),
         # Pattern 2: generic result container
-        (r'class="c-container[^"]*".*?<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', 1),
+        (
+            r'class="c-container[^"]*".*?<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>',
+            1,
+        ),
         # Pattern 3: data url pattern used by Baidu
         (r'<a[^>]*data-url="(https?://[^"]+)"', 0),
     ]
@@ -78,13 +83,19 @@ def _baidu_search(query: str, limit: int = 8) -> str:
         for match in matches:
             if isinstance(match, tuple):
                 link = match[0]
-                title = re.sub(r"<[^>]+>", "", match[1] if len(match) > 1 else "").strip()
+                title = re.sub(
+                    r"<[^>]+>", "", match[1] if len(match) > 1 else ""
+                ).strip()
             elif isinstance(match, str):
                 link = match
                 title = ""
             else:
                 continue
-            if link and not link.startswith("javascript:") and link not in {r[0] for r in results}:
+            if (
+                link
+                and not link.startswith("javascript:")
+                and link not in {r[0] for r in results}
+            ):
                 results.append((link, title))
         if len(results) >= limit:
             break
@@ -105,6 +116,7 @@ def _baidu_search(query: str, limit: int = 8) -> str:
 def _bing_search(query: str, limit: int = 8) -> str:
     """Search Bing and return titles + URLs."""
     import requests as req
+
     encoded = urllib.parse.quote(query)
     url = f"https://www.bing.com/search?q={encoded}&count={limit}"
     results = []
@@ -113,7 +125,9 @@ def _bing_search(query: str, limit: int = 8) -> str:
         resp.raise_for_status()
         html = resp.text
 
-        pattern = r'<li class="b_algo"[^>]*>.*?<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>'
+        pattern = (
+            r'<li class="b_algo"[^>]*>.*?<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>'
+        )
         matches = re.findall(pattern, html, re.DOTALL | re.IGNORECASE)
         for link, title_raw in matches:
             title = re.sub(r"<[^>]+>", "", title_raw).strip()
@@ -162,7 +176,7 @@ def _search_urls_only(query: str) -> str:
     """Ultimate fallback: provide search URLs for LLM reference."""
     encoded = urllib.parse.quote(query)
     lines = [f"Search references for '{query}' (LLM may use its knowledge):"]
-    lines.append(f"")
+    lines.append("")
     lines.append(f"- **Baidu**: https://www.baidu.com/s?wd={encoded}")
     lines.append(f"- **Bing Chinese**: https://cn.bing.com/search?q={encoded}")
     lines.append(f"- **Google**: https://www.google.com/search?q={encoded}")

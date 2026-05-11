@@ -4,16 +4,19 @@ from tradingagents.markets.hongkong import normalize_hk_symbol
 
 def _stock_zh_a_hist(**kwargs):
     import akshare as ak
+
     return ak.stock_zh_a_hist(**kwargs)
 
 
 def _stock_hk_hist(**kwargs):
     import akshare as ak
+
     return ak.stock_hk_hist(**kwargs)
 
 
 def _stock_news_em(**kwargs):
     import akshare as ak
+
     return ak.stock_news_em(**kwargs)
 
 
@@ -69,7 +72,9 @@ def get_hk_stock_data_akshare(symbol: str, start_date: str, end_date: str) -> st
     return "\n".join(lines)
 
 
-def get_china_news_akshare(symbol: str, _start_date: str = "", _end_date: str = "") -> str:
+def get_china_news_akshare(
+    symbol: str, _start_date: str = "", _end_date: str = ""
+) -> str:
     """Aggregate China A-share news from multiple AKShare channels.
 
     Sources:
@@ -138,6 +143,7 @@ def get_china_news_akshare(symbol: str, _start_date: str = "", _end_date: str = 
 def _try_xueqiu(code: str) -> str:
     """Try to get Xueqiu (雪球) hot tweets and stock info."""
     import akshare as ak
+
     lines = []
 
     # Xueqiu hot tweets
@@ -181,6 +187,7 @@ def _try_xueqiu(code: str) -> str:
 def _try_sina_info(code: str) -> str:
     """Try to get Sina Finance company info."""
     import akshare as ak
+
     try:
         info = ak.stock_individual_info_em(symbol=code)
         if info is None or info.empty:
@@ -223,7 +230,9 @@ def get_hk_news_akshare(symbol: str, _start_date: str = "", _end_date: str = "")
     # Channel 1: 东方财富港股新闻
     em_hk = None
     for try_code in (code, f"HK{code}", f"{code}.HK"):
-        em_hk = _safe_call(ak.stock_hk_news_em, symbol=try_code, label="港股新闻-东方财富")
+        em_hk = _safe_call(
+            ak.stock_hk_news_em, symbol=try_code, label="港股新闻-东方财富"
+        )
         if em_hk is not None:
             break
         em_hk = _safe_call(ak.stock_news_em, symbol=try_code, label="港股新闻-通用")
@@ -260,7 +269,9 @@ def get_hk_news_akshare(symbol: str, _start_date: str = "", _end_date: str = "")
         all_lines.append("")
 
     # Channel 4: 行业板块新闻
-    sector_news = _safe_call(lambda: _try_sector_news(code, normalized), label="行业新闻")
+    sector_news = _safe_call(
+        lambda: _try_sector_news(code, normalized), label="行业新闻"
+    )
     if sector_news:
         all_lines.append("## 相关行业动态")
         all_lines.append(sector_news)
@@ -275,6 +286,7 @@ def get_hk_news_akshare(symbol: str, _start_date: str = "", _end_date: str = "")
 def _try_hk_info(code: str) -> str:
     """Try HK stock company info from multiple sources."""
     import akshare as ak
+
     lines = []
 
     try:
@@ -319,6 +331,7 @@ def _try_hk_info(code: str) -> str:
 def _try_sector_news(code: str, normalized: str) -> str:
     """Try to get sector/industry related news."""
     import akshare as ak
+
     try:
         frame = ak.stock_sector_spot_em()
         if frame is None or frame.empty:

@@ -2,10 +2,38 @@ import { useState, useCallback } from "react";
 import AnalysisForm from "./components/AnalysisForm";
 import ProgressPanel from "./components/ProgressPanel";
 import ReportViewer from "./components/ReportViewer";
+import AgentReviewPage from "./pages/AgentReviewPage";
+import BacktestPage from "./pages/BacktestPage";
+import DailyReportPage from "./pages/DailyReportPage";
+import DataHealthPage from "./pages/DataHealthPage";
+import StrategyOptimizerPage from "./pages/StrategyOptimizerPage";
+import TodaySignalsPage from "./pages/TodaySignalsPage";
+import WatchlistPage from "./pages/WatchlistPage";
 
 type View = "form" | "running" | "report";
+type Workspace =
+  | "analysis"
+  | "watchlist"
+  | "signals"
+  | "report"
+  | "backtest"
+  | "review"
+  | "optimizer"
+  | "health";
+
+const NAV_ITEMS: { key: Workspace; label: string }[] = [
+  { key: "analysis", label: "单股分析" },
+  { key: "watchlist", label: "自选股" },
+  { key: "signals", label: "今日信号" },
+  { key: "report", label: "每日复盘" },
+  { key: "backtest", label: "事件回测" },
+  { key: "review", label: "信号审查" },
+  { key: "optimizer", label: "策略调优" },
+  { key: "health", label: "数据健康" },
+];
 
 function App() {
+  const [workspace, setWorkspace] = useState<Workspace>("signals");
   const [view, setView] = useState<View>("form");
   const [taskId, setTaskId] = useState<string | null>(null);
   const [report, setReport] = useState<Record<string, string> | null>(null);
@@ -16,6 +44,7 @@ function App() {
     setTaskId(id);
     setTicker(t);
     setTradeDate(d);
+    setWorkspace("analysis");
     setView("running");
   }, []);
 
@@ -25,59 +54,72 @@ function App() {
   }, []);
 
   const handleReset = useCallback(() => {
+    setWorkspace("analysis");
     setView("form");
     setTaskId(null);
     setReport(null);
   }, []);
 
+  const renderAnalysis = () => (
+    <>
+      {view === "form" && <AnalysisForm onStart={handleAnalysisStart} />}
+      {view === "running" && taskId && (
+        <ProgressPanel
+          taskId={taskId}
+          ticker={ticker}
+          tradeDate={tradeDate}
+          onComplete={handleAnalysisComplete}
+        />
+      )}
+      {view === "report" && report && (
+        <ReportViewer
+          report={report}
+          ticker={ticker}
+          tradeDate={tradeDate}
+          taskId={taskId ?? undefined}
+        />
+      )}
+    </>
+  );
+
+  const renderWorkspace = () => {
+    if (workspace === "analysis") return renderAnalysis();
+    if (workspace === "watchlist") return <WatchlistPage />;
+    if (workspace === "signals") return <TodaySignalsPage />;
+    if (workspace === "report") return <DailyReportPage />;
+    if (workspace === "backtest") return <BacktestPage />;
+    if (workspace === "review") return <AgentReviewPage />;
+    if (workspace === "optimizer") return <StrategyOptimizerPage />;
+    return <DataHealthPage />;
+  };
+
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <header
-        style={{
-          background: "var(--bg-secondary)",
-          borderBottom: "1px solid var(--border-color)",
-          padding: "12px 24px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 20, fontWeight: 700, color: "var(--accent-green)" }}>
-            TradingAgents
-          </span>
-          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-            Multi-Agent Financial Trading Framework
-          </span>
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="brand-block">
+          <span className="brand-title">A/H 股投研工作台</span>
+          <span className="brand-subtitle">规则信号 · 复盘 · 回测 · 审查</span>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {view !== "form" && (
+        <div className="header-actions">
+          {workspace === "analysis" && view !== "form" && (
             <button onClick={handleReset}>新建分析</button>
           )}
         </div>
       </header>
 
-      <main style={{ flex: 1, overflow: "hidden", display: "flex" }}>
-        {view === "form" && (
-          <AnalysisForm onStart={handleAnalysisStart} />
-        )}
-        {view === "running" && taskId && (
-          <ProgressPanel
-            taskId={taskId}
-            ticker={ticker}
-            tradeDate={tradeDate}
-            onComplete={handleAnalysisComplete}
-          />
-        )}
-        {view === "report" && report && (
-          <ReportViewer
-            report={report}
-            ticker={ticker}
-            tradeDate={tradeDate}
-            taskId={taskId ?? undefined}
-          />
-        )}
+      <main className="workspace-layout">
+        <nav className="side-nav">
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.key}
+              className={workspace === item.key ? "active" : ""}
+              onClick={() => setWorkspace(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+        <div className="workspace-content">{renderWorkspace()}</div>
       </main>
     </div>
   );

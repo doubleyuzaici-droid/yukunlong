@@ -21,7 +21,9 @@ class HongKongTradingRuleResult:
     warnings: list[str] = field(default_factory=list)
 
 
-def evaluate_hk_trade_constraints(inp: HongKongTradingRuleInput) -> HongKongTradingRuleResult:
+def evaluate_hk_trade_constraints(
+    inp: HongKongTradingRuleInput,
+) -> HongKongTradingRuleResult:
     reasons: list[str] = []
     warnings: list[str] = []
 
@@ -39,4 +41,6 @@ def evaluate_hk_trade_constraints(inp: HongKongTradingRuleInput) -> HongKongTrad
     elif inp.proposed_price < inp.last_close * 0.5:
         warnings.append("proposed price is >50% below last close")
 
-    return HongKongTradingRuleResult(allowed=not reasons, reasons=reasons, warnings=warnings)
+    return HongKongTradingRuleResult(
+        allowed=not reasons, reasons=reasons, warnings=warnings
+    )

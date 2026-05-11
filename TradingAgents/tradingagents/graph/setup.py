@@ -4,7 +4,21 @@ from typing import Any, Dict
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
-from tradingagents.agents import *
+from tradingagents.agents import (
+    create_aggressive_debator,
+    create_bear_researcher,
+    create_bull_researcher,
+    create_conservative_debator,
+    create_fundamentals_analyst,
+    create_market_analyst,
+    create_msg_delete,
+    create_neutral_debator,
+    create_news_analyst,
+    create_portfolio_manager,
+    create_research_manager,
+    create_social_media_analyst,
+    create_trader,
+)
 from tradingagents.agents.utils.agent_states import AgentState
 
 from .conditional_logic import ConditionalLogic
@@ -47,9 +61,7 @@ class GraphSetup:
         tool_nodes = {}
 
         if "market" in selected_analysts:
-            analyst_nodes["market"] = create_market_analyst(
-                self.quick_thinking_llm
-            )
+            analyst_nodes["market"] = create_market_analyst(self.quick_thinking_llm)
             delete_nodes["market"] = create_msg_delete()
             tool_nodes["market"] = self.tool_nodes["market"]
 
@@ -61,9 +73,7 @@ class GraphSetup:
             tool_nodes["social"] = self.tool_nodes["social"]
 
         if "news" in selected_analysts:
-            analyst_nodes["news"] = create_news_analyst(
-                self.quick_thinking_llm
-            )
+            analyst_nodes["news"] = create_news_analyst(self.quick_thinking_llm)
             delete_nodes["news"] = create_msg_delete()
             tool_nodes["news"] = self.tool_nodes["news"]
 

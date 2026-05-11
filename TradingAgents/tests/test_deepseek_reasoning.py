@@ -22,7 +22,6 @@ from tradingagents.llm_clients.openai_client import (
     _input_to_messages,
 )
 
-
 # ---------------------------------------------------------------------------
 # _input_to_messages — the helper that handles list / ChatPromptValue / other
 # (Gemini bot review note: non-list inputs must also work)
@@ -79,11 +78,18 @@ class TestDeepSeekReasoningContent:
                         "finish_reason": "stop",
                     }
                 ],
-                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 5,
+                    "total_tokens": 15,
+                },
             }
         )
         ai = result.generations[0].message
-        assert ai.additional_kwargs["reasoning_content"] == "Step 1: trend is up. Step 2: ..."
+        assert (
+            ai.additional_kwargs["reasoning_content"]
+            == "Step 1: trend is up. Step 2: ..."
+        )
 
     def test_propagate_on_send(self):
         """When an outgoing AIMessage carries reasoning_content, the request
@@ -96,7 +102,9 @@ class TestDeepSeekReasoningContent:
         new_user = HumanMessage(content="Refine.")
         payload = client._get_request_payload([prior, new_user])
         # Find the assistant message in the payload
-        assistant_dicts = [m for m in payload["messages"] if m.get("role") == "assistant"]
+        assistant_dicts = [
+            m for m in payload["messages"] if m.get("role") == "assistant"
+        ]
         assert assistant_dicts, "assistant message missing from outgoing payload"
         assert assistant_dicts[0]["reasoning_content"] == "weighed bull case"
 
@@ -108,9 +116,13 @@ class TestDeepSeekReasoningContent:
             content="Plan",
             additional_kwargs={"reasoning_content": "weighed bull case"},
         )
-        prompt_value = ChatPromptValue(messages=[prior, HumanMessage(content="Refine.")])
+        prompt_value = ChatPromptValue(
+            messages=[prior, HumanMessage(content="Refine.")]
+        )
         payload = client._get_request_payload(prompt_value)
-        assistant_dicts = [m for m in payload["messages"] if m.get("role") == "assistant"]
+        assistant_dicts = [
+            m for m in payload["messages"] if m.get("role") == "assistant"
+        ]
         assert assistant_dicts[0]["reasoning_content"] == "weighed bull case"
 
 

@@ -7,23 +7,14 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, Any, Tuple, List, Optional
 
-import yfinance as yf
-
-logger = logging.getLogger(__name__)
-
 from langgraph.prebuilt import ToolNode
+import yfinance as yf
 
 from tradingagents.llm_clients import create_llm_client
 
-from tradingagents.agents import *
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.agents.utils.memory import TradingMemoryLog
 from tradingagents.dataflows.utils import safe_ticker_component
-from tradingagents.agents.utils.agent_states import (
-    AgentState,
-    InvestDebateState,
-    RiskDebateState,
-)
 from tradingagents.dataflows.config import set_config
 from tradingagents.markets import detect_market, Market
 from tradingagents.markets.china_compliance import annotate_market_decision
@@ -38,7 +29,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_income_statement,
     get_news,
     get_insider_transactions,
-    get_global_news
+    get_global_news,
 )
 
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
@@ -47,6 +38,8 @@ from .setup import GraphSetup
 from .propagation import Propagator
 from .reflection import Reflector
 from .signal_processing import SignalProcessor
+
+logger = logging.getLogger(__name__)
 
 
 class TradingAgentsGraph:
@@ -100,7 +93,7 @@ class TradingAgentsGraph:
 
         self.deep_thinking_llm = deep_client.get_llm()
         self.quick_thinking_llm = quick_client.get_llm()
-        
+
         self.memory_log = TradingMemoryLog(self.config)
 
         # Create tool nodes
@@ -202,9 +195,13 @@ class TradingAgentsGraph:
         try:
             market = detect_market(ticker)
             if market == Market.CHINA:
-                return self.config.get("china_market", {}).get("benchmark_symbol", "000300.SH")
+                return self.config.get("china_market", {}).get(
+                    "benchmark_symbol", "000300.SH"
+                )
             if market == Market.HONGKONG:
-                return self.config.get("hongkong_market", {}).get("benchmark_symbol", "HSI")
+                return self.config.get("hongkong_market", {}).get(
+                    "benchmark_symbol", "HSI"
+                )
         except Exception:
             pass
         return "SPY"
@@ -220,28 +217,38 @@ class TradingAgentsGraph:
         """
         try:
             benchmark_symbol = self._benchmark_for_symbol(ticker)
+            if not isinstance(benchmark_symbol, str) or not benchmark_symbol:
+                benchmark_symbol = "SPY"
             start = datetime.strptime(trade_date, "%Y-%m-%d")
-            end = start + timedelta(days=holding_days + 7)  # buffer for weekends/holidays
+            end = start + timedelta(
+                days=holding_days + 7
+            )  # buffer for weekends/holidays
             end_str = end.strftime("%Y-%m-%d")
 
             stock = yf.Ticker(ticker).history(start=trade_date, end=end_str)
-            benchmark = yf.Ticker(benchmark_symbol).history(start=trade_date, end=end_str)
+            benchmark = yf.Ticker(benchmark_symbol).history(
+                start=trade_date, end=end_str
+            )
 
             if len(stock) < 2:
                 return None, None, None
 
-            actual_days = min(holding_days, len(stock) - 1)
+            stock_days = min(holding_days, len(stock) - 1)
+
+            if len(benchmark) < 2:
+                raw = float(
+                    (stock["Close"].iloc[stock_days] - stock["Close"].iloc[0])
+                    / stock["Close"].iloc[0]
+                )
+                return raw, None, stock_days
+
+            actual_days = min(stock_days, len(benchmark) - 1)
             raw = float(
                 (stock["Close"].iloc[actual_days] - stock["Close"].iloc[0])
                 / stock["Close"].iloc[0]
             )
-
-            if len(benchmark) < 2:
-                return raw, None, actual_days
-
-            bench_days = min(actual_days, len(benchmark) - 1)
             bench_ret = float(
-                (benchmark["Close"].iloc[bench_days] - benchmark["Close"].iloc[0])
+                (benchmark["Close"].iloc[actual_days] - benchmark["Close"].iloc[0])
                 / benchmark["Close"].iloc[0]
             )
             alpha = raw - bench_ret
@@ -249,7 +256,9 @@ class TradingAgentsGraph:
         except Exception as e:
             logger.warning(
                 "Could not resolve outcome for %s on %s (will retry next run): %s",
-                ticker, trade_date, e,
+                ticker,
+                trade_date,
+                e,
             )
             return None, None, None
 
@@ -263,7 +272,9 @@ class TradingAgentsGraph:
         Trade-off: only same-ticker entries are resolved per run.  Entries for
         other tickers accumulate until that ticker is run again.
         """
-        pending = [e for e in self.memory_log.get_pending_entries() if e["ticker"] == ticker]
+        pending = [
+            e for e in self.memory_log.get_pending_entries() if e["ticker"] == ticker
+        ]
         if not pending:
             return
 
@@ -277,14 +288,16 @@ class TradingAgentsGraph:
                 raw_return=raw,
                 alpha_return=alpha,
             )
-            updates.append({
-                "ticker": ticker,
-                "trade_date": entry["date"],
-                "raw_return": raw,
-                "alpha_return": alpha,
-                "holding_days": days,
-                "reflection": reflection,
-            })
+            updates.append(
+                {
+                    "ticker": ticker,
+                    "trade_date": entry["date"],
+                    "raw_return": raw,
+                    "alpha_return": alpha,
+                    "holding_days": days,
+                    "reflection": reflection,
+                }
+            )
 
         if updates:
             self.memory_log.batch_update_with_outcomes(updates)
@@ -339,7 +352,9 @@ class TradingAgentsGraph:
         # Inject thread_id so same ticker+date resumes, different date starts fresh.
         if self.config.get("checkpoint_enabled"):
             tid = thread_id(company_name, str(trade_date))
-            args.setdefault("config", {}).setdefault("configurable", {})["thread_id"] = tid
+            args.setdefault("config", {}).setdefault("configurable", {})[
+                "thread_id"
+            ] = tid
 
         if self.debug:
             trace = []
@@ -402,8 +417,12 @@ class TradingAgentsGraph:
             },
             "trader_investment_decision": final_state["trader_investment_plan"],
             "risk_debate_state": {
-                "aggressive_history": final_state["risk_debate_state"]["aggressive_history"],
-                "conservative_history": final_state["risk_debate_state"]["conservative_history"],
+                "aggressive_history": final_state["risk_debate_state"][
+                    "aggressive_history"
+                ],
+                "conservative_history": final_state["risk_debate_state"][
+                    "conservative_history"
+                ],
                 "neutral_history": final_state["risk_debate_state"]["neutral_history"],
                 "history": final_state["risk_debate_state"]["history"],
                 "judge_decision": final_state["risk_debate_state"]["judge_decision"],
@@ -415,7 +434,11 @@ class TradingAgentsGraph:
         # Save to file. Reject ticker values that would escape the
         # results directory when joined as a path component.
         safe_ticker = safe_ticker_component(self.ticker)
-        directory = Path(self.config["results_dir"]) / safe_ticker / "TradingAgentsStrategy_logs"
+        directory = (
+            Path(self.config["results_dir"])
+            / safe_ticker
+            / "TradingAgentsStrategy_logs"
+        )
         directory.mkdir(parents=True, exist_ok=True)
 
         log_path = directory / f"full_states_log_{trade_date}.json"

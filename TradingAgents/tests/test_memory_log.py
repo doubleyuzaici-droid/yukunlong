@@ -30,18 +30,20 @@ DECISION_NO_RATING = (
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+
 def make_log(tmp_path, filename="trading_memory.md"):
     config = {"memory_log_path": str(tmp_path / filename)}
     return TradingMemoryLog(config)
 
 
-def _seed_completed(tmp_path, ticker, date, decision_text, reflection_text, filename="trading_memory.md"):
+def _seed_completed(
+    tmp_path, ticker, date, decision_text, reflection_text, filename="trading_memory.md"
+):
     """Write a completed entry directly to file, bypassing the API."""
     entry = (
         f"[{date} | {ticker} | Buy | +1.0% | +0.5% | 5d]\n\n"
         f"DECISION:\n{decision_text}\n\n"
-        f"REFLECTION:\n{reflection_text}"
-        + _SEP
+        f"REFLECTION:\n{reflection_text}" + _SEP
     )
     with open(tmp_path / filename, "a", encoding="utf-8") as f:
         f.write(entry)
@@ -106,6 +108,7 @@ def _structured_pm_llm(captured: dict, decision: PortfolioDecision | None = None
 # Core: storage and read path
 # ---------------------------------------------------------------------------
 
+
 class TestTradingMemoryLogCore:
 
     def test_store_creates_file(self, tmp_path):
@@ -137,12 +140,22 @@ class TestTradingMemoryLogCore:
         log.store_decision("NVDA", "2026-01-12", DECISION_SELL)
 
         updates = [
-            {"ticker": "NVDA", "trade_date": "2026-01-05",
-             "raw_return": 0.05, "alpha_return": 0.02, "holding_days": 5,
-             "reflection": "First correct."},
-            {"ticker": "NVDA", "trade_date": "2026-01-12",
-             "raw_return": -0.03, "alpha_return": -0.01, "holding_days": 5,
-             "reflection": "Second correct."},
+            {
+                "ticker": "NVDA",
+                "trade_date": "2026-01-05",
+                "raw_return": 0.05,
+                "alpha_return": 0.02,
+                "holding_days": 5,
+                "reflection": "First correct.",
+            },
+            {
+                "ticker": "NVDA",
+                "trade_date": "2026-01-12",
+                "raw_return": -0.03,
+                "alpha_return": -0.01,
+                "holding_days": 5,
+                "reflection": "Second correct.",
+            },
         ]
         log.batch_update_with_outcomes(updates)
 
@@ -253,14 +266,22 @@ class TestTradingMemoryLogCore:
 
     def test_get_past_context_same_ticker(self, tmp_path):
         log = make_log(tmp_path)
-        _seed_completed(tmp_path, "NVDA", "2026-01-05", "Buy NVDA — AI capex thesis intact.", "Directionally correct.")
+        _seed_completed(
+            tmp_path,
+            "NVDA",
+            "2026-01-05",
+            "Buy NVDA — AI capex thesis intact.",
+            "Directionally correct.",
+        )
         ctx = log.get_past_context("NVDA")
         assert "Past analyses of NVDA" in ctx
         assert "Buy NVDA" in ctx
 
     def test_get_past_context_cross_ticker(self, tmp_path):
         log = make_log(tmp_path)
-        _seed_completed(tmp_path, "AAPL", "2026-01-05", "Buy AAPL — Services growth.", "Correct.")
+        _seed_completed(
+            tmp_path, "AAPL", "2026-01-05", "Buy AAPL — Services growth.", "Correct."
+        )
         ctx = log.get_past_context("NVDA")
         assert "Recent cross-ticker lessons" in ctx
         assert "Past analyses of NVDA" not in ctx
@@ -269,7 +290,9 @@ class TestTradingMemoryLogCore:
         """Only the n_same most recent same-ticker entries are included."""
         log = make_log(tmp_path)
         for i in range(6):
-            _seed_completed(tmp_path, "NVDA", f"2026-01-{i+1:02d}", f"Buy entry {i}.", "Correct.")
+            _seed_completed(
+                tmp_path, "NVDA", f"2026-01-{i+1:02d}", f"Buy entry {i}.", "Correct."
+            )
         ctx = log.get_past_context("NVDA", n_same=5)
         assert "Buy entry 0" not in ctx
         assert "Buy entry 5" in ctx
@@ -278,7 +301,9 @@ class TestTradingMemoryLogCore:
         """Only the n_cross most recent cross-ticker entries are included."""
         log = make_log(tmp_path)
         for i, ticker in enumerate(["AAPL", "MSFT", "GOOG", "META"]):
-            _seed_completed(tmp_path, ticker, f"2026-01-{i+1:02d}", f"Buy {ticker}.", "Correct.")
+            _seed_completed(
+                tmp_path, ticker, f"2026-01-{i+1:02d}", f"Buy {ticker}.", "Correct."
+            )
         ctx = log.get_past_context("NVDA", n_cross=3)
         assert "AAPL" not in ctx
         assert "META" in ctx
@@ -297,18 +322,24 @@ class TestTradingMemoryLogCore:
         """Without max_entries, all resolved entries are kept."""
         log = make_log(tmp_path)
         for i in range(7):
-            _resolve_entry(log, "NVDA", f"2026-01-{i+1:02d}", DECISION_BUY, f"Lesson {i}.")
+            _resolve_entry(
+                log, "NVDA", f"2026-01-{i+1:02d}", DECISION_BUY, f"Lesson {i}."
+            )
         assert len(log.load_entries()) == 7
 
     def test_rotation_prunes_oldest_resolved(self, tmp_path):
         """When max_entries is set and exceeded, oldest resolved entries are pruned."""
-        log = TradingMemoryLog({
-            "memory_log_path": str(tmp_path / "trading_memory.md"),
-            "memory_log_max_entries": 3,
-        })
+        log = TradingMemoryLog(
+            {
+                "memory_log_path": str(tmp_path / "trading_memory.md"),
+                "memory_log_max_entries": 3,
+            }
+        )
         # Resolve 5 entries; rotation should keep only the 3 most recent.
         for i in range(5):
-            _resolve_entry(log, "NVDA", f"2026-01-{i+1:02d}", DECISION_BUY, f"Lesson {i}.")
+            _resolve_entry(
+                log, "NVDA", f"2026-01-{i+1:02d}", DECISION_BUY, f"Lesson {i}."
+            )
         entries = log.load_entries()
         assert len(entries) == 3
         # Confirm the OLDEST were dropped, not the newest.
@@ -317,13 +348,17 @@ class TestTradingMemoryLogCore:
 
     def test_rotation_never_prunes_pending(self, tmp_path):
         """Pending entries (unresolved) are kept regardless of the cap."""
-        log = TradingMemoryLog({
-            "memory_log_path": str(tmp_path / "trading_memory.md"),
-            "memory_log_max_entries": 2,
-        })
+        log = TradingMemoryLog(
+            {
+                "memory_log_path": str(tmp_path / "trading_memory.md"),
+                "memory_log_max_entries": 2,
+            }
+        )
         # 3 resolved + 2 pending. With cap=2, only 2 resolved survive; both pending stay.
         for i in range(3):
-            _resolve_entry(log, "NVDA", f"2026-01-{i+1:02d}", DECISION_BUY, f"Resolved {i}.")
+            _resolve_entry(
+                log, "NVDA", f"2026-01-{i+1:02d}", DECISION_BUY, f"Resolved {i}."
+            )
         log.store_decision("NVDA", "2026-02-01", DECISION_BUY)
         log.store_decision("NVDA", "2026-02-02", DECISION_OVERWEIGHT)
         # Trigger rotation by resolving one more entry — pending entries must stay.
@@ -332,16 +367,22 @@ class TestTradingMemoryLogCore:
         pending = [e for e in entries if e["pending"]]
         resolved = [e for e in entries if not e["pending"]]
         assert len(pending) == 2, "pending entries must never be pruned"
-        assert len(resolved) == 2, f"expected 2 resolved after rotation, got {len(resolved)}"
+        assert (
+            len(resolved) == 2
+        ), f"expected 2 resolved after rotation, got {len(resolved)}"
 
     def test_rotation_under_cap_is_noop(self, tmp_path):
         """No rotation when resolved count <= max_entries."""
-        log = TradingMemoryLog({
-            "memory_log_path": str(tmp_path / "trading_memory.md"),
-            "memory_log_max_entries": 10,
-        })
+        log = TradingMemoryLog(
+            {
+                "memory_log_path": str(tmp_path / "trading_memory.md"),
+                "memory_log_max_entries": 10,
+            }
+        )
         for i in range(3):
-            _resolve_entry(log, "NVDA", f"2026-01-{i+1:02d}", DECISION_BUY, f"Lesson {i}.")
+            _resolve_entry(
+                log, "NVDA", f"2026-01-{i+1:02d}", DECISION_BUY, f"Lesson {i}."
+            )
         assert len(log.load_entries()) == 3
 
     # Rating parsing: markdown bold and numbered list formats
@@ -383,6 +424,7 @@ class TestTradingMemoryLogCore:
 # Deferred reflection: update_with_outcome, Reflector, _fetch_returns
 # ---------------------------------------------------------------------------
 
+
 class TestDeferredReflection:
 
     # update_with_outcome
@@ -390,7 +432,9 @@ class TestDeferredReflection:
     def test_update_replaces_pending_tag(self, tmp_path):
         log = make_log(tmp_path)
         log.store_decision("NVDA", "2026-01-10", DECISION_BUY)
-        log.update_with_outcome("NVDA", "2026-01-10", 0.042, 0.021, 5, "Momentum confirmed.")
+        log.update_with_outcome(
+            "NVDA", "2026-01-10", 0.042, 0.021, 5, "Momentum confirmed."
+        )
         text = (tmp_path / "trading_memory.md").read_text(encoding="utf-8")
         assert "[2026-01-10 | NVDA | Buy | pending]" not in text
         assert "+4.2%" in text
@@ -400,7 +444,9 @@ class TestDeferredReflection:
     def test_update_appends_reflection(self, tmp_path):
         log = make_log(tmp_path)
         log.store_decision("NVDA", "2026-01-10", DECISION_BUY)
-        log.update_with_outcome("NVDA", "2026-01-10", 0.042, 0.021, 5, "Momentum confirmed.")
+        log.update_with_outcome(
+            "NVDA", "2026-01-10", 0.042, 0.021, 5, "Momentum confirmed."
+        )
         entries = log.load_entries()
         assert len(entries) == 1
         e = entries[0]
@@ -428,7 +474,9 @@ class TestDeferredReflection:
         log = make_log(tmp_path)
         log.store_decision("NVDA", "2026-01-10", DECISION_BUY)
         stale_tmp = tmp_path / "trading_memory.tmp"
-        stale_tmp.write_text("GARBAGE CONTENT — should be overwritten", encoding="utf-8")
+        stale_tmp.write_text(
+            "GARBAGE CONTENT — should be overwritten", encoding="utf-8"
+        )
         log.update_with_outcome("NVDA", "2026-01-10", 0.042, 0.021, 5, "Correct.")
         assert not stale_tmp.exists()
         entries = log.load_entries()
@@ -444,7 +492,9 @@ class TestDeferredReflection:
         """All fields intact and blank line between tag and DECISION preserved after update."""
         log = make_log(tmp_path)
         log.store_decision("NVDA", "2026-01-10", DECISION_BUY)
-        log.update_with_outcome("NVDA", "2026-01-10", 0.042, 0.021, 5, "Momentum confirmed.")
+        log.update_with_outcome(
+            "NVDA", "2026-01-10", 0.042, 0.021, 5, "Momentum confirmed."
+        )
         entries = log.load_entries()
         assert len(entries) == 1
         e = entries[0]
@@ -461,7 +511,9 @@ class TestDeferredReflection:
 
     def test_reflect_on_final_decision_returns_llm_output(self):
         mock_llm = MagicMock()
-        mock_llm.invoke.return_value.content = "Directionally correct. Thesis confirmed."
+        mock_llm.invoke.return_value.content = (
+            "Directionally correct. Thesis confirmed."
+        )
         reflector = Reflector(mock_llm)
         result = reflector.reflect_on_final_decision(
             final_decision=DECISION_BUY, raw_return=0.042, alpha_return=0.021
@@ -487,17 +539,27 @@ class TestDeferredReflection:
 
     def test_fetch_returns_valid_ticker(self):
         stock_prices = [100.0, 102.0, 104.0, 103.0, 105.0, 106.0]
-        spy_prices   = [400.0, 402.0, 404.0, 403.0, 405.0, 406.0]
+        spy_prices = [400.0, 402.0, 404.0, 403.0, 405.0, 406.0]
         mock_graph = MagicMock(spec=TradingAgentsGraph)
         with patch("yfinance.Ticker") as mock_ticker_cls:
+
             def _make_ticker(sym):
                 m = MagicMock()
-                m.history.return_value = _price_df(spy_prices if sym == "SPY" else stock_prices)
+                m.history.return_value = _price_df(
+                    spy_prices if sym == "SPY" else stock_prices
+                )
                 return m
+
             mock_ticker_cls.side_effect = _make_ticker
-            raw, alpha, days = TradingAgentsGraph._fetch_returns(mock_graph, "NVDA", "2026-01-05")
+            raw, alpha, days = TradingAgentsGraph._fetch_returns(
+                mock_graph, "NVDA", "2026-01-05"
+            )
         assert raw is not None and alpha is not None and days is not None
-        assert isinstance(raw, float) and isinstance(alpha, float) and isinstance(days, int)
+        assert (
+            isinstance(raw, float)
+            and isinstance(alpha, float)
+            and isinstance(days, int)
+        )
         assert days == 5
 
     def test_fetch_returns_too_recent(self):
@@ -507,7 +569,9 @@ class TestDeferredReflection:
             m = MagicMock()
             m.history.return_value = _price_df([100.0])
             mock_ticker_cls.return_value = m
-            raw, alpha, days = TradingAgentsGraph._fetch_returns(mock_graph, "NVDA", "2026-04-19")
+            raw, alpha, days = TradingAgentsGraph._fetch_returns(
+                mock_graph, "NVDA", "2026-04-19"
+            )
         assert raw is None and alpha is None and days is None
 
     def test_fetch_returns_delisted(self):
@@ -517,21 +581,29 @@ class TestDeferredReflection:
             m = MagicMock()
             m.history.return_value = pd.DataFrame({"Close": []})
             mock_ticker_cls.return_value = m
-            raw, alpha, days = TradingAgentsGraph._fetch_returns(mock_graph, "XXXXXFAKE", "2026-01-10")
+            raw, alpha, days = TradingAgentsGraph._fetch_returns(
+                mock_graph, "XXXXXFAKE", "2026-01-10"
+            )
         assert raw is None and alpha is None and days is None
 
     def test_fetch_returns_spy_shorter_than_stock(self):
         """SPY having fewer rows than the stock must not raise IndexError."""
         stock_prices = [100.0, 102.0, 104.0, 103.0, 105.0, 106.0]
-        spy_prices   = [400.0, 402.0, 403.0]
+        spy_prices = [400.0, 402.0, 403.0]
         mock_graph = MagicMock(spec=TradingAgentsGraph)
         with patch("yfinance.Ticker") as mock_ticker_cls:
+
             def _make_ticker(sym):
                 m = MagicMock()
-                m.history.return_value = _price_df(spy_prices if sym == "SPY" else stock_prices)
+                m.history.return_value = _price_df(
+                    spy_prices if sym == "SPY" else stock_prices
+                )
                 return m
+
             mock_ticker_cls.side_effect = _make_ticker
-            raw, alpha, days = TradingAgentsGraph._fetch_returns(mock_graph, "NVDA", "2026-01-05")
+            raw, alpha, days = TradingAgentsGraph._fetch_returns(
+                mock_graph, "NVDA", "2026-01-05"
+            )
         assert raw is not None and alpha is not None and days is not None
         assert days == 2
 
@@ -572,13 +644,16 @@ class TestDeferredReflection:
 # Portfolio Manager injection: past_context in state and prompt
 # ---------------------------------------------------------------------------
 
+
 class TestPortfolioManagerInjection:
 
     # past_context in initial state
 
     def test_past_context_in_initial_state(self):
         propagator = Propagator()
-        state = propagator.create_initial_state("NVDA", "2026-01-10", past_context="some context")
+        state = propagator.create_initial_state(
+            "NVDA", "2026-01-10", past_context="some context"
+        )
         assert "past_context" in state
         assert state["past_context"] == "some context"
 
@@ -593,7 +668,9 @@ class TestPortfolioManagerInjection:
         captured = {}
         llm = _structured_pm_llm(captured)
         pm_node = create_portfolio_manager(llm)
-        state = _make_pm_state(past_context="[2026-01-05 | NVDA | Buy | +5.0% | +2.0% | 5d]\nGreat call.")
+        state = _make_pm_state(
+            past_context="[2026-01-05 | NVDA | Buy | +5.0% | +2.0% | 5d]\nGreat call."
+        )
         pm_node(state)
         assert "Lessons from prior decisions and outcomes" in captured["prompt"]
         assert "Great call." in captured["prompt"]
@@ -635,7 +712,9 @@ class TestPortfolioManagerInjection:
         produced, so the pipeline never blocks."""
         plain_response = "**Rating**: Sell\n\nExit ahead of guidance."
         llm = MagicMock()
-        llm.with_structured_output.side_effect = NotImplementedError("provider unsupported")
+        llm.with_structured_output.side_effect = NotImplementedError(
+            "provider unsupported"
+        )
         llm.invoke.return_value = MagicMock(content=plain_response)
         pm_node = create_portfolio_manager(llm)
         result = pm_node(_make_pm_state())
@@ -658,7 +737,9 @@ class TestPortfolioManagerInjection:
     def test_cross_ticker_reflection_only(self, tmp_path):
         """Cross-ticker entries show only the REFLECTION text, not the full DECISION."""
         log = make_log(tmp_path)
-        _resolve_entry(log, "AAPL", "2026-01-06", DECISION_SELL, "Overvalued correction.")
+        _resolve_entry(
+            log, "AAPL", "2026-01-06", DECISION_SELL, "Overvalued correction."
+        )
         result = log.get_past_context("NVDA")
         assert "Overvalued correction." in result
         assert "Exit position immediately." not in result
@@ -667,7 +748,9 @@ class TestPortfolioManagerInjection:
         """More than 5 same-ticker completed entries → only 5 injected."""
         log = make_log(tmp_path)
         for i in range(7):
-            _resolve_entry(log, "NVDA", f"2026-01-{i+1:02d}", DECISION_BUY, f"Lesson {i}.")
+            _resolve_entry(
+                log, "NVDA", f"2026-01-{i+1:02d}", DECISION_BUY, f"Lesson {i}."
+            )
         result = log.get_past_context("NVDA", n_same=5)
         lessons_present = sum(1 for i in range(7) if f"Lesson {i}." in result)
         assert lessons_present == 5
@@ -677,7 +760,9 @@ class TestPortfolioManagerInjection:
         log = make_log(tmp_path)
         tickers = ["AAPL", "MSFT", "TSLA", "AMZN", "GOOG"]
         for i, ticker in enumerate(tickers):
-            _resolve_entry(log, ticker, f"2026-01-{i+1:02d}", DECISION_BUY, f"{ticker} lesson.")
+            _resolve_entry(
+                log, ticker, f"2026-01-{i+1:02d}", DECISION_BUY, f"{ticker} lesson."
+            )
         result = log.get_past_context("NVDA", n_cross=3)
         cross_count = sum(result.count(f"{t} lesson.") for t in tickers)
         assert cross_count == 3
@@ -704,16 +789,19 @@ class TestPortfolioManagerInjection:
 # Legacy removal: BM25 / FinancialSituationMemory fully gone
 # ---------------------------------------------------------------------------
 
+
 class TestLegacyRemoval:
 
     def test_financial_situation_memory_removed(self):
         """FinancialSituationMemory must not be importable from the memory module."""
         import tradingagents.agents.utils.memory as m
+
         assert not hasattr(m, "FinancialSituationMemory")
 
     def test_bm25_not_imported(self):
         """rank_bm25 must not be present in the memory module namespace."""
         import tradingagents.agents.utils.memory as m
+
         assert not hasattr(m, "BM25Okapi")
 
     def test_reflect_and_remember_removed(self):
@@ -740,20 +828,31 @@ class TestLegacyRemoval:
             "news_report": "",
             "fundamentals_report": "",
             "investment_debate_state": {
-                "bull_history": "", "bear_history": "", "history": "",
-                "current_response": "", "judge_decision": "",
+                "bull_history": "",
+                "bear_history": "",
+                "history": "",
+                "current_response": "",
+                "judge_decision": "",
             },
             "investment_plan": "",
             "trader_investment_plan": "",
             "risk_debate_state": {
-                "aggressive_history": "", "conservative_history": "",
-                "neutral_history": "", "history": "", "judge_decision": "",
-                "current_aggressive_response": "", "current_conservative_response": "",
-                "current_neutral_response": "", "count": 1, "latest_speaker": "",
+                "aggressive_history": "",
+                "conservative_history": "",
+                "neutral_history": "",
+                "history": "",
+                "judge_decision": "",
+                "current_aggressive_response": "",
+                "current_conservative_response": "",
+                "current_neutral_response": "",
+                "count": 1,
+                "latest_speaker": "",
             },
         }
         mock_graph = MagicMock()
-        mock_graph.memory_log = TradingMemoryLog({"memory_log_path": str(tmp_path / "mem.md")})
+        mock_graph.memory_log = TradingMemoryLog(
+            {"memory_log_path": str(tmp_path / "mem.md")}
+        )
         mock_graph.log_states_dict = {}
         mock_graph.debug = False
         mock_graph.config = {"results_dir": str(tmp_path)}

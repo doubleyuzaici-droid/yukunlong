@@ -1,0 +1,12 @@
+china:
+  commission_bps: 3
+  stamp_tax_bps_sell: 5
+  slippage_bps_high_liquidity: 5
+  slippage_bps_low_liquidity: 20
+
+hongkong:
+  commission_bps: 5
+  stamp_tax_bps: 10
+  trading_fee_bps: 0.565
+  slippage_bps_high_liquidity: 8
+  slippage_bps_low_liquidity: 30
