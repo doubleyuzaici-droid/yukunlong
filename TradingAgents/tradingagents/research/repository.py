@@ -277,3 +277,18 @@ def list_today_signals(date: str) -> list[dict]:
             (date,),
         ).fetchall()
     return [_row_to_dict(row) for row in rows]
+
+
+def list_signals(symbol: str, start: str, end: str) -> list[dict]:
+    init_db()
+    normalized = _normalize_symbol(symbol)
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM signal_log
+            WHERE symbol = ? AND date >= ? AND date <= ?
+            ORDER BY date DESC, signal_level, score DESC
+            """,
+            (normalized, start, end),
+        ).fetchall()
+    return [_row_to_dict(row) for row in rows]
