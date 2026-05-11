@@ -5,6 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .backtest_routes import router as backtest_router
 from .routes import router
 from .report_routes import router as report_router
 from .signal_routes import router as signal_router
@@ -30,6 +31,7 @@ def create_app() -> FastAPI:
     app.include_router(router)
     app.include_router(signal_router)
     app.include_router(report_router)
+    app.include_router(backtest_router)
 
     @app.get("/health")
     async def health():
