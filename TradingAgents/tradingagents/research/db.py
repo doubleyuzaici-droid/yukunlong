@@ -164,6 +164,24 @@ SCHEMA_STATEMENTS = [
         PRIMARY KEY(strategy_version, date)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS agent_decision_log (
+        review_id TEXT PRIMARY KEY,
+        signal_id TEXT,
+        date TEXT,
+        symbol TEXT,
+        action TEXT,
+        confidence TEXT,
+        bull_points_json TEXT,
+        bear_points_json TEXT,
+        risk_flags_json TEXT,
+        missing_data_json TEXT,
+        review_summary TEXT,
+        model_name TEXT,
+        prompt_version TEXT,
+        created_at TEXT
+    )
+    """,
 ]
 
 
