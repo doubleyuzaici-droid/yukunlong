@@ -25,7 +25,9 @@ def _display_date(value: str) -> str:
 def get_china_stock_data(symbol: str, start_date: str, end_date: str) -> str:
     ts_code = normalize_china_symbol(symbol)
     pro = _get_tushare_pro()
-    frame = pro.daily(ts_code=ts_code, start_date=_fmt_date(start_date), end_date=_fmt_date(end_date))
+    frame = pro.daily(
+        ts_code=ts_code, start_date=_fmt_date(start_date), end_date=_fmt_date(end_date)
+    )
     if frame is None or frame.empty:
         return f"No China A-share stock data found for {ts_code} from {start_date} to {end_date}."
     frame = frame.sort_values("trade_date")
@@ -42,7 +44,9 @@ def get_china_stock_data(symbol: str, start_date: str, end_date: str) -> str:
 def get_hk_stock_data(symbol: str, start_date: str, end_date: str) -> str:
     hk_code = normalize_hk_symbol(symbol)
     pro = _get_tushare_pro()
-    frame = pro.hk_daily(ts_code=hk_code, start_date=_fmt_date(start_date), end_date=_fmt_date(end_date))
+    frame = pro.hk_daily(
+        ts_code=hk_code, start_date=_fmt_date(start_date), end_date=_fmt_date(end_date)
+    )
     if frame is None or frame.empty:
         return f"No HK stock data found for {hk_code} from {start_date} to {end_date}."
     frame = frame.sort_values("trade_date")
@@ -59,7 +63,9 @@ def get_hk_stock_data(symbol: str, start_date: str, end_date: str) -> str:
 def get_china_indicators(symbol: str, start_date: str, end_date: str) -> str:
     ts_code = normalize_china_symbol(symbol)
     pro = _get_tushare_pro()
-    frame = pro.daily(ts_code=ts_code, start_date=_fmt_date(start_date), end_date=_fmt_date(end_date))
+    frame = pro.daily(
+        ts_code=ts_code, start_date=_fmt_date(start_date), end_date=_fmt_date(end_date)
+    )
     if frame is None or frame.empty:
         return f"No China A-share indicator data found for {ts_code}."
     frame = frame.sort_values("trade_date")
@@ -76,7 +82,9 @@ def get_china_indicators(symbol: str, start_date: str, end_date: str) -> str:
 def get_hk_indicators(symbol: str, start_date: str, end_date: str) -> str:
     hk_code = normalize_hk_symbol(symbol)
     pro = _get_tushare_pro()
-    frame = pro.hk_daily(ts_code=hk_code, start_date=_fmt_date(start_date), end_date=_fmt_date(end_date))
+    frame = pro.hk_daily(
+        ts_code=hk_code, start_date=_fmt_date(start_date), end_date=_fmt_date(end_date)
+    )
     if frame is None or frame.empty:
         return f"No HK indicator data found for {hk_code}."
     frame = frame.sort_values("trade_date")

@@ -6,7 +6,6 @@ from tradingagents.agents.utils.agent_utils import (
     get_news,
     search_web,
 )
-from tradingagents.dataflows.config import get_config
 
 
 def create_news_analyst(llm):

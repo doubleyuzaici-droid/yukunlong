@@ -34,8 +34,24 @@ def normalize_china_symbol(symbol: str) -> str:
     if value.startswith(("000", "001", "002", "003", "300")):
         return f"{value}.SZ"
     if value.startswith(
-        ("430", "830", "831", "832", "833", "834", "835", "836", "837",
-         "838", "839", "870", "871", "872", "873", "920")
+        (
+            "430",
+            "830",
+            "831",
+            "832",
+            "833",
+            "834",
+            "835",
+            "836",
+            "837",
+            "838",
+            "839",
+            "870",
+            "871",
+            "872",
+            "873",
+            "920",
+        )
     ):
         return f"{value}.BJ"
     raise ValueError(f"Cannot infer exchange for China A-share symbol: {symbol}")

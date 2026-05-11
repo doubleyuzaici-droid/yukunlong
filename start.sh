@@ -1,58 +1,72 @@
-#!/bin/bash
-# TradingAgents 启动脚本 - 同时启动 FastAPI 后端和 React 前端
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TRADINGAGENTS_DIR="$SCRIPT_DIR/TradingAgents"
+DATA_DIR="$TRADINGAGENTS_DIR/local_data"
+BACKEND_PORT=8100
+
+find_free_port() {
+  local port="$1"
+  while lsof -iTCP:"$port" -sTCP:LISTEN -n -P >/dev/null 2>&1; do
+    port=$((port + 1))
+  done
+  printf "%s\n" "$port"
+}
 
 echo "======================================"
-echo " TradingAgents - Web 原型启动"
+echo " yukunlong / TradingAgents Web Prototype"
 echo "======================================"
 
-# 1. 后端环境
-echo ""
-echo "[1/3] 设置 Python 后端环境..."
+mkdir -p "$DATA_DIR"/{logs,cache,memory,db,reports}
+
+export TRADINGAGENTS_RESULTS_DIR="$DATA_DIR/logs"
+export TRADINGAGENTS_CACHE_DIR="$DATA_DIR/cache"
+export TRADINGAGENTS_MEMORY_LOG_PATH="$DATA_DIR/memory/trading_memory.md"
+
 cd "$TRADINGAGENTS_DIR"
 
 if [ ! -d ".venv" ]; then
-  echo "   创建 venv (Python 3.12)..."
+  echo "[1/4] Creating Python venv..."
   uv venv --python python3.12
 fi
 
-echo "   安装依赖..."
-uv pip install -e ".[china]" fastapi uvicorn sse-starlette 2>/dev/null
+echo "[2/4] Installing backend dependencies..."
+uv pip install -e ".[china]" fastapi uvicorn sse-starlette
 
-# 2. 前端依赖
-echo ""
-echo "[2/3] 安装前端依赖..."
+echo "[3/4] Installing frontend dependencies..."
 cd "$TRADINGAGENTS_DIR/frontend"
-npm install --silent 2>/dev/null || true
+npm install
 
-# 3. 启动服务
-echo ""
-echo "[3/3] 启动服务..."
-echo "   后端 API: http://localhost:8100"
-echo "   API 文档: http://localhost:8100/docs"
-echo "   前端页面: http://localhost:5173"
-echo ""
+echo "[4/4] Starting services..."
+if lsof -iTCP:"$BACKEND_PORT" -sTCP:LISTEN -n -P >/dev/null 2>&1; then
+  echo "Backend port $BACKEND_PORT is already in use. Stop that process or update the frontend proxy before retrying."
+  exit 1
+fi
+
+FRONTEND_PORT="$(find_free_port "${FRONTEND_PORT:-5173}")"
 
 cd "$TRADINGAGENTS_DIR"
-
-TRADINGAGENTS_DATA="${TRADINGAGENTS_DIR}/local_data"
-export TRADINGAGENTS_RESULTS_DIR="${TRADINGAGENTS_DATA}/logs"
-export TRADINGAGENTS_CACHE_DIR="${TRADINGAGENTS_DATA}/cache"
-export TRADINGAGENTS_MEMORY_LOG_PATH="${TRADINGAGENTS_DATA}/memory/trading_memory.md"
-mkdir -p "${TRADINGAGENTS_DATA}"/{logs,cache,memory}
-
-.venv/bin/python -m uvicorn tradingagents.api.server:app --host 0.0.0.0 --port 8100 --reload &
+.venv/bin/python -m uvicorn tradingagents.api.server:app \
+  --host 0.0.0.0 \
+  --port "$BACKEND_PORT" \
+  --reload &
 BACKEND_PID=$!
 
 cd "$TRADINGAGENTS_DIR/frontend"
-npx vite --host 0.0.0.0 --port 5173 &
+npx vite --host 0.0.0.0 --port "$FRONTEND_PORT" --strictPort &
 FRONTEND_PID=$!
 
 echo ""
-echo "按 Ctrl+C 停止所有服务"
+echo "Backend API: http://localhost:$BACKEND_PORT"
+echo "API Docs:    http://localhost:$BACKEND_PORT/docs"
+echo "Frontend:    http://localhost:$FRONTEND_PORT"
+echo ""
+echo "Press Ctrl+C to stop all services."
 
-trap "kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; exit" INT TERM
+cleanup() {
+  kill "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true
+}
+trap cleanup INT TERM EXIT
+
 wait

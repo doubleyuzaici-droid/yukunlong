@@ -1,0 +1,31 @@
+strategy_name: research_signal_v1
+strategy_version: v1.0
+
+signals:
+  timeframe: daily
+  min_history_days: 120
+  breakout_lookback_days: 60
+  moving_average_windows:
+    short: 20
+    medium: 60
+    long: 120
+  rsi_period: 14
+  atr_period: 14
+
+thresholds:
+  amount_ratio_confirm: 1.5
+  risk_amount_ratio: 1.3
+  overheating_rsi: 75
+  high_volume_stall_rsi: 70
+  high_volume_stall_ret20: 0.20
+  relative_strength_index20: 0.05
+  relative_strength_industry20: 0.03
+  pullback_min: 0.03
+  pullback_max: 0.12
+
+filters:
+  min_avg_amount_china: 30000000
+  min_avg_amount_hk: 30000000
+  exclude_st: true
+  exclude_suspended: true
+  exclude_new_stock_days: 60

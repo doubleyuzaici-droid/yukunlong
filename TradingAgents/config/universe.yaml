@@ -1,0 +1,12 @@
+markets:
+  china:
+    enabled: true
+    benchmark_symbol: 000300.SH
+  hongkong:
+    enabled: true
+    benchmark_symbol: HSI
+
+watchlists:
+  default:
+    description: Personal A/H research universe
+    symbols: []

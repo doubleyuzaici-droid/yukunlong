@@ -1,0 +1,25 @@
+data_dir: local_data
+database_path: local_data/db/research.db
+reports_dir: local_data/reports
+timezone: Asia/Shanghai
+output_language: zh-CN
+
+safety:
+  mode: research_only
+  allow_real_trading: false
+  allow_broker_connections: false
+  prohibited_terms:
+    - 买入
+    - 卖出
+    - 目标价
+    - 仓位
+    - 满仓
+    - 稳赚
+    - 确定上涨
+  allowed_labels:
+    - 新增观察
+    - 重点观察
+    - 等待确认
+    - 风险升高
+    - 信号失效
+    - 不再跟踪

@@ -6,17 +6,13 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import FileResponse
 from sse_starlette.sse import EventSourceResponse
 
 from tradingagents.default_config import DEFAULT_CONFIG
 from .schemas import (
     AnalyzeRequest,
     ApiResponse,
-    HistoryItem,
-    MarketProfile,
-    TaskProgress,
-    TaskReport,
 )
 from .task_manager import TaskManager
 
@@ -93,14 +89,17 @@ async def stream_task_progress(task_id: str, request: Request):
 
             yield {
                 "event": "status",
-                "data": json.dumps({
-                    "status": progress.status.value,
-                    "current_step": progress.current_step,
-                    "current_stage_key": progress.current_stage_key,
-                    "stages": stages_data,
-                    "token_stats": token_data,
-                    "current_report_html": progress.current_report_html or "",
-                }, ensure_ascii=False),
+                "data": json.dumps(
+                    {
+                        "status": progress.status.value,
+                        "current_step": progress.current_step,
+                        "current_stage_key": progress.current_stage_key,
+                        "stages": stages_data,
+                        "token_stats": token_data,
+                        "current_report_html": progress.current_report_html or "",
+                    },
+                    ensure_ascii=False,
+                ),
             }
 
             if progress.status.value in ("completed", "failed"):
@@ -151,13 +150,16 @@ async def get_history():
             logs_dir = ticker_dir / "TradingAgentsStrategy_logs"
             if not logs_dir.exists():
                 continue
-            for log_file in sorted(logs_dir.glob("full_states_log_*.json"), reverse=True):
+            for log_file in sorted(
+                logs_dir.glob("full_states_log_*.json"), reverse=True
+            ):
                 trade_date = log_file.stem.replace("full_states_log_", "")
-                stat = log_file.stat()
-                items.append({
-                    "ticker": ticker_dir.name,
-                    "trade_date": trade_date,
-                    "file_path": str(log_file),
-                    "created_at": None,
-                })
+                items.append(
+                    {
+                        "ticker": ticker_dir.name,
+                        "trade_date": trade_date,
+                        "file_path": str(log_file),
+                        "created_at": None,
+                    }
+                )
     return ApiResponse(success=True, data=items[:50])

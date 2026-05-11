@@ -10,11 +10,11 @@ from pathlib import Path
 from typing import Optional
 
 from tradingagents.default_config import DEFAULT_CONFIG
+
 # TradingAgentsGraph is lazy-imported in _run_analysis to avoid blocking API startup
 from .schemas import (
     AgentStatus,
     AnalyzeRequest,
-    ResearchDepth,
     StageInfo,
     TaskProgress,
     TaskStatus,
@@ -26,28 +26,48 @@ logger = logging.getLogger(__name__)
 DEPTH_MAP = {"shallow": 1, "medium": 3, "deep": 5}
 
 STAGE_DEFINITIONS = [
-    {"key": "analysts", "label": "分析师团队", "agents": [
-        {"key": "market", "label": "市场技术面分析师"},
-        {"key": "social", "label": "社交媒体分析师"},
-        {"key": "news", "label": "新闻分析师"},
-        {"key": "fundamentals", "label": "基本面分析师"},
-    ]},
-    {"key": "research", "label": "研究辩论", "agents": [
-        {"key": "bull", "label": "多头研究员"},
-        {"key": "bear", "label": "空头研究员"},
-        {"key": "research_manager", "label": "研究经理"},
-    ]},
-    {"key": "trading", "label": "交易计划", "agents": [
-        {"key": "trader", "label": "交易员"},
-    ]},
-    {"key": "risk", "label": "风险管理", "agents": [
-        {"key": "aggressive", "label": "激进风险分析师"},
-        {"key": "conservative", "label": "保守风险分析师"},
-        {"key": "neutral", "label": "中性风险分析师"},
-    ]},
-    {"key": "portfolio", "label": "投资决策", "agents": [
-        {"key": "portfolio_manager", "label": "投资组合经理"},
-    ]},
+    {
+        "key": "analysts",
+        "label": "分析师团队",
+        "agents": [
+            {"key": "market", "label": "市场技术面分析师"},
+            {"key": "social", "label": "社交媒体分析师"},
+            {"key": "news", "label": "新闻分析师"},
+            {"key": "fundamentals", "label": "基本面分析师"},
+        ],
+    },
+    {
+        "key": "research",
+        "label": "研究辩论",
+        "agents": [
+            {"key": "bull", "label": "多头研究员"},
+            {"key": "bear", "label": "空头研究员"},
+            {"key": "research_manager", "label": "研究经理"},
+        ],
+    },
+    {
+        "key": "trading",
+        "label": "交易计划",
+        "agents": [
+            {"key": "trader", "label": "交易员"},
+        ],
+    },
+    {
+        "key": "risk",
+        "label": "风险管理",
+        "agents": [
+            {"key": "aggressive", "label": "激进风险分析师"},
+            {"key": "conservative", "label": "保守风险分析师"},
+            {"key": "neutral", "label": "中性风险分析师"},
+        ],
+    },
+    {
+        "key": "portfolio",
+        "label": "投资决策",
+        "agents": [
+            {"key": "portfolio_manager", "label": "投资组合经理"},
+        ],
+    },
 ]
 
 REPORT_SECTION_KEYS = {
@@ -77,7 +97,11 @@ class TaskManager:
 
     def create_task(self, request: AnalyzeRequest) -> str:
         task_id = uuid.uuid4().hex[:12]
-        depth = request.research_depth.value if hasattr(request.research_depth, "value") else "medium"
+        depth = (
+            request.research_depth.value
+            if hasattr(request.research_depth, "value")
+            else "medium"
+        )
 
         stages = self._build_stages(request.selected_analysts)
 
@@ -91,7 +115,9 @@ class TaskManager:
             current_step="初始化中...",
             stages=stages,
             current_stage_key="analysts",
-            token_stats=TokenStats(input_tokens=0, output_tokens=0, llm_calls=0, tool_calls=0),
+            token_stats=TokenStats(
+                input_tokens=0, output_tokens=0, llm_calls=0, tool_calls=0
+            ),
         )
         with self._lock:
             self._tasks[task_id] = progress
@@ -115,22 +141,32 @@ class TaskManager:
         for stage_def in STAGE_DEFINITIONS:
             if stage_def["key"] == "analysts":
                 agents = [
-                    {"key": a["key"], "label": a["label"], "status": AgentStatus.PENDING.value,
-                     "enabled": a["key"] in selected_keys}
+                    {
+                        "key": a["key"],
+                        "label": a["label"],
+                        "status": AgentStatus.PENDING.value,
+                        "enabled": a["key"] in selected_keys,
+                    }
                     for a in stage_def["agents"]
                 ]
             else:
                 agents = [
-                    {"key": a["key"], "label": a["label"], "status": AgentStatus.PENDING.value,
-                     "enabled": True}
+                    {
+                        "key": a["key"],
+                        "label": a["label"],
+                        "status": AgentStatus.PENDING.value,
+                        "enabled": True,
+                    }
                     for a in stage_def["agents"]
                 ]
-            stages.append(StageInfo(
-                key=stage_def["key"],
-                label=stage_def["label"],
-                status=AgentStatus.PENDING,
-                agents=agents,
-            ))
+            stages.append(
+                StageInfo(
+                    key=stage_def["key"],
+                    label=stage_def["label"],
+                    status=AgentStatus.PENDING,
+                    agents=agents,
+                )
+            )
         return stages
 
     def get_progress(self, task_id: str) -> Optional[TaskProgress]:
@@ -148,7 +184,9 @@ class TaskManager:
                 for key, value in kwargs.items():
                     setattr(task, key, value)
 
-    def _update_agent(self, task_id: str, stage_key: str, agent_key: str, status: AgentStatus):
+    def _update_agent(
+        self, task_id: str, stage_key: str, agent_key: str, status: AgentStatus
+    ):
         with self._lock:
             task = self._tasks.get(task_id)
             if not task:
@@ -173,8 +211,14 @@ class TaskManager:
                     stage.status = status
                     break
 
-    def _add_tokens(self, task_id: str, input_tokens: int = 0, output_tokens: int = 0,
-                    llm_calls: int = 0, tool_calls: int = 0):
+    def _add_tokens(
+        self,
+        task_id: str,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        llm_calls: int = 0,
+        tool_calls: int = 0,
+    ):
         with self._lock:
             task = self._tasks.get(task_id)
             if not task or not task.token_stats:
@@ -198,18 +242,22 @@ class TaskManager:
         with self._lock:
             task = self._tasks.get(task_id)
             if task:
-                task.messages.append({
-                    "time": datetime.now(timezone.utc).isoformat(),
-                    "type": msg_type,
-                    "content": content,
-                })
+                task.messages.append(
+                    {
+                        "time": datetime.now(timezone.utc).isoformat(),
+                        "type": msg_type,
+                        "content": content,
+                    }
+                )
 
     def _run_analysis(self, task_id: str, request: AnalyzeRequest):
         try:
             now = datetime.now(timezone.utc).isoformat()
             self._update(task_id, status=TaskStatus.RUNNING, started_at=now)
 
-            self._append_message(task_id, "info", f"开始分析 {request.ticker} ({request.trade_date})")
+            self._append_message(
+                task_id, "info", f"开始分析 {request.ticker} ({request.trade_date})"
+            )
             self._update(task_id, current_step="构建配置...")
 
             config = DEFAULT_CONFIG.copy()
@@ -218,7 +266,11 @@ class TaskManager:
             config["quick_think_llm"] = request.quick_think_llm
             config["output_language"] = request.output_language
 
-            depth = request.research_depth.value if hasattr(request.research_depth, "value") else "medium"
+            depth = (
+                request.research_depth.value
+                if hasattr(request.research_depth, "value")
+                else "medium"
+            )
             rounds = DEPTH_MAP.get(depth, 3)
             config["max_debate_rounds"] = rounds
             config["max_risk_discuss_rounds"] = rounds
@@ -227,10 +279,15 @@ class TaskManager:
                 config["backend_url"] = request.backend_url
 
             if request.api_key:
-                os.environ[f"{request.llm_provider.value.upper()}_API_KEY"] = request.api_key
+                os.environ[f"{request.llm_provider.value.upper()}_API_KEY"] = (
+                    request.api_key
+                )
 
             # Provider-specific thinking configuration
-            if request.llm_provider.value == "openai" and request.openai_reasoning_effort:
+            if (
+                request.llm_provider.value == "openai"
+                and request.openai_reasoning_effort
+            ):
                 config["openai_reasoning_effort"] = request.openai_reasoning_effort
             if request.llm_provider.value == "anthropic" and request.anthropic_effort:
                 config["anthropic_effort"] = request.anthropic_effort
@@ -244,13 +301,21 @@ class TaskManager:
 
             if request.market_profile.value in ("china", "hongkong"):
                 config["market_profile"] = request.market_profile.value
-                market_key = "china_market" if request.market_profile.value == "china" else "hongkong_market"
+                market_key = (
+                    "china_market"
+                    if request.market_profile.value == "china"
+                    else "hongkong_market"
+                )
                 config.setdefault(market_key, {})["simulation_only"] = True
 
             selected = [a.value for a in request.selected_analysts]
 
             self._append_message(task_id, "info", f"研究深度: {depth} ({rounds}轮辩论)")
-            self._append_message(task_id, "info", f"LLM: {config['llm_provider']} / {config['deep_think_llm']}")
+            self._append_message(
+                task_id,
+                "info",
+                f"LLM: {config['llm_provider']} / {config['deep_think_llm']}",
+            )
             self._append_message(task_id, "info", f"分析师: {', '.join(selected)}")
             self._update(task_id, current_step="初始化 TradingAgentsGraph...")
 
@@ -258,7 +323,9 @@ class TaskManager:
 
             # Mark selected analysts as in_progress
             for a in request.selected_analysts:
-                self._update_agent(task_id, "analysts", a.value, AgentStatus.IN_PROGRESS)
+                self._update_agent(
+                    task_id, "analysts", a.value, AgentStatus.IN_PROGRESS
+                )
             self._set_stage_status(task_id, "analysts", AgentStatus.IN_PROGRESS)
 
             ta = TradingAgentsGraph(

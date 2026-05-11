@@ -22,7 +22,6 @@ from tradingagents.agents.schemas import (
 )
 from tradingagents.agents.trader.trader import create_trader
 
-
 # ---------------------------------------------------------------------------
 # Render functions
 # ---------------------------------------------------------------------------
@@ -31,7 +30,9 @@ from tradingagents.agents.trader.trader import create_trader
 @pytest.mark.unit
 class TestRenderTraderProposal:
     def test_minimal_required_fields(self):
-        p = TraderProposal(action=TraderAction.HOLD, reasoning="Balanced setup; no edge.")
+        p = TraderProposal(
+            action=TraderAction.HOLD, reasoning="Balanced setup; no edge."
+        )
         md = render_trader_proposal(p)
         assert "**Action**: Hold" in md
         assert "**Reasoning**: Balanced setup; no edge." in md
@@ -153,7 +154,9 @@ class TestTraderAgent:
             "FINAL TRANSACTION PROPOSAL: **SELL**"
         )
         llm = MagicMock()
-        llm.with_structured_output.side_effect = NotImplementedError("provider unsupported")
+        llm.with_structured_output.side_effect = NotImplementedError(
+            "provider unsupported"
+        )
         llm.invoke.return_value = MagicMock(content=plain_response)
         trader = create_trader(llm)
         result = trader(_make_trader_state())
@@ -225,7 +228,9 @@ class TestResearchManagerAgent:
     def test_falls_back_to_freetext_when_structured_unavailable(self):
         plain_response = "**Recommendation**: Sell\n\n**Rationale**: ...\n\n**Strategic Actions**: ..."
         llm = MagicMock()
-        llm.with_structured_output.side_effect = NotImplementedError("provider unsupported")
+        llm.with_structured_output.side_effect = NotImplementedError(
+            "provider unsupported"
+        )
         llm.invoke.return_value = MagicMock(content=plain_response)
         rm = create_research_manager(llm)
         result = rm(_make_rm_state())
