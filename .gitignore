@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[codz]
+*$py.class
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Node / Frontend
+node_modules/
+
+# Local data
+local_data/
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Large binaries
+*.pkg
+*.dmg
