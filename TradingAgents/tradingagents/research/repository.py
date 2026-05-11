@@ -41,7 +41,15 @@ def _market_name(symbol: str) -> str:
     return "US"
 
 
-def upsert_watchlist_symbols(symbols: list[str]) -> None:
+def upsert_watchlist_symbols(
+    symbols: list[str],
+    *,
+    market: str | None = None,
+    name: str | None = None,
+    industry: str | None = None,
+    thesis: str | None = None,
+    status: str = "active",
+) -> None:
     init_db()
     timestamp = _now()
     seen: set[str] = set()
@@ -52,17 +60,31 @@ def upsert_watchlist_symbols(symbols: list[str]) -> None:
             continue
         seen.add(normalized)
         rows.append(
-            (normalized, _market_name(normalized), "active", timestamp, timestamp)
+            (
+                normalized,
+                name,
+                market or _market_name(normalized),
+                industry,
+                thesis,
+                status,
+                timestamp,
+                timestamp,
+            )
         )
 
     with get_connection() as conn:
         conn.executemany(
             """
-            INSERT INTO watchlist (symbol, market, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO watchlist (
+                symbol, name, market, industry, thesis, status, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(symbol) DO UPDATE SET
+                name = COALESCE(excluded.name, watchlist.name),
                 market = excluded.market,
-                status = 'active',
+                industry = COALESCE(excluded.industry, watchlist.industry),
+                thesis = COALESCE(excluded.thesis, watchlist.thesis),
+                status = excluded.status,
                 updated_at = excluded.updated_at
             """,
             rows,
@@ -80,6 +102,21 @@ def list_watchlist(active_only: bool = True) -> list[dict]:
     query += " ORDER BY symbol"
     with get_connection() as conn:
         return [_row_to_dict(row) for row in conn.execute(query, params).fetchall()]
+
+
+def deactivate_watchlist_symbol(symbol: str) -> None:
+    init_db()
+    normalized = _normalize_symbol(symbol)
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE watchlist
+            SET status = ?, updated_at = ?
+            WHERE symbol = ?
+            """,
+            ("inactive", _now(), normalized),
+        )
+        conn.commit()
 
 
 def upsert_daily_bars(rows: list[dict]) -> None:
