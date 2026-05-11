@@ -138,6 +138,32 @@ SCHEMA_STATEMENTS = [
         created_at TEXT
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS trade_log (
+        trade_id TEXT PRIMARY KEY,
+        strategy_version TEXT,
+        symbol TEXT,
+        market TEXT,
+        side TEXT,
+        date TEXT,
+        price REAL,
+        quantity REAL,
+        cost REAL,
+        reason TEXT,
+        created_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS equity_curve (
+        strategy_version TEXT,
+        date TEXT,
+        equity REAL,
+        cash REAL,
+        positions_value REAL,
+        drawdown REAL,
+        PRIMARY KEY(strategy_version, date)
+    )
+    """,
 ]
 
 
