@@ -1,5 +1,36 @@
+import pandas as pd
+
 from tradingagents.markets.china import normalize_china_symbol
 from tradingagents.markets.hongkong import normalize_hk_symbol
+
+DAILY_BAR_COLUMNS = [
+    "date",
+    "symbol",
+    "market",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "amount",
+    "source",
+]
+
+_AKSHARE_DAILY_COLUMN_ALIASES = {
+    "date": ("日期", "date", "trade_date"),
+    "open": ("开盘", "open"),
+    "high": ("最高", "high"),
+    "low": ("最低", "low"),
+    "close": ("收盘", "close"),
+    "volume": ("成交量", "volume", "vol"),
+    "amount": ("成交额", "amount"),
+}
+
+_TENCENT_DAILY_COLUMN_ALIASES = {
+    **_AKSHARE_DAILY_COLUMN_ALIASES,
+    "volume": ("成交量", "volume", "vol", "amount"),
+    "amount": ("成交额",),
+}
 
 
 def _stock_zh_a_hist(**kwargs):
@@ -8,10 +39,22 @@ def _stock_zh_a_hist(**kwargs):
     return ak.stock_zh_a_hist(**kwargs)
 
 
+def _stock_zh_a_hist_tx(**kwargs):
+    import akshare as ak
+
+    return ak.stock_zh_a_hist_tx(**kwargs)
+
+
 def _stock_hk_hist(**kwargs):
     import akshare as ak
 
     return ak.stock_hk_hist(**kwargs)
+
+
+def _stock_hk_daily(**kwargs):
+    import akshare as ak
+
+    return ak.stock_hk_daily(**kwargs)
 
 
 def _stock_news_em(**kwargs):
@@ -28,6 +71,143 @@ def _safe_call(fn, *args, label: str = "", **kwargs):
         return result
     except Exception:
         return None
+
+
+def _fmt_date(value: str) -> str:
+    return value.replace("-", "")
+
+
+def _empty_daily_frame() -> pd.DataFrame:
+    return pd.DataFrame(columns=DAILY_BAR_COLUMNS)
+
+
+def _pick_column(frame: pd.DataFrame, names: tuple[str, ...]) -> pd.Series:
+    for name in names:
+        if name in frame:
+            return frame[name]
+    return pd.Series([pd.NA] * len(frame), index=frame.index)
+
+
+def _normalize_date_column(frame: pd.DataFrame) -> pd.Series:
+    raw = _pick_column(frame, _AKSHARE_DAILY_COLUMN_ALIASES["date"])
+    parsed = pd.to_datetime(raw, errors="coerce")
+    return parsed.dt.strftime("%Y-%m-%d")
+
+
+def _standardize_daily_frame(
+    frame: pd.DataFrame | None,
+    symbol: str,
+    market: str,
+    *,
+    source: str = "akshare",
+    column_aliases: dict[str, tuple[str, ...]] | None = None,
+) -> pd.DataFrame:
+    if frame is None or frame.empty:
+        return _empty_daily_frame()
+
+    aliases = column_aliases or _AKSHARE_DAILY_COLUMN_ALIASES
+    result = pd.DataFrame(index=frame.index)
+    result["date"] = _normalize_date_column(frame)
+    result["symbol"] = symbol
+    result["market"] = market
+    for column in ("open", "high", "low", "close", "volume", "amount"):
+        result[column] = pd.to_numeric(
+            _pick_column(frame, aliases[column]),
+            errors="coerce",
+        )
+    result["source"] = source
+    result = result.sort_values("date", kind="stable")
+    return result[DAILY_BAR_COLUMNS].reset_index(drop=True)
+
+
+def _filter_date_range(frame: pd.DataFrame, start_date: str, end_date: str) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    filtered = frame[(frame["date"] >= start_date) & (frame["date"] <= end_date)]
+    return filtered.reset_index(drop=True)
+
+
+def _tencent_symbol(normalized_symbol: str) -> str:
+    code, exchange = normalized_symbol.split(".")
+    return f"{exchange.lower()}{code}"
+
+
+def get_china_stock_data_frame_akshare(
+    symbol: str, start_date: str, end_date: str
+) -> pd.DataFrame:
+    normalized = normalize_china_symbol(symbol)
+    code = normalized.split(".")[0]
+    primary_error: Exception | None = None
+    try:
+        frame = _stock_zh_a_hist(
+            symbol=code,
+            period="daily",
+            start_date=_fmt_date(start_date),
+            end_date=_fmt_date(end_date),
+            adjust="qfq",
+        )
+        standardized = _standardize_daily_frame(frame, normalized, "CHINA")
+        if not standardized.empty:
+            return standardized
+    except Exception as exc:
+        primary_error = exc
+
+    try:
+        frame = _stock_zh_a_hist_tx(
+            symbol=_tencent_symbol(normalized),
+            start_date=_fmt_date(start_date),
+            end_date=_fmt_date(end_date),
+            adjust="qfq",
+        )
+        return _standardize_daily_frame(
+            frame,
+            normalized,
+            "CHINA",
+            source="akshare_tx",
+            column_aliases=_TENCENT_DAILY_COLUMN_ALIASES,
+        )
+    except Exception as exc:
+        if primary_error is not None:
+            raise RuntimeError(
+                f"AKShare China requests failed: eastmoney={primary_error}; "
+                f"tencent={exc}"
+            ) from exc
+        raise
+
+
+def get_hk_stock_data_frame_akshare(
+    symbol: str, start_date: str, end_date: str
+) -> pd.DataFrame:
+    normalized = normalize_hk_symbol(symbol)
+    code = normalized.split(".")[0]
+    primary_error: Exception | None = None
+    try:
+        frame = _stock_hk_hist(
+            symbol=code,
+            period="daily",
+            start_date=_fmt_date(start_date),
+            end_date=_fmt_date(end_date),
+            adjust="qfq",
+        )
+        standardized = _standardize_daily_frame(frame, normalized, "HONGKONG")
+        if not standardized.empty:
+            return standardized
+    except Exception as exc:
+        primary_error = exc
+
+    try:
+        frame = _stock_hk_daily(symbol=code, adjust="qfq")
+        standardized = _standardize_daily_frame(
+            frame, normalized, "HONGKONG", source="akshare_sina"
+        )
+        return _filter_date_range(standardized, start_date, end_date)
+    except Exception as exc:
+        if primary_error is not None:
+            raise RuntimeError(
+                f"AKShare HK requests failed: eastmoney={primary_error}; sina={exc}"
+            ) from exc
+        raise
+
 
 
 def get_china_stock_data_akshare(symbol: str, start_date: str, end_date: str) -> str:

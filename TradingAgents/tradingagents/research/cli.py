@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from .data_sync import sync_watchlist_bars
+from .data_sync import DATA_SOURCES, sync_watchlist_bars
 from .db import init_db
 from .factor_pipeline import compute_watchlist_factors
 from .quality import list_quality_issues
@@ -25,6 +25,12 @@ def build_parser() -> argparse.ArgumentParser:
     sync_bars = subparsers.add_parser("sync-bars")
     sync_bars.add_argument("--start", required=True)
     sync_bars.add_argument("--end", required=True)
+    sync_bars.add_argument(
+        "--source",
+        choices=DATA_SOURCES,
+        default=None,
+        help="daily bar source; defaults to TRADINGAGENTS_DATA_SOURCE or akshare",
+    )
 
     compute_factors = subparsers.add_parser("compute-factors")
     compute_factors.add_argument("--start", required=True)
@@ -54,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "sync-bars":
-        rows_synced = sync_watchlist_bars(args.start, args.end)
+        rows_synced = sync_watchlist_bars(args.start, args.end, source=args.source)
         print(f"synced {rows_synced} daily bars")
         return 0
 

@@ -3,6 +3,7 @@ database_path: local_data/db/research.db
 reports_dir: local_data/reports
 timezone: Asia/Shanghai
 output_language: zh-CN
+data_source: akshare
 
 safety:
   mode: research_only

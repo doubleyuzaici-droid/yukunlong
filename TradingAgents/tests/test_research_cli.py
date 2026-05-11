@@ -63,3 +63,35 @@ def test_research_cli_compute_factors_command(tmp_path, monkeypatch, capsys):
     with get_connection() as conn:
         count = conn.execute("SELECT COUNT(*) FROM factor_daily").fetchone()[0]
     assert count == 130
+
+
+def test_research_cli_sync_bars_accepts_data_source(monkeypatch, capsys):
+    from tradingagents.research.cli import main
+
+    calls = []
+
+    def fake_sync_watchlist_bars(start, end, *, source=None):
+        calls.append((start, end, source))
+        return 3
+
+    monkeypatch.setattr(
+        "tradingagents.research.cli.sync_watchlist_bars", fake_sync_watchlist_bars
+    )
+
+    assert (
+        main(
+            [
+                "sync-bars",
+                "--start",
+                "2026-05-01",
+                "--end",
+                "2026-05-11",
+                "--source",
+                "akshare",
+            ]
+        )
+        == 0
+    )
+
+    assert calls == [("2026-05-01", "2026-05-11", "akshare")]
+    assert "synced 3 daily bars" in capsys.readouterr().out

@@ -1,29 +1,106 @@
 from __future__ import annotations
 
+import os
+
 import pandas as pd
 
+from tradingagents.dataflows.akshare_china import (
+    get_china_stock_data_frame_akshare,
+    get_hk_stock_data_frame_akshare,
+)
 from tradingagents.dataflows.tushare_china import (
-    get_china_stock_data_frame,
-    get_hk_stock_data_frame,
+    get_china_stock_data_frame as get_china_stock_data_frame_tushare,
+    get_hk_stock_data_frame as get_hk_stock_data_frame_tushare,
 )
 from tradingagents.markets import Market, detect_market
 
+from .quality import log_quality_issue
 from .repository import list_watchlist, upsert_daily_bars
 
+DATA_SOURCES = ("akshare", "tushare", "auto")
+DEFAULT_DATA_SOURCE = "akshare"
 
-def fetch_daily_bars(symbol: str, start: str, end: str) -> pd.DataFrame:
-    market = detect_market(symbol)
-    if market == Market.CHINA:
-        return get_china_stock_data_frame(symbol, start, end)
-    if market == Market.HONGKONG:
-        return get_hk_stock_data_frame(symbol, start, end)
+
+def _resolve_data_source(source: str | None = None) -> str:
+    value = (source or os.getenv("TRADINGAGENTS_DATA_SOURCE") or DEFAULT_DATA_SOURCE)
+    normalized = value.strip().lower()
+    if normalized not in DATA_SOURCES:
+        supported = ", ".join(DATA_SOURCES)
+        raise ValueError(
+            f"Unsupported research data source: {value}. Use one of: {supported}"
+        )
+    return normalized
+
+
+def _fetch_daily_bars_from_source(
+    symbol: str,
+    start: str,
+    end: str,
+    *,
+    market: Market,
+    source: str,
+) -> pd.DataFrame:
+    if market == Market.CHINA and source == "akshare":
+        return get_china_stock_data_frame_akshare(symbol, start, end)
+    if market == Market.HONGKONG and source == "akshare":
+        return get_hk_stock_data_frame_akshare(symbol, start, end)
+    if market == Market.CHINA and source == "tushare":
+        return get_china_stock_data_frame_tushare(symbol, start, end)
+    if market == Market.HONGKONG and source == "tushare":
+        return get_hk_stock_data_frame_tushare(symbol, start, end)
     raise ValueError(f"Research data sync only supports A/H symbols: {symbol}")
 
 
-def sync_watchlist_bars(start: str, end: str) -> int:
+def fetch_daily_bars(
+    symbol: str, start: str, end: str, *, source: str | None = None
+) -> pd.DataFrame:
+    market = detect_market(symbol)
+    data_source = _resolve_data_source(source)
+    if data_source != "auto":
+        return _fetch_daily_bars_from_source(
+            symbol, start, end, market=market, source=data_source
+        )
+
+    errors = []
+    for candidate in ("akshare", "tushare"):
+        try:
+            frame = _fetch_daily_bars_from_source(
+                symbol, start, end, market=market, source=candidate
+            )
+        except Exception as exc:
+            errors.append(f"{candidate}: {exc}")
+            continue
+        if not frame.empty:
+            return frame
+
+    if errors:
+        raise RuntimeError("; ".join(errors))
+    return pd.DataFrame()
+
+
+def _sync_error_message(source: str, exc: Exception) -> str:
+    message = f"{source} sync failed: {exc}"
+    if len(message) > 500:
+        return f"{message[:497]}..."
+    return message
+
+
+def sync_watchlist_bars(start: str, end: str, *, source: str | None = None) -> int:
+    data_source = _resolve_data_source(source)
     total = 0
     for item in list_watchlist():
-        frame = fetch_daily_bars(item["symbol"], start, end)
+        symbol = item["symbol"]
+        try:
+            frame = fetch_daily_bars(symbol, start, end, source=data_source)
+        except Exception as exc:
+            log_quality_issue(
+                check_name="data_sync",
+                severity="error",
+                date=end,
+                symbol=symbol,
+                message=_sync_error_message(data_source, exc),
+            )
+            continue
         if frame.empty:
             continue
         upsert_daily_bars(frame.to_dict("records"))
