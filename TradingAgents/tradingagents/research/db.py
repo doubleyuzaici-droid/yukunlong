@@ -216,8 +216,25 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
+def _ensure_factor_daily_columns(conn: sqlite3.Connection) -> None:
+    required_columns = {
+        "main_net_inflow_ratio20": "REAL",
+        "northbound_inflow_5d": "REAL",
+    }
+    existing = {
+        row[1] if not isinstance(row, sqlite3.Row) else row["name"]
+        for row in conn.execute("PRAGMA table_info(factor_daily)").fetchall()
+    }
+    for column, column_type in required_columns.items():
+        if column not in existing:
+            conn.execute(
+                f"ALTER TABLE factor_daily ADD COLUMN {column} {column_type}"
+            )
+
+
 def init_db() -> None:
     with get_connection() as conn:
         for statement in SCHEMA_STATEMENTS:
             conn.execute(statement)
+        _ensure_factor_daily_columns(conn)
         conn.commit()

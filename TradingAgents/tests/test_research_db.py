@@ -44,3 +44,34 @@ def test_get_connection_uses_row_factory(tmp_path, monkeypatch):
 
     assert row["symbol"] == "600519.SH"
     assert row["market"] == "CHINA"
+
+
+def test_init_db_migrates_existing_factor_daily_columns(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRADINGAGENTS_DATA_DIR", str(tmp_path))
+
+    from tradingagents.research.db import get_connection, init_db
+
+    with get_connection() as conn:
+        conn.execute(
+            """
+            CREATE TABLE factor_daily (
+                date TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                ma20 REAL,
+                updated_at TEXT,
+                PRIMARY KEY(date, symbol)
+            )
+            """
+        )
+        conn.commit()
+
+    init_db()
+
+    with get_connection() as conn:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(factor_daily)").fetchall()
+        }
+
+    assert "main_net_inflow_ratio20" in columns
+    assert "northbound_inflow_5d" in columns
