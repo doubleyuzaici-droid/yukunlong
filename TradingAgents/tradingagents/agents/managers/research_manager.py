@@ -16,6 +16,7 @@ def create_research_manager(llm):
     def research_manager_node(state) -> dict:
         instrument_context = build_instrument_context(state["company_of_interest"])
         history = state["investment_debate_state"].get("history", "")
+        quant_signal_context = state.get("quant_signal_context", "")
 
         investment_debate_state = state["investment_debate_state"]
 
@@ -35,6 +36,11 @@ def create_research_manager(llm):
 Commit to a clear stance whenever the debate's strongest arguments warrant one; reserve Hold for situations where the evidence on both sides is genuinely balanced.
 
 ---
+
+**Rule-based Quantitative Signal Context:**
+{quant_signal_context}
+
+Use these signals as hard evidence. If your recommendation conflicts with them, explicitly explain why the LLM-side evidence should override the rule-based signal.
 
 **Debate History:**
 {history}"""

@@ -12,10 +12,11 @@ from tradingagents.dataflows.tushare_china import (
     get_china_stock_data_frame as get_china_stock_data_frame_tushare,
     get_hk_stock_data_frame as get_hk_stock_data_frame_tushare,
 )
+from tradingagents.dataflows.fund_flow import fetch_fund_flow_daily
 from tradingagents.markets import Market, detect_market
 
 from .quality import log_quality_issue
-from .repository import list_watchlist, upsert_daily_bars
+from .repository import list_watchlist, upsert_daily_bars, upsert_fund_flows
 
 DATA_SOURCES = ("akshare", "tushare", "auto")
 DEFAULT_DATA_SOURCE = "akshare"
@@ -104,5 +105,35 @@ def sync_watchlist_bars(start: str, end: str, *, source: str | None = None) -> i
         if frame.empty:
             continue
         upsert_daily_bars(frame.to_dict("records"))
+        total += len(frame)
+    return total
+
+
+
+def sync_watchlist_fund_flows(start: str, end: str) -> int:
+    total = 0
+    for item in list_watchlist():
+        symbol = item["symbol"]
+        try:
+            frame = fetch_fund_flow_daily(symbol, start, end)
+        except Exception as exc:
+            log_quality_issue(
+                check_name="fund_flow_sync",
+                severity="warning",
+                date=end,
+                symbol=symbol,
+                message=_sync_error_message("fund_flow", exc),
+            )
+            continue
+        if frame.empty:
+            log_quality_issue(
+                check_name="fund_flow_sync",
+                severity="warning",
+                date=end,
+                symbol=symbol,
+                message="fund flow unavailable",
+            )
+            continue
+        upsert_fund_flows(frame.to_dict("records"))
         total += len(frame)
     return total

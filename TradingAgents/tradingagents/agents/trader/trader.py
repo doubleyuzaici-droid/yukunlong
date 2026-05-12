@@ -21,6 +21,7 @@ def create_trader(llm):
         company_name = state["company_of_interest"]
         instrument_context = build_instrument_context(company_name)
         investment_plan = state["investment_plan"]
+        quant_signal_context = state.get("quant_signal_context", "")
 
         messages = [
             {
@@ -28,7 +29,8 @@ def create_trader(llm):
                 "content": (
                     "You are a trading agent analyzing market data to make investment decisions. "
                     "Based on your analysis, provide a specific recommendation to buy, sell, or hold. "
-                    "Anchor your reasoning in the analysts' reports and the research plan."
+                    "Anchor your reasoning in the analysts' reports and the research plan. "
+                    "When action implies taking risk (Buy/Sell), provide concrete risk controls: stop loss, take profit, max position percentage, holding period days, and exit conditions."
                 ),
             },
             {
@@ -39,6 +41,8 @@ def create_trader(llm):
                     f"insights from current technical market trends, macroeconomic indicators, and "
                     f"social media sentiment. Use this plan as a foundation for evaluating your next "
                     f"trading decision.\n\nProposed Investment Plan: {investment_plan}\n\n"
+                    f"Rule-based quantitative signal context:\n{quant_signal_context}\n\n"
+                    f"Use these signals as hard evidence. If your recommendation conflicts with them, explicitly explain why the LLM-side evidence should override the rule-based signal.\n\n"
                     f"Leverage these insights to make an informed and strategic decision."
                 ),
             },

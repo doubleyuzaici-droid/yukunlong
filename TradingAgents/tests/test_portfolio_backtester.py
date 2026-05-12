@@ -8,6 +8,8 @@ def _daily_rows(
     symbol: str = "600519.SH",
     market: str = "CHINA",
     amount: float = 100_000_000,
+    atr14: float = 2.0,
+    force_stop_day: str | None = None,
 ):
     start = date(2026, 1, 1)
     rows = []
@@ -35,8 +37,11 @@ def _daily_rows(
                     else None
                 ),
                 "source": "fixture",
+                "atr14": atr14,
             }
         )
+        if force_stop_day and current.isoformat() == force_stop_day:
+            rows[-1]["low"] = open_price - 10.0
     return rows
 
 
@@ -63,7 +68,7 @@ def test_portfolio_backtest_generates_trade_log_and_equity_curve(tmp_path, monke
 
     from tradingagents.backtest.portfolio_backtester import run_portfolio_backtest
     from tradingagents.research.db import get_connection, init_db
-    from tradingagents.research.repository import upsert_daily_bars, upsert_signals
+    from tradingagents.research.repository import upsert_daily_bars, upsert_factors, upsert_signals
 
     init_db()
     upsert_daily_bars(_daily_rows())
@@ -88,7 +93,11 @@ def test_portfolio_backtest_skips_suspended_entry(tmp_path, monkeypatch):
 
     from tradingagents.backtest.portfolio_backtester import run_portfolio_backtest
     from tradingagents.research.db import init_db
-    from tradingagents.research.repository import upsert_daily_bars, upsert_signals
+    from tradingagents.research.repository import (
+        upsert_daily_bars,
+        upsert_factors,
+        upsert_signals,
+    )
 
     init_db()
     upsert_daily_bars(_daily_rows(suspended_entry=True))
@@ -105,7 +114,11 @@ def test_portfolio_backtest_skips_china_limit_up_entry(tmp_path, monkeypatch):
 
     from tradingagents.backtest.portfolio_backtester import run_portfolio_backtest
     from tradingagents.research.db import init_db
-    from tradingagents.research.repository import upsert_daily_bars, upsert_signals
+    from tradingagents.research.repository import (
+        upsert_daily_bars,
+        upsert_factors,
+        upsert_signals,
+    )
 
     init_db()
     upsert_daily_bars(_daily_rows(limit_up_entry=True))
@@ -122,7 +135,7 @@ def test_portfolio_backtest_filters_low_liquidity_hk_entry(tmp_path, monkeypatch
 
     from tradingagents.backtest.portfolio_backtester import run_portfolio_backtest
     from tradingagents.research.db import init_db
-    from tradingagents.research.repository import upsert_daily_bars, upsert_signals
+    from tradingagents.research.repository import upsert_daily_bars, upsert_factors, upsert_signals
 
     init_db()
     upsert_daily_bars(
@@ -134,3 +147,25 @@ def test_portfolio_backtest_filters_low_liquidity_hk_entry(tmp_path, monkeypatch
 
     assert result["metrics"]["trade_count"] == 0
     assert result["metrics"]["final_equity"] == 1_000_000
+
+
+def test_portfolio_backtest_exits_on_atr_stop(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRADINGAGENTS_DATA_DIR", str(tmp_path))
+
+    from tradingagents.backtest.portfolio_backtester import run_portfolio_backtest
+    from tradingagents.research.db import get_connection, init_db
+    from tradingagents.research.repository import upsert_daily_bars, upsert_factors, upsert_signals
+
+    init_db()
+    upsert_daily_bars(_daily_rows(atr14=2.0, force_stop_day="2026-01-13"))
+    upsert_factors([{"date": "2026-01-11", "symbol": "600519.SH", "atr14": 2.0}])
+    upsert_signals([_signal()])
+
+    result = run_portfolio_backtest("2026-01-01", "2026-02-28")
+
+    assert result["metrics"]["trade_count"] == 2
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT reason FROM trade_log WHERE side = 'exit' LIMIT 1"
+        ).fetchone()
+    assert row["reason"] == "atr_stop_loss"

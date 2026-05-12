@@ -31,6 +31,7 @@ def create_portfolio_manager(llm):
         risk_debate_state = state["risk_debate_state"]
         research_plan = state["investment_plan"]
         trader_plan = state["trader_investment_plan"]
+        quant_signal_context = state.get("quant_signal_context", "")
 
         past_context = state.get("past_context", "")
         lessons_line = (
@@ -56,12 +57,19 @@ def create_portfolio_manager(llm):
 - Research Manager's investment plan: **{research_plan}**
 - Trader's transaction proposal: **{trader_plan}**
 {lessons_line}
+**Rule-based Quantitative Signal Context:**
+{quant_signal_context}
+
+Use these signals as hard evidence. If your recommendation conflicts with them, explicitly explain why the LLM-side evidence should override the rule-based signal.
+
 **Risk Analysts Debate History:**
 {history}
 
 ---
 
-Be decisive and ground every conclusion in specific evidence from the analysts.{get_language_instruction()}"""
+Be decisive and ground every conclusion in specific evidence from the analysts.
+
+When final rating implies position change (Buy/Overweight/Underweight/Sell), provide concrete risk controls: stop loss, take profit or target, maximum position percentage, holding period in trading days, and exit conditions. If any field cannot be computed, explain the missing evidence in your summary/thesis.{get_language_instruction()}"""
 
         final_trade_decision = invoke_structured_or_freetext(
             structured_llm,

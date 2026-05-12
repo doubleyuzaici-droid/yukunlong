@@ -99,3 +99,43 @@ def test_sync_watchlist_bars_logs_symbol_errors_and_continues(monkeypatch):
             "message": "akshare sync failed: temporary remote disconnect",
         }
     ]
+
+
+def test_sync_watchlist_fund_flows_upserts_and_logs_missing(monkeypatch):
+    from tradingagents.research import data_sync
+
+    upserted = []
+    quality_issues = []
+
+    monkeypatch.setattr(
+        data_sync,
+        "list_watchlist",
+        lambda: [{"symbol": "600519.SH"}, {"symbol": "00700.HK"}],
+    )
+
+    def fake_fetch(symbol, _start, _end):
+        if symbol == "00700.HK":
+            return pd.DataFrame()
+        return pd.DataFrame([{
+            "date": "2026-05-10",
+            "symbol": symbol,
+            "main_net_inflow": 1.0,
+            "large_net_inflow": 0.5,
+            "northbound_net_inflow": 0.2,
+        }])
+
+    monkeypatch.setattr(data_sync, "fetch_fund_flow_daily", fake_fetch)
+    monkeypatch.setattr(data_sync, "upsert_fund_flows", lambda rows: upserted.extend(rows))
+    monkeypatch.setattr(data_sync, "log_quality_issue", lambda **kwargs: quality_issues.append(kwargs))
+
+    count = data_sync.sync_watchlist_fund_flows("2026-05-01", "2026-05-11")
+
+    assert count == 1
+    assert upserted[0]["symbol"] == "600519.SH"
+    assert quality_issues == [{
+        "check_name": "fund_flow_sync",
+        "severity": "warning",
+        "date": "2026-05-11",
+        "symbol": "00700.HK",
+        "message": "fund flow unavailable",
+    }]

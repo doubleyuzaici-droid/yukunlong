@@ -88,6 +88,19 @@ SCHEMA_STATEMENTS = [
         rel_strength_industry20 REAL,
         weekly_state TEXT,
         monthly_state TEXT,
+        main_net_inflow_ratio20 REAL,
+        northbound_inflow_5d REAL,
+        updated_at TEXT,
+        PRIMARY KEY(date, symbol)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS fund_flow_daily (
+        date TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        main_net_inflow REAL,
+        large_net_inflow REAL,
+        northbound_net_inflow REAL,
         updated_at TEXT,
         PRIMARY KEY(date, symbol)
     )
@@ -107,6 +120,7 @@ SCHEMA_STATEMENTS = [
         invalid_json TEXT,
         score REAL,
         strategy_version TEXT,
+        market_regime TEXT,
         created_at TEXT
     )
     """,
