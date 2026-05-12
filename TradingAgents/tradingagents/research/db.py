@@ -219,4 +219,15 @@ def init_db() -> None:
     with get_connection() as conn:
         for statement in SCHEMA_STATEMENTS:
             conn.execute(statement)
+        _migrate_schema(conn)
         conn.commit()
+
+
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(row[1] == column for row in rows)
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    if not _column_exists(conn, "signal_log", "market_regime"):
+        conn.execute("ALTER TABLE signal_log ADD COLUMN market_regime TEXT")
