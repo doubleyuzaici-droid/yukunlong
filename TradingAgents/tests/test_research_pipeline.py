@@ -57,6 +57,11 @@ def test_run_pipeline_executes_in_expected_order(monkeypatch):
 
 def test_run_pipeline_returns_quality_warnings(monkeypatch):
     monkeypatch.setattr(
+        "tradingagents.research.pipeline._now",
+        lambda: "2026-01-31T10:00:00+00:00",
+        raising=False,
+    )
+    monkeypatch.setattr(
         "tradingagents.research.pipeline.sync_watchlist_bars",
         lambda start, end: 0,
     )
@@ -97,6 +102,7 @@ def test_run_pipeline_returns_quality_warnings(monkeypatch):
                 "severity": "error",
                 "symbol": "00700.HK",
                 "message": "akshare sync failed",
+                "created_at": "2026-01-31T10:00:01+00:00",
             },
             {
                 "date": "2025-12-31",
@@ -104,6 +110,7 @@ def test_run_pipeline_returns_quality_warnings(monkeypatch):
                 "severity": "error",
                 "symbol": "01024.HK",
                 "message": "old warning",
+                "created_at": "2026-01-31T10:00:01+00:00",
             },
         ],
         raising=False,
@@ -118,5 +125,93 @@ def test_run_pipeline_returns_quality_warnings(monkeypatch):
             "severity": "error",
             "symbol": "00700.HK",
             "message": "akshare sync failed",
+            "created_at": "2026-01-31T10:00:01+00:00",
+        }
+    ]
+
+
+def test_run_pipeline_returns_only_new_deduped_warnings(monkeypatch):
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline._now",
+        lambda: "2026-01-31T10:00:00+00:00",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.sync_watchlist_bars",
+        lambda start, end: 10,
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.sync_watchlist_fund_flows",
+        lambda start, end: 0,
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.compute_watchlist_factors",
+        lambda start, end: 10,
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.scan_watchlist",
+        lambda date: [],
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.persist_signals",
+        lambda signals: None,
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.run_event_backtest",
+        lambda names, start, end: {"events": []},
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.run_portfolio_backtest",
+        lambda start, end: {"metrics": {}},
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.summarize_signal_effectiveness",
+        lambda: [],
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.list_quality_issues",
+        lambda: [
+            {
+                "id": 4,
+                "date": "2026-01-31",
+                "check_name": "fund_flow_sync",
+                "severity": "warning",
+                "symbol": "01024.HK",
+                "message": "fund flow unavailable",
+                "created_at": "2026-01-31T10:00:01+00:00",
+            },
+            {
+                "id": 3,
+                "date": "2026-01-31",
+                "check_name": "fund_flow_sync",
+                "severity": "warning",
+                "symbol": "01024.HK",
+                "message": "fund flow unavailable",
+                "created_at": "2026-01-31T10:00:01+00:00",
+            },
+            {
+                "id": 2,
+                "date": "2026-01-31",
+                "check_name": "fund_flow_sync",
+                "severity": "warning",
+                "symbol": "00700.HK",
+                "message": "fund flow unavailable",
+                "created_at": "2026-01-31T09:59:59+00:00",
+            },
+        ],
+        raising=False,
+    )
+
+    result = run_pipeline("2026-01-01", "2026-01-31")
+
+    assert result["warnings"] == [
+        {
+            "id": 4,
+            "date": "2026-01-31",
+            "check_name": "fund_flow_sync",
+            "severity": "warning",
+            "symbol": "01024.HK",
+            "message": "fund flow unavailable",
+            "created_at": "2026-01-31T10:00:01+00:00",
         }
     ]
