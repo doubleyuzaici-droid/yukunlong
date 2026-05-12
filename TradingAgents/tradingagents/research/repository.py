@@ -104,6 +104,34 @@ def list_watchlist(active_only: bool = True) -> list[dict]:
         return [_row_to_dict(row) for row in conn.execute(query, params).fetchall()]
 
 
+def get_watchlist_data_status(active_only: bool = True) -> list[dict]:
+    init_db()
+    status_filter = "WHERE w.status = ?" if active_only else ""
+    params: tuple[Any, ...] = ("active",) if active_only else ()
+    query = f"""
+        SELECT
+            w.symbol,
+            w.name,
+            w.market,
+            w.industry,
+            w.thesis,
+            w.status,
+            COUNT(DISTINCT b.date) AS bar_count,
+            MAX(b.date) AS latest_bar_date,
+            COUNT(DISTINCT s.signal_id) AS signal_count,
+            MAX(s.date) AS latest_signal_date
+        FROM watchlist w
+        LEFT JOIN daily_bars b ON b.symbol = w.symbol
+        LEFT JOIN signal_log s ON s.symbol = w.symbol
+        {status_filter}
+        GROUP BY
+            w.symbol, w.name, w.market, w.industry, w.thesis, w.status
+        ORDER BY w.symbol
+    """
+    with get_connection() as conn:
+        return [_row_to_dict(row) for row in conn.execute(query, params).fetchall()]
+
+
 def deactivate_watchlist_symbol(symbol: str) -> None:
     init_db()
     normalized = _normalize_symbol(symbol)

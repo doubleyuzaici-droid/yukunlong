@@ -1,4 +1,9 @@
 import { FormEvent, useEffect, useState } from "react";
+import {
+  READINESS_LABELS,
+  type PipelineSummary,
+  type WatchlistStatusRow,
+} from "../utils/researchPipeline";
 
 interface WatchlistItem {
   symbol: string;
@@ -16,11 +21,16 @@ export default function WatchlistPage() {
   const [thesis, setThesis] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [statusRows, setStatusRows] = useState<WatchlistStatusRow[]>([]);
+  const [pipeline, setPipeline] = useState<PipelineSummary | null>(null);
 
   const load = async () => {
     const response = await fetch("/api/research/watchlist");
     const data = await response.json();
     if (data.success) setItems(data.data);
+    const statusResponse = await fetch("/api/research/status");
+    const statusData = await statusResponse.json();
+    if (statusData.success) setStatusRows(statusData.data.watchlist_status);
   };
 
   useEffect(() => {
@@ -46,6 +56,7 @@ export default function WatchlistPage() {
     if (data.success) {
       setItems(data.data);
       setMessage(`已更新 ${parsed.length} 个标的`);
+      await load();
     } else {
       setMessage("更新失败");
     }
@@ -62,10 +73,32 @@ export default function WatchlistPage() {
     if (data.success) {
       setItems(data.data);
       setMessage(`${symbol} 已移出观察池`);
+      await load();
     } else {
       setMessage("移除失败");
     }
   };
+
+  const runPipeline = async () => {
+    setLoading(true);
+    setMessage("同步并扫描中");
+    const response = await fetch("/api/research/pipeline/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await response.json();
+    if (data.success) {
+      setPipeline(data.data);
+      setStatusRows(data.data.watchlist_status);
+      setMessage(`同步 ${data.data.rows_synced} 行，触发 ${data.data.signal_count} 条信号`);
+    } else {
+      setMessage("流水线运行失败");
+    }
+    setLoading(false);
+  };
+
+  const statusBySymbol = new Map(statusRows.map((row) => [row.symbol, row]));
 
   return (
     <section className="workbench-section">
@@ -99,8 +132,27 @@ export default function WatchlistPage() {
         <button className="primary" disabled={loading}>
           {loading ? "处理中" : "添加"}
         </button>
+        <button type="button" onClick={runPipeline} disabled={loading || items.length === 0}>
+          同步并扫描
+        </button>
         <span className="muted">{message}</span>
       </form>
+      {pipeline && (
+        <div className="pipeline-summary">
+          <div className="metric-tile">
+            <span>同步行情</span>
+            <strong>{pipeline.rows_synced}</strong>
+          </div>
+          <div className="metric-tile">
+            <span>计算因子</span>
+            <strong>{pipeline.factor_rows}</strong>
+          </div>
+          <div className="metric-tile">
+            <span>触发信号</span>
+            <strong>{pipeline.signal_count}</strong>
+          </div>
+        </div>
+      )}
       <div className="data-table-wrap">
         <table className="data-table">
           <thead>
@@ -109,28 +161,45 @@ export default function WatchlistPage() {
               <th>市场</th>
               <th>行业</th>
               <th>关注逻辑</th>
+              <th>行情</th>
+              <th>数据状态</th>
               <th>状态</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => (
-              <tr key={item.symbol}>
-                <td>{item.symbol}</td>
-                <td>{item.market}</td>
-                <td>{item.industry || "-"}</td>
-                <td>{item.thesis || "-"}</td>
-                <td>{item.status}</td>
-                <td>
-                  <button className="danger mini" onClick={() => remove(item.symbol)}>
-                    移除
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {items.map((item) => {
+              const status = statusBySymbol.get(item.symbol);
+              return (
+                <tr key={item.symbol}>
+                  <td>{item.symbol}</td>
+                  <td>{item.market}</td>
+                  <td>{item.industry || "-"}</td>
+                  <td>{item.thesis || "-"}</td>
+                  <td>
+                    {status ? `${status.bar_count} 行` : "-"}
+                    <br />
+                    <span className="muted">{status?.latest_bar_date || "未同步"}</span>
+                  </td>
+                  <td>
+                    <span className="status-badge">
+                      {READINESS_LABELS[status?.scan_readiness || ""] || "-"}
+                    </span>
+                    <br />
+                    <span className="muted">{status?.readiness_reason || "-"}</span>
+                  </td>
+                  <td>{item.status}</td>
+                  <td>
+                    <button className="danger mini" onClick={() => remove(item.symbol)}>
+                      移除
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
             {items.length === 0 && (
               <tr>
-                <td colSpan={6}>暂无自选股</td>
+                <td colSpan={8}>暂无自选股</td>
               </tr>
             )}
           </tbody>

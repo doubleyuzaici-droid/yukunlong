@@ -53,3 +53,70 @@ def test_run_pipeline_executes_in_expected_order(monkeypatch):
         ("portfolio", "2026-01-01", "2026-01-31"),
         ("summary",),
     ]
+
+
+def test_run_pipeline_returns_quality_warnings(monkeypatch):
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.sync_watchlist_bars",
+        lambda start, end: 0,
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.sync_watchlist_fund_flows",
+        lambda start, end: 0,
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.compute_watchlist_factors",
+        lambda start, end: 0,
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.scan_watchlist",
+        lambda date: [],
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.persist_signals",
+        lambda signals: None,
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.run_event_backtest",
+        lambda names, start, end: {"events": []},
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.run_portfolio_backtest",
+        lambda start, end: {"metrics": {}},
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.summarize_signal_effectiveness",
+        lambda: [],
+    )
+    monkeypatch.setattr(
+        "tradingagents.research.pipeline.list_quality_issues",
+        lambda: [
+            {
+                "date": "2026-01-31",
+                "check_name": "data_sync",
+                "severity": "error",
+                "symbol": "00700.HK",
+                "message": "akshare sync failed",
+            },
+            {
+                "date": "2025-12-31",
+                "check_name": "data_sync",
+                "severity": "error",
+                "symbol": "01024.HK",
+                "message": "old warning",
+            },
+        ],
+        raising=False,
+    )
+
+    result = run_pipeline("2026-01-01", "2026-01-31")
+
+    assert result["warnings"] == [
+        {
+            "date": "2026-01-31",
+            "check_name": "data_sync",
+            "severity": "error",
+            "symbol": "00700.HK",
+            "message": "akshare sync failed",
+        }
+    ]
