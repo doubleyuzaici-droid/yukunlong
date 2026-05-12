@@ -183,7 +183,11 @@ def run_portfolio_backtest(
                     exit_reason = "atr_stop_loss"
                     break
 
-        exit_price = stop_price if exit_reason == "atr_stop_loss" else float(exit_row["open"])
+        if exit_reason == "atr_stop_loss" and stop_price is not None:
+            candidate_open = float(exit_row["open"])
+            exit_price = min(stop_price, candidate_open)
+        else:
+            exit_price = float(exit_row["open"])
         exit_notional = quantity * exit_price
         exit_cost = estimate_cost(signal["market"], "exit", exit_notional)
         cash += exit_notional - exit_cost
