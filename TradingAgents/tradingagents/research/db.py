@@ -138,6 +138,7 @@ SCHEMA_STATEMENTS = [
         max_favorable_20d REAL,
         success_flag INTEGER,
         fail_reason TEXT,
+        market_regime TEXT,
         updated_at TEXT
     )
     """,

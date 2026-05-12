@@ -30,3 +30,27 @@ def test_compute_symbol_factors_with_fund_flow(tmp_path, monkeypatch):
     assert row is not None
     assert row["main_net_inflow_ratio20"] is not None
     assert row["northbound_inflow_5d"] is not None
+
+
+def test_fetch_fund_flow_daily_maps_northbound_for_a_share(monkeypatch):
+    from tradingagents.dataflows import fund_flow
+
+    monkeypatch.setattr(
+        fund_flow,
+        "_stock_individual_fund_flow",
+        lambda _code: __import__("pandas").DataFrame([
+            {"日期": "2026-01-02", "主力净流入-净额": 100.0, "超大单净流入-净额": 30.0}
+        ]),
+    )
+    monkeypatch.setattr(
+        fund_flow,
+        "_stock_hsgt_hist_em",
+        lambda: __import__("pandas").DataFrame([
+            {"日期": "2026-01-02", "当日成交净买额": 55.0}
+        ]),
+    )
+
+    frame = fund_flow.fetch_fund_flow_daily("600519.SH", "2026-01-01", "2026-01-03")
+
+    assert not frame.empty
+    assert frame.iloc[0]["northbound_net_inflow"] == 55.0

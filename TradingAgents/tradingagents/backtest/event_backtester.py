@@ -67,9 +67,9 @@ def _persist_event(row: dict) -> None:
             INSERT INTO event_return (
                 signal_id, entry_date, entry_price, ret_5d, ret_20d, ret_60d,
                 excess_index_20d, excess_industry_20d, max_adverse_20d,
-                max_favorable_20d, success_flag, fail_reason, updated_at
+                max_favorable_20d, success_flag, fail_reason, market_regime, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(signal_id) DO UPDATE SET
                 entry_date = excluded.entry_date,
                 entry_price = excluded.entry_price,
@@ -82,6 +82,7 @@ def _persist_event(row: dict) -> None:
                 max_favorable_20d = excluded.max_favorable_20d,
                 success_flag = excluded.success_flag,
                 fail_reason = excluded.fail_reason,
+                market_regime = excluded.market_regime,
                 updated_at = excluded.updated_at
             """,
             (
@@ -97,6 +98,7 @@ def _persist_event(row: dict) -> None:
                 row.get("max_favorable_20d"),
                 row.get("success_flag"),
                 row.get("fail_reason"),
+                row.get("market_regime"),
                 _now(),
             ),
         )
@@ -109,6 +111,7 @@ def _failure(signal: dict, reason: str) -> dict:
         "symbol": signal["symbol"],
         "signal_name": signal["signal_name"],
         "fail_reason": reason,
+        "market_regime": signal.get("market_regime"),
     }
     _persist_event(row)
     return row
@@ -140,6 +143,7 @@ def _calculate_event(
         "excess_index_20d": None,
         "excess_industry_20d": None,
         "fail_reason": None,
+        "market_regime": signal.get("market_regime"),
     }
     for horizon in horizon_days:
         exit_position = entry_position + horizon

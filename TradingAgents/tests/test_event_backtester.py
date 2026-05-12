@@ -43,6 +43,7 @@ def _signal(signal_id: str = "sig-1", signal_name: str = "趋势增强"):
         "invalid_json": json.dumps(["fixture invalid"], ensure_ascii=False),
         "score": 85.0,
         "strategy_version": "signal_v1",
+        "market_regime": "bull_trend",
     }
 
 
@@ -153,3 +154,8 @@ def test_event_backtest_computes_excess_index_return(tmp_path, monkeypatch):
     event = result["events"][0]
     assert event["ret_20d"] is not None
     assert event["excess_index_20d"] is not None
+    assert event["market_regime"] == "bull_trend"
+
+    with get_connection() as conn:
+        row = conn.execute("SELECT market_regime FROM event_return WHERE signal_id = ?", ("sig-1",)).fetchone()
+    assert row["market_regime"] == "bull_trend"
