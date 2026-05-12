@@ -109,6 +109,51 @@ def test_walk_forward_periods_are_ordered_and_out_of_sample():
         assert period["test_start"] <= period["test_end"]
 
 
+def test_parameter_sweep_runs_all_combinations_and_ranks():
+    from tradingagents.optimizer.parameter_sweep import run_parameter_sweep
+
+    calls = []
+
+    def fake_backtest(*, start, end, params):
+        calls.append((start, end, params))
+        return {"metrics": {"sharpe": params["a"] + params["b"]}}
+
+    ranked = run_parameter_sweep(
+        "2026-01-01",
+        "2026-01-31",
+        backtest_fn=fake_backtest,
+        grid={"a": [1, 2], "b": [10, 20]},
+    )
+
+    assert len(calls) == 4
+    assert ranked[0]["score"] == 22
+    assert ranked[-1]["score"] == 11
+
+
+def test_walk_forward_orchestrator_runs_fold_pipeline():
+    from tradingagents.optimizer.walk_forward import run_walk_forward
+
+    sweep_calls = []
+    backtest_calls = []
+
+    def fake_sweep(train_start, train_end):
+        sweep_calls.append((train_start, train_end))
+        return [{"params": {"p": 1}, "score": 2.0}]
+
+    def fake_backtest(test_start, test_end, params):
+        backtest_calls.append((test_start, test_end, params))
+        return {"metrics": {"total_return": 0.1}}
+
+    result = run_walk_forward(
+        "2026-01-01", "2026-06-30", sweep_fn=fake_sweep, backtest_fn=fake_backtest, folds=3
+    )
+
+    assert result["fold_count"] == 3
+    assert len(sweep_calls) == 3
+    assert len(backtest_calls) == 3
+    assert all(call[2] == {"p": 1} for call in backtest_calls)
+
+
 def test_optimizer_report_includes_failure_and_ablation_sections(tmp_path, monkeypatch):
     monkeypatch.setenv("TRADINGAGENTS_DATA_DIR", str(tmp_path))
 

@@ -22,6 +22,7 @@ from tradingagents.agents import (
 from tradingagents.agents.utils.agent_states import AgentState
 
 from .conditional_logic import ConditionalLogic
+from .quant_context import create_quant_signal_loader
 
 
 class GraphSetup:
@@ -108,6 +109,7 @@ class GraphSetup:
             workflow.add_node(f"tools_{analyst_type}", tool_nodes[analyst_type])
 
         # Add other nodes
+        workflow.add_node("Quant Signal Loader", create_quant_signal_loader())
         workflow.add_node("Bull Researcher", bull_researcher_node)
         workflow.add_node("Bear Researcher", bear_researcher_node)
         workflow.add_node("Research Manager", research_manager_node)
@@ -141,7 +143,8 @@ class GraphSetup:
                 next_analyst = f"{selected_analysts[i+1].capitalize()} Analyst"
                 workflow.add_edge(current_clear, next_analyst)
             else:
-                workflow.add_edge(current_clear, "Bull Researcher")
+                workflow.add_edge(current_clear, "Quant Signal Loader")
+                workflow.add_edge("Quant Signal Loader", "Bull Researcher")
 
         # Add remaining edges
         workflow.add_conditional_edges(

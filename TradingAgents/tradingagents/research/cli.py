@@ -3,10 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 
-from .data_sync import DATA_SOURCES, sync_watchlist_bars
+from .data_sync import DATA_SOURCES, sync_watchlist_bars, sync_watchlist_fund_flows
 from .db import init_db
 from .factor_pipeline import compute_watchlist_factors
 from .quality import list_quality_issues
+from .pipeline import run_pipeline
 from .repository import list_watchlist, upsert_watchlist_symbols
 
 
@@ -32,11 +33,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="daily bar source; defaults to TRADINGAGENTS_DATA_SOURCE or akshare",
     )
 
+    sync_flow = subparsers.add_parser("sync-fund-flow")
+    sync_flow.add_argument("--start", required=True)
+    sync_flow.add_argument("--end", required=True)
+
     compute_factors = subparsers.add_parser("compute-factors")
     compute_factors.add_argument("--start", required=True)
     compute_factors.add_argument("--end", required=True)
 
     subparsers.add_parser("data-quality")
+    run_pipeline_parser = subparsers.add_parser("run-pipeline")
+    run_pipeline_parser.add_argument("--start", required=True)
+    run_pipeline_parser.add_argument("--end", required=True)
+    run_pipeline_parser.add_argument("--signal-date", default=None)
     return parser
 
 
@@ -64,6 +73,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"synced {rows_synced} daily bars")
         return 0
 
+    if args.command == "sync-fund-flow":
+        rows_synced = sync_watchlist_fund_flows(args.start, args.end)
+        print(f"synced {rows_synced} fund-flow rows")
+        return 0
+
     if args.command == "compute-factors":
         rows_computed = compute_watchlist_factors(args.start, args.end)
         print(f"computed {rows_computed} factor rows")
@@ -71,6 +85,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "data-quality":
         print(json.dumps(list_quality_issues(), ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "run-pipeline":
+        result = run_pipeline(args.start, args.end, signal_date=args.signal_date)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
 
     parser.error(f"unsupported command: {args.command}")

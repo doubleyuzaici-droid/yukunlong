@@ -133,6 +133,25 @@ class TraderProposal(BaseModel):
         default=None,
         description="Optional stop-loss price in the instrument's quote currency.",
     )
+    take_profit: Optional[float] = Field(
+        default=None,
+        description="Optional take-profit price in the instrument's quote currency.",
+    )
+    holding_period_days: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Optional expected holding period in trading days.",
+    )
+    exit_conditions: Optional[str] = Field(
+        default=None,
+        description="Optional invalidation/exit conditions for the trade.",
+    )
+    max_position_pct: Optional[float] = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="Optional maximum portfolio allocation as a decimal (e.g. 0.1 = 10%).",
+    )
     position_sizing: Optional[str] = Field(
         default=None,
         description="Optional sizing guidance, e.g. '5% of portfolio'.",
@@ -155,6 +174,14 @@ def render_trader_proposal(proposal: TraderProposal) -> str:
         parts.extend(["", f"**Entry Price**: {proposal.entry_price}"])
     if proposal.stop_loss is not None:
         parts.extend(["", f"**Stop Loss**: {proposal.stop_loss}"])
+    if proposal.take_profit is not None:
+        parts.extend(["", f"**Take Profit**: {proposal.take_profit}"])
+    if proposal.holding_period_days is not None:
+        parts.extend(["", f"**Holding Period (Days)**: {proposal.holding_period_days}"])
+    if proposal.exit_conditions:
+        parts.extend(["", f"**Exit Conditions**: {proposal.exit_conditions}"])
+    if proposal.max_position_pct is not None:
+        parts.extend(["", f"**Max Position %**: {proposal.max_position_pct}"])
     if proposal.position_sizing:
         parts.extend(["", f"**Position Sizing**: {proposal.position_sizing}"])
     parts.extend(
@@ -203,6 +230,29 @@ class PortfolioDecision(BaseModel):
         default=None,
         description="Optional target price in the instrument's quote currency.",
     )
+    stop_loss: Optional[float] = Field(
+        default=None,
+        description="Optional risk stop price in the instrument's quote currency.",
+    )
+    take_profit: Optional[float] = Field(
+        default=None,
+        description="Optional take-profit price in the instrument's quote currency.",
+    )
+    holding_period_days: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Optional expected holding period in trading days.",
+    )
+    exit_conditions: Optional[str] = Field(
+        default=None,
+        description="Optional invalidation/exit conditions for the position.",
+    )
+    max_position_pct: Optional[float] = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="Optional maximum portfolio allocation as a decimal (e.g. 0.1 = 10%).",
+    )
     time_horizon: Optional[str] = Field(
         default=None,
         description="Optional recommended holding period, e.g. '3-6 months'.",
@@ -226,6 +276,16 @@ def render_pm_decision(decision: PortfolioDecision) -> str:
     ]
     if decision.price_target is not None:
         parts.extend(["", f"**Price Target**: {decision.price_target}"])
+    if decision.stop_loss is not None:
+        parts.extend(["", f"**Stop Loss**: {decision.stop_loss}"])
+    if decision.take_profit is not None:
+        parts.extend(["", f"**Take Profit**: {decision.take_profit}"])
+    if decision.max_position_pct is not None:
+        parts.extend(["", f"**Max Position**: {decision.max_position_pct}"])
+    if decision.holding_period_days is not None:
+        parts.extend(["", f"**Holding Period (Days)**: {decision.holding_period_days}"])
+    if decision.exit_conditions:
+        parts.extend(["", f"**Exit Conditions**: {decision.exit_conditions}"])
     if decision.time_horizon:
         parts.extend(["", f"**Time Horizon**: {decision.time_horizon}"])
     return "\n".join(parts)

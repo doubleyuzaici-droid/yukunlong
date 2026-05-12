@@ -46,6 +46,28 @@ def _signal(signal_id: str = "sig-1", signal_name: str = "趋势增强"):
     }
 
 
+def _index_rows(index_symbol: str = "000300.SH"):
+    start = date(2026, 1, 1)
+    rows = []
+    for index in range(75):
+        close = 200.0 + index * 0.5
+        rows.append(
+            {
+                "date": (start + timedelta(days=index)).isoformat(),
+                "index_symbol": index_symbol,
+                "market": "CHINA",
+                "open": close - 0.2,
+                "high": close + 0.8,
+                "low": close - 0.8,
+                "close": close,
+                "volume": 1_000_000.0,
+                "amount": 100_000_000.0,
+                "source": "fixture",
+            }
+        )
+    return rows
+
+
 def test_event_backtest_uses_t_plus_one_open_and_horizon_returns(tmp_path, monkeypatch):
     monkeypatch.setenv("TRADINGAGENTS_DATA_DIR", str(tmp_path))
 
@@ -89,3 +111,45 @@ def test_event_backtest_skips_suspended_t_plus_one_entry(tmp_path, monkeypatch):
             "SELECT fail_reason FROM event_return WHERE signal_id = ?", ("sig-1",)
         ).fetchone()
     assert row["fail_reason"] == "no_executable_entry"
+
+
+def test_event_backtest_computes_excess_index_return(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRADINGAGENTS_DATA_DIR", str(tmp_path))
+
+    from tradingagents.backtest.event_backtester import run_event_backtest
+    from tradingagents.research.db import get_connection, init_db
+    from tradingagents.research.repository import upsert_daily_bars, upsert_signals
+
+    init_db()
+    upsert_daily_bars(_daily_rows())
+    upsert_signals([_signal()])
+    with get_connection() as conn:
+        conn.executemany(
+            """
+            INSERT INTO index_bars (
+                date, index_symbol, market, open, high, low, close, volume, amount, source, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """,
+            [
+                (
+                    row["date"],
+                    row["index_symbol"],
+                    row["market"],
+                    row["open"],
+                    row["high"],
+                    row["low"],
+                    row["close"],
+                    row["volume"],
+                    row["amount"],
+                    row["source"],
+                )
+                for row in _index_rows()
+            ],
+        )
+        conn.commit()
+
+    result = run_event_backtest(["趋势增强"], "2026-01-01", "2026-03-31")
+    event = result["events"][0]
+    assert event["ret_20d"] is not None
+    assert event["excess_index_20d"] is not None

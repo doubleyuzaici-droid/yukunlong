@@ -213,6 +213,8 @@ def upsert_factors(rows: list[dict]) -> None:
                 row.get("rel_strength_industry20"),
                 row.get("weekly_state"),
                 row.get("monthly_state"),
+                row.get("main_net_inflow_ratio20"),
+                row.get("northbound_inflow_5d"),
                 timestamp,
             )
         )
@@ -224,9 +226,10 @@ def upsert_factors(rows: list[dict]) -> None:
                 date, symbol, ma20, ma60, ma120, rsi14, atr14,
                 volume_ratio20, amount_ratio20, ret20, ret60,
                 rel_strength_index20, rel_strength_industry20,
-                weekly_state, monthly_state, updated_at
+                weekly_state, monthly_state, main_net_inflow_ratio20,
+                northbound_inflow_5d, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(date, symbol) DO UPDATE SET
                 ma20 = excluded.ma20,
                 ma60 = excluded.ma60,
@@ -241,6 +244,8 @@ def upsert_factors(rows: list[dict]) -> None:
                 rel_strength_industry20 = excluded.rel_strength_industry20,
                 weekly_state = excluded.weekly_state,
                 monthly_state = excluded.monthly_state,
+                main_net_inflow_ratio20 = excluded.main_net_inflow_ratio20,
+                northbound_inflow_5d = excluded.northbound_inflow_5d,
                 updated_at = excluded.updated_at
             """,
             values,
@@ -269,6 +274,7 @@ def upsert_signals(rows: list[dict]) -> None:
                 row.get("invalid_json"),
                 row.get("score"),
                 row.get("strategy_version"),
+                row.get("market_regime"),
                 row.get("created_at") or timestamp,
             )
         )
@@ -279,9 +285,9 @@ def upsert_signals(rows: list[dict]) -> None:
             INSERT INTO signal_log (
                 signal_id, date, symbol, market, signal_name, signal_level,
                 direction, timeframe, evidence_json, risk_json, invalid_json,
-                score, strategy_version, created_at
+                score, strategy_version, market_regime, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(signal_id) DO UPDATE SET
                 date = excluded.date,
                 symbol = excluded.symbol,
@@ -295,6 +301,7 @@ def upsert_signals(rows: list[dict]) -> None:
                 invalid_json = excluded.invalid_json,
                 score = excluded.score,
                 strategy_version = excluded.strategy_version,
+                market_regime = excluded.market_regime,
                 created_at = excluded.created_at
             """,
             values,
@@ -329,3 +336,52 @@ def list_signals(symbol: str, start: str, end: str) -> list[dict]:
             (normalized, start, end),
         ).fetchall()
     return [_row_to_dict(row) for row in rows]
+
+
+def upsert_fund_flows(rows: list[dict]) -> None:
+    init_db()
+    timestamp = _now()
+    values = [
+        (
+            row["date"],
+            _normalize_symbol(row["symbol"]),
+            row.get("main_net_inflow"),
+            row.get("large_net_inflow"),
+            row.get("northbound_net_inflow"),
+            timestamp,
+        )
+        for row in rows
+    ]
+    if not values:
+        return
+    with get_connection() as conn:
+        conn.executemany(
+            """
+            INSERT INTO fund_flow_daily (
+                date, symbol, main_net_inflow, large_net_inflow,
+                northbound_net_inflow, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(date, symbol) DO UPDATE SET
+                main_net_inflow = excluded.main_net_inflow,
+                large_net_inflow = excluded.large_net_inflow,
+                northbound_net_inflow = excluded.northbound_net_inflow,
+                updated_at = excluded.updated_at
+            """,
+            values,
+        )
+        conn.commit()
+
+
+def load_fund_flows(symbol: str, start: str, end: str) -> pd.DataFrame:
+    init_db()
+    normalized = _normalize_symbol(symbol)
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM fund_flow_daily
+            WHERE symbol = ? AND date >= ? AND date <= ?
+            ORDER BY date
+            """,
+            (normalized, start, end),
+        ).fetchall()
+    return pd.DataFrame([_row_to_dict(row) for row in rows])

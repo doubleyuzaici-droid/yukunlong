@@ -95,3 +95,52 @@ def test_research_cli_sync_bars_accepts_data_source(monkeypatch, capsys):
 
     assert calls == [("2026-05-01", "2026-05-11", "akshare")]
     assert "synced 3 daily bars" in capsys.readouterr().out
+
+
+def test_research_cli_run_pipeline(monkeypatch, capsys):
+    from tradingagents.research.cli import main
+
+    def fake_run_pipeline(start, end, signal_date=None):
+        return {
+            "rows_synced": 1,
+            "factor_rows": 2,
+            "signal_count": 3,
+            "start": start,
+            "end": end,
+            "signal_date": signal_date,
+        }
+
+    monkeypatch.setattr("tradingagents.research.cli.run_pipeline", fake_run_pipeline)
+
+    assert (
+        main(
+            [
+                "run-pipeline",
+                "--start",
+                "2026-01-01",
+                "--end",
+                "2026-01-31",
+                "--signal-date",
+                "2026-01-30",
+            ]
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert '"signal_count": 3' in out
+
+
+def test_research_cli_sync_fund_flow(monkeypatch, capsys):
+    from tradingagents.research.cli import main
+
+    calls = []
+
+    def fake_sync(start, end):
+        calls.append((start, end))
+        return 7
+
+    monkeypatch.setattr("tradingagents.research.cli.sync_watchlist_fund_flows", fake_sync)
+
+    assert main(["sync-fund-flow", "--start", "2026-05-01", "--end", "2026-05-11"]) == 0
+    assert calls == [("2026-05-01", "2026-05-11")]
+    assert "synced 7 fund-flow rows" in capsys.readouterr().out
