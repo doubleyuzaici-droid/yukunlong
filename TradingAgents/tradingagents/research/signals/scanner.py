@@ -5,6 +5,7 @@ import json
 import pandas as pd
 
 from tradingagents.research.features.liquidity import avg_amount, is_low_liquidity
+from tradingagents.research.features.market_state import classify_market_state
 from tradingagents.research.features.technical import add_all_technical_features
 from tradingagents.research.features.timeframe import (
     classify_monthly_state,
@@ -62,6 +63,12 @@ def scan_symbol(symbol: str, date: str) -> list[ResearchSignal]:
     ]
     signals = [detector(features, date) for detector in detectors]
     signals = [signal for signal in signals if signal is not None]
+    latest = features.iloc[-1]
+    regime = classify_market_state(
+        latest.get("ret20"), latest.get("ma20"), latest.get("ma60"), latest.get("ma120")
+    )
+    for signal in signals:
+        signal.market_regime = regime
     return _filter_low_liquidity(signals, raw)
 
 
@@ -92,6 +99,7 @@ def persist_signals(signals: list[ResearchSignal]) -> None:
                 ),
                 "score": signal.score,
                 "strategy_version": signal.strategy_version,
+                "market_regime": signal.market_regime,
             }
         )
     if rows:

@@ -43,6 +43,23 @@ def _load_bars(symbol: str) -> pd.DataFrame:
     return pd.DataFrame([dict(row) for row in rows])
 
 
+def _benchmark_symbol_for_market(market: str | None) -> str | None:
+    if market == "CHINA":
+        return "000300.SH"
+    if market == "HONGKONG":
+        return "HSI"
+    return "SPY"
+
+
+def _load_index_bars(index_symbol: str) -> pd.DataFrame:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM index_bars WHERE index_symbol = ? ORDER BY date",
+            (index_symbol,),
+        ).fetchall()
+    return pd.DataFrame([dict(row) for row in rows])
+
+
 def _persist_event(row: dict) -> None:
     with get_connection() as conn:
         conn.execute(
@@ -50,9 +67,9 @@ def _persist_event(row: dict) -> None:
             INSERT INTO event_return (
                 signal_id, entry_date, entry_price, ret_5d, ret_20d, ret_60d,
                 excess_index_20d, excess_industry_20d, max_adverse_20d,
-                max_favorable_20d, success_flag, fail_reason, updated_at
+                max_favorable_20d, success_flag, fail_reason, market_regime, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(signal_id) DO UPDATE SET
                 entry_date = excluded.entry_date,
                 entry_price = excluded.entry_price,
@@ -65,6 +82,7 @@ def _persist_event(row: dict) -> None:
                 max_favorable_20d = excluded.max_favorable_20d,
                 success_flag = excluded.success_flag,
                 fail_reason = excluded.fail_reason,
+                market_regime = excluded.market_regime,
                 updated_at = excluded.updated_at
             """,
             (
@@ -80,6 +98,7 @@ def _persist_event(row: dict) -> None:
                 row.get("max_favorable_20d"),
                 row.get("success_flag"),
                 row.get("fail_reason"),
+                row.get("market_regime"),
                 _now(),
             ),
         )
@@ -92,6 +111,7 @@ def _failure(signal: dict, reason: str) -> dict:
         "symbol": signal["symbol"],
         "signal_name": signal["signal_name"],
         "fail_reason": reason,
+        "market_regime": signal.get("market_regime"),
     }
     _persist_event(row)
     return row
@@ -123,6 +143,7 @@ def _calculate_event(
         "excess_index_20d": None,
         "excess_industry_20d": None,
         "fail_reason": None,
+        "market_regime": signal.get("market_regime"),
     }
     for horizon in horizon_days:
         exit_position = entry_position + horizon
@@ -136,6 +157,21 @@ def _calculate_event(
     event["max_adverse_20d"] = float(window_20["low"].min()) / entry_price - 1
     event["max_favorable_20d"] = float(window_20["high"].max()) / entry_price - 1
     event["success_flag"] = 1 if event.get("ret_20d") and event["ret_20d"] > 0 else 0
+
+    if event.get("ret_20d") is not None:
+        benchmark_symbol = _benchmark_symbol_for_market(signal.get("market"))
+        if benchmark_symbol:
+            benchmark_bars = _load_index_bars(benchmark_symbol)
+            if not benchmark_bars.empty:
+                entry_match = benchmark_bars[benchmark_bars["date"] == event["entry_date"]]
+                if not entry_match.empty:
+                    entry_idx = int(entry_match.index[0])
+                    exit_idx = entry_idx + 20
+                    if exit_idx < len(benchmark_bars):
+                        index_entry = float(benchmark_bars.iloc[entry_idx]["close"])
+                        index_exit = float(benchmark_bars.iloc[exit_idx]["close"])
+                        index_ret_20d = index_exit / index_entry - 1
+                        event["excess_index_20d"] = event["ret_20d"] - index_ret_20d
     return event
 
 

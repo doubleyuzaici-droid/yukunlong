@@ -65,3 +65,18 @@ def test_scan_watchlist_filters_low_liquidity_hk_opportunities(tmp_path, monkeyp
     signals = scan_watchlist("2026-03-21")
 
     assert not [signal for signal in signals if signal.signal_level in ("S", "A")]
+
+
+def test_scan_symbol_sets_market_regime_without_polluting_evidence(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRADINGAGENTS_DATA_DIR", str(tmp_path))
+    from tradingagents.research.db import init_db
+    from tradingagents.research.repository import upsert_daily_bars
+    from tradingagents.research.signals.scanner import scan_symbol
+
+    init_db()
+    upsert_daily_bars(_daily_rows("600519.SH", "CHINA"))
+    signals = scan_symbol("600519.SH", "2026-03-21")
+
+    assert signals
+    assert all(signal.market_regime in {"bull_trend", "bear_trend", "range_bound", "high_volatility", "low_volatility"} for signal in signals)
+    assert all(not any(item.startswith("market_regime=") for item in signal.evidence) for signal in signals)

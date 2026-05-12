@@ -18,6 +18,7 @@ class ResearchSignal:
     invalid_conditions: list[str] = field(default_factory=list)
     score: float = 0.0
     strategy_version: str = "signal_v1"
+    market_regime: str = "range_bound"
 
     @property
     def signal_id(self) -> str:
