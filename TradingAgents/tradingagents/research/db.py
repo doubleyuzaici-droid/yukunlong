@@ -232,3 +232,24 @@ def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
 def _migrate_schema(conn: sqlite3.Connection) -> None:
     if not _column_exists(conn, "signal_log", "market_regime"):
         conn.execute("ALTER TABLE signal_log ADD COLUMN market_regime TEXT")
+    factor_columns = {
+        "ma20": "REAL",
+        "ma60": "REAL",
+        "ma120": "REAL",
+        "rsi14": "REAL",
+        "atr14": "REAL",
+        "volume_ratio20": "REAL",
+        "amount_ratio20": "REAL",
+        "ret20": "REAL",
+        "ret60": "REAL",
+        "rel_strength_index20": "REAL",
+        "rel_strength_industry20": "REAL",
+        "weekly_state": "TEXT",
+        "monthly_state": "TEXT",
+        "main_net_inflow_ratio20": "REAL",
+        "northbound_inflow_5d": "REAL",
+        "updated_at": "TEXT",
+    }
+    for column, column_type in factor_columns.items():
+        if not _column_exists(conn, "factor_daily", column):
+            conn.execute(f"ALTER TABLE factor_daily ADD COLUMN {column} {column_type}")
