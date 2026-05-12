@@ -169,3 +169,26 @@ def test_portfolio_backtest_exits_on_atr_stop(tmp_path, monkeypatch):
             "SELECT reason FROM trade_log WHERE side = 'exit' LIMIT 1"
         ).fetchone()
     assert row["reason"] == "atr_stop_loss"
+
+
+def test_portfolio_backtest_atr_stop_uses_executable_bar_price(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRADINGAGENTS_DATA_DIR", str(tmp_path))
+
+    from tradingagents.backtest.portfolio_backtester import run_portfolio_backtest
+    from tradingagents.research.db import get_connection, init_db
+    from tradingagents.research.repository import upsert_daily_bars, upsert_factors, upsert_signals
+
+    init_db()
+    upsert_daily_bars(_daily_rows(atr14=2.0, force_stop_day="2026-01-13"))
+    upsert_factors([{"date": "2026-01-11", "symbol": "600519.SH", "atr14": 2.0}])
+    upsert_signals([_signal()])
+
+    run_portfolio_backtest("2026-01-01", "2026-02-28")
+
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT price FROM trade_log WHERE side = 'exit' LIMIT 1"
+        ).fetchone()
+
+    # Stop should trigger on 2026-01-13, and fill should use that bar open.
+    assert row["price"] == 111.5
