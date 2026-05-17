@@ -682,6 +682,7 @@ export default function SymbolWorkspacePage({
               <RealtimeMarketPanel symbol={symbol} />
               <TradingSignalKlinePanel
                 bars={history?.bars || []}
+                drawingScope={history?.symbol || symbol}
                 evidenceEvents={chartEvidenceEvents}
                 signals={chartSignals}
                 strategyAnalysis={strategyAnalysis}

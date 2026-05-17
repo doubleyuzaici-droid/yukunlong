@@ -248,6 +248,8 @@ export interface ManualDrawingGeometry {
   endPrice: number;
 }
 
+const MANUAL_DRAWING_STORAGE_PREFIX = "tradingagents.tradeSignalKline.drawings";
+
 export type ChartPreferencePresetKey = "basic" | "trend" | "oscillator" | "volume" | "structure" | "full";
 export type ChartPreferenceName =
   | "ma"
@@ -870,6 +872,29 @@ export function matchChartParameterPreset(
   )?.key ?? null;
 }
 
+export function buildManualDrawingStorageKey(scope?: string | null): string {
+  const normalizedScope = String(scope || "").trim() || "default";
+  return `${MANUAL_DRAWING_STORAGE_PREFIX}.${normalizedScope}`;
+}
+
+export function normalizeManualDrawings(value: unknown, maxCount = 80): ManualDrawing[] {
+  if (!Array.isArray(value)) return [];
+  const limit = clampInteger(maxCount, 1, 500);
+  return value
+    .flatMap((item): ManualDrawing[] => {
+      if (!item || typeof item !== "object") return [];
+      const source = item as Record<string, unknown>;
+      const id = typeof source.id === "string" && source.id.trim() ? source.id.trim() : "";
+      const type = source.type === "horizontal" || source.type === "trend" ? source.type : null;
+      const start = normalizeManualDrawingAnchor(source.start);
+      if (!id || !type || !start) return [];
+      if (type === "horizontal") return [{ id, type, start }];
+      const end = normalizeManualDrawingAnchor(source.end);
+      return end ? [{ id, type, start, end }] : [];
+    })
+    .slice(-limit);
+}
+
 export function buildManualDrawingGeometry(
   drawings: ManualDrawing[],
   candles: ManualDrawingCandleLike[],
@@ -946,6 +971,16 @@ export function buildManualDrawingGeometry(
       endPrice: drawing.end.price,
     }];
   });
+}
+
+function normalizeManualDrawingAnchor(value: unknown): ManualDrawingAnchor | null {
+  if (!value || typeof value !== "object") return null;
+  const source = value as Record<string, unknown>;
+  const date = typeof source.date === "string" && source.date.trim() ? source.date.trim() : "";
+  const price = Number(source.price);
+  if (!date || !isFiniteNumber(price)) return null;
+  const label = typeof source.label === "string" && source.label.trim() ? source.label.trim() : undefined;
+  return label ? { date, label, price } : { date, price };
 }
 
 export function buildIndicatorPanelReadouts(

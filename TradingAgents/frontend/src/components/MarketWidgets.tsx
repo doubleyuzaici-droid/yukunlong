@@ -12,6 +12,7 @@ import {
   CHART_PREFERENCE_PRESETS,
   applyChartParameterPreset,
   applyChartPreferencePreset,
+  buildManualDrawingStorageKey,
   buildAdvancedIndicators,
   buildCandlestickPatternAnnotations,
   buildFibonacciRetracementLevels,
@@ -35,6 +36,7 @@ import {
   buildVolumeProfile,
   matchChartParameterPreset,
   matchChartPreferencePreset,
+  normalizeManualDrawings,
   type IndicatorPanelReadoutItem,
   type ManualDrawing,
   type ManualDrawingAnchor,
@@ -1194,6 +1196,7 @@ export function TradingSignalKlinePanel({
   strategyAnalysis,
   strategyControls,
   selectedSignalId,
+  drawingScope,
   onSelectSignal,
 }: {
   bars: MarketHistoryBar[];
@@ -1202,6 +1205,7 @@ export function TradingSignalKlinePanel({
   strategyAnalysis?: StrategyKlineAnalysis | null;
   strategyControls?: StrategyKlineControls;
   selectedSignalId?: string | null;
+  drawingScope?: string | null;
   onSelectSignal?: (signalId: string) => void;
 }) {
   const [range, setRange] = usePersistentChartValue<CandleRange>(
@@ -1235,6 +1239,8 @@ export function TradingSignalKlinePanel({
   const [drawingTool, setDrawingTool] = useState<TradingChartDrawingTool>("none");
   const [manualDrawings, setManualDrawings] = useState<ManualDrawing[]>([]);
   const [pendingTrendAnchor, setPendingTrendAnchor] = useState<ManualDrawingAnchor | null>(null);
+  const drawingStorageKey = useMemo(() => buildManualDrawingStorageKey(drawingScope), [drawingScope]);
+  const skipNextDrawingSave = useRef(false);
   const dragStart = useRef<{ x: number; offset: number } | null>(null);
   const [crosshair, setCrosshair] = useState<{
     x: number;
@@ -1380,6 +1386,34 @@ export function TradingSignalKlinePanel({
   useEffect(() => {
     if (drawingTool !== "trend") setPendingTrendAnchor(null);
   }, [drawingTool]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let nextDrawings: ManualDrawing[] = [];
+    try {
+      const stored = window.localStorage.getItem(drawingStorageKey);
+      nextDrawings = stored ? normalizeManualDrawings(JSON.parse(stored)) : [];
+    } catch {
+      nextDrawings = [];
+    }
+    skipNextDrawingSave.current = true;
+    setManualDrawings(nextDrawings);
+    setPendingTrendAnchor(null);
+    setDrawingTool("none");
+  }, [drawingStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (skipNextDrawingSave.current) {
+      skipNextDrawingSave.current = false;
+      return;
+    }
+    try {
+      window.localStorage.setItem(drawingStorageKey, JSON.stringify(normalizeManualDrawings(manualDrawings)));
+    } catch {
+      // localStorage can be unavailable in private or embedded contexts; drawing remains usable in memory.
+    }
+  }, [drawingStorageKey, manualDrawings]);
 
   const setRangeFromControl = (nextRange: CandleRange) => {
     setRange(nextRange);

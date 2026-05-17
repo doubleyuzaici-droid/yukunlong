@@ -1,6 +1,7 @@
 import {
   applyChartParameterPreset,
   applyChartPreferencePreset,
+  buildManualDrawingStorageKey,
   buildAdvancedIndicators,
   buildCandlestickPatternAnnotations,
   buildFibonacciRetracementLevels,
@@ -24,6 +25,7 @@ import {
   buildVolumeProfile,
   matchChartParameterPreset,
   matchChartPreferencePreset,
+  normalizeManualDrawings,
 } from "./TradingSignalKline.helpers.js";
 
 function assertEqual<T>(actual: T, expected: T, message: string) {
@@ -336,6 +338,57 @@ function testBuildsManualTrendDrawingGeometry() {
   assertApprox(geometry[0]?.y1, 352, 0.001, "trend drawing maps start price to y");
   assertApprox(geometry[0]?.y2, 148, 0.001, "trend drawing maps end price to y");
   assertEqual(geometry[0]?.label, "趋势线", "trend drawing exposes readable label");
+}
+
+function testNormalizesManualDrawingsForStorage() {
+  const drawings = normalizeManualDrawings([
+    {
+      id: "h1",
+      type: "horizontal",
+      start: { date: "2026-05-01", label: "05-01", price: 15 },
+      ignored: "field",
+    },
+    {
+      id: "t1",
+      type: "trend",
+      start: { date: "2026-05-01", price: 12 },
+      end: { date: "2026-05-03", label: "05-03", price: 18 },
+    },
+    {
+      id: "bad-trend",
+      type: "trend",
+      start: { date: "2026-05-01", price: 12 },
+    },
+    {
+      id: "bad-price",
+      type: "horizontal",
+      start: { date: "2026-05-01", price: Number.NaN },
+    },
+  ], 8);
+
+  assertEqual(drawings.length, 2, "normalizer keeps only usable drawings");
+  assertEqual(drawings[0]?.id, "h1", "normalizer keeps horizontal drawing id");
+  assertEqual(drawings[0]?.start.label, "05-01", "normalizer keeps optional anchor label");
+  assertEqual(Object.prototype.hasOwnProperty.call(drawings[0], "ignored"), false, "normalizer removes unknown fields");
+  assertEqual(drawings[1]?.id, "t1", "normalizer keeps completed trend drawing");
+  assertEqual(drawings[1]?.end?.price, 18, "normalizer keeps trend end price");
+
+  const limited = normalizeManualDrawings(drawings, 1);
+  assertEqual(limited.length, 1, "normalizer trims saved drawing count");
+  assertEqual(limited[0]?.id, "t1", "normalizer keeps the most recent drawings when trimming");
+}
+
+function testManualDrawingStorageKeyUsesSymbolScope() {
+  assertEqual(
+    buildManualDrawingStorageKey(" 600519.SH "),
+    "tradingagents.tradeSignalKline.drawings.600519.SH",
+    "drawing storage key is scoped to normalized symbol",
+  );
+  assertEqual(
+    buildManualDrawingStorageKey(""),
+    "tradingagents.tradeSignalKline.drawings.default",
+    "drawing storage key falls back for missing symbol",
+  );
 }
 
 function testBuildsMeasuredRangeStats() {
@@ -850,6 +903,8 @@ testMatchesChartParameterPresetFromValues();
 testUnknownChartParameterPresetIsNoop();
 testBuildsManualHorizontalDrawingGeometry();
 testBuildsManualTrendDrawingGeometry();
+testNormalizesManualDrawingsForStorage();
+testManualDrawingStorageKeyUsesSymbolScope();
 testBuildsMeasuredRangeStats();
 testMeasuredRangeStatsKeepSelectionDirection();
 testHandlesMissingBarsExplicitly();
