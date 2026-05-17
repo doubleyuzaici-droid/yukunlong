@@ -21,6 +21,8 @@ export interface MeasuredRangeBarLike extends PriceExtremaBarLike {
 export type PriceGapDirection = "up" | "down";
 export type CandlestickPatternTone = "good" | "risk" | "neutral";
 export type CandlestickPatternType = "doji" | "hammer" | "bullish-engulfing" | "bearish-engulfing";
+export type TdsSequentialDirection = "buy" | "sell";
+export type TdsSequentialTone = "good" | "risk";
 export type TechnicalIndicatorEventTone = "good" | "risk";
 export type TechnicalIndicatorEventType =
   | "ma-golden-cross"
@@ -94,6 +96,17 @@ export interface CandlestickPatternAnnotation {
   type: CandlestickPatternType;
   label: string;
   tone: CandlestickPatternTone;
+  index: number;
+  date: string;
+  dateLabel: string;
+  price: number;
+}
+
+export interface TdsSequentialAnnotation {
+  key: string;
+  direction: TdsSequentialDirection;
+  tone: TdsSequentialTone;
+  count: number;
   index: number;
   date: string;
   dateLabel: string;
@@ -374,6 +387,7 @@ export type ChartPreferenceName =
   | "supportResistance"
   | "trendLines"
   | "patterns"
+  | "tds9"
   | "indicatorSignals"
   | "divergences"
   | "volumeSignals"
@@ -465,6 +479,7 @@ const BASE_CHART_PRESET_VALUES: Record<ChartPreferenceName, boolean> = {
   supportResistance: true,
   trendLines: true,
   patterns: true,
+  tds9: true,
   indicatorSignals: true,
   divergences: true,
   volumeSignals: true,
@@ -500,6 +515,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
       supportResistance: false,
       trendLines: false,
       patterns: false,
+      tds9: false,
       indicatorSignals: false,
       divergences: false,
       volumeSignals: false,
@@ -530,6 +546,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
       profile: false,
       fibonacci: false,
       patterns: false,
+      tds9: false,
       divergences: false,
       volumeSignals: false,
       rsi: false,
@@ -557,6 +574,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
       supportResistance: false,
       trendLines: false,
       patterns: false,
+      tds9: false,
       volumeSignals: false,
       trendRegime: false,
       sar: false,
@@ -581,6 +599,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
       supportResistance: false,
       trendLines: false,
       patterns: false,
+      tds9: false,
       divergences: false,
       trendRegime: false,
       sar: false,
@@ -608,6 +627,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
       supportResistance: true,
       trendLines: true,
       patterns: true,
+      tds9: true,
       indicatorSignals: true,
       divergences: true,
       volumeSignals: false,
@@ -677,6 +697,7 @@ const CHART_LAYER_ANNOTATIONS: ChartLayerSummaryOption[] = [
   ["supportResistance", "支阻"],
   ["trendLines", "趋势线"],
   ["patterns", "形态"],
+  ["tds9", "TDS9"],
   ["indicatorSignals", "技信"],
   ["divergences", "背离"],
   ["volumeSignals", "量信"],
@@ -3035,6 +3056,25 @@ export function buildCandlestickPatternAnnotations(
   });
 }
 
+export function buildTdsSequentialAnnotations(
+  bars: PriceExtremaBarLike[],
+  options: { lookback?: number; targetCount?: number; minVisibleCount?: number } = {},
+): TdsSequentialAnnotation[] {
+  const lookback = clampInteger(options.lookback ?? 4, 1, 20);
+  const targetCount = clampInteger(options.targetCount ?? 9, 2, 20);
+  const minVisibleCount = clampInteger(options.minVisibleCount ?? 6, 1, targetCount);
+  const normalized = bars.map(normalizeCandlestickPatternBar);
+
+  return [
+    ...buildTdsSequentialDirectionAnnotations(normalized, "sell", lookback, targetCount, minVisibleCount),
+    ...buildTdsSequentialDirectionAnnotations(normalized, "buy", lookback, targetCount, minVisibleCount),
+  ].sort((left, right) =>
+    left.index - right.index ||
+    tdsSequentialDirectionRank(left.direction) - tdsSequentialDirectionRank(right.direction) ||
+    left.count - right.count,
+  );
+}
+
 export function buildTechnicalIndicatorAnnotations(
   bars: TechnicalIndicatorBarLike[],
 ): TechnicalIndicatorAnnotation[] {
@@ -3866,6 +3906,77 @@ function normalizeCandlestickPatternBar(bar: PriceExtremaBarLike, index: number)
     low: Math.min(high, low, open, close),
     close,
   };
+}
+
+function buildTdsSequentialDirectionAnnotations(
+  bars: Array<ReturnType<typeof normalizeCandlestickPatternBar>>,
+  direction: TdsSequentialDirection,
+  lookback: number,
+  targetCount: number,
+  minVisibleCount: number,
+) {
+  const annotations: TdsSequentialAnnotation[] = [];
+  let runStart = -1;
+  let runCount = 0;
+  let hasCompletedRun = false;
+
+  const emitRun = (length: number) => {
+    if (runStart < 0) return;
+
+    for (let offset = 0; offset < length; offset += 1) {
+      const bar = bars[runStart + offset];
+      if (!bar) continue;
+
+      annotations.push({
+        key: `tds9-${direction}-${bar.index}-${offset + 1}`,
+        direction,
+        tone: direction === "sell" ? "risk" : "good",
+        count: offset + 1,
+        index: bar.index,
+        date: bar.date,
+        dateLabel: bar.label,
+        price: direction === "sell" ? bar.high : bar.low,
+      });
+    }
+  };
+
+  for (let index = 0; index < bars.length; index += 1) {
+    const bar = bars[index];
+    const lookbackBar = bars[index - lookback];
+    const qualifies = Boolean(
+      bar &&
+      lookbackBar &&
+      (direction === "sell" ? bar.close > lookbackBar.close : bar.close < lookbackBar.close),
+    );
+
+    if (!qualifies) {
+      runStart = -1;
+      runCount = 0;
+      hasCompletedRun = false;
+      continue;
+    }
+
+    if (runCount === 0) {
+      runStart = index;
+      hasCompletedRun = false;
+    }
+
+    runCount += 1;
+    if (runCount === targetCount && !hasCompletedRun) {
+      emitRun(targetCount);
+      hasCompletedRun = true;
+    }
+  }
+
+  if (!hasCompletedRun && runCount >= minVisibleCount && runCount < targetCount) {
+    emitRun(runCount);
+  }
+
+  return annotations;
+}
+
+function tdsSequentialDirectionRank(direction: TdsSequentialDirection) {
+  return direction === "sell" ? 0 : 1;
 }
 
 function normalizeTechnicalIndicatorBar(bar: TechnicalIndicatorBarLike, index: number) {

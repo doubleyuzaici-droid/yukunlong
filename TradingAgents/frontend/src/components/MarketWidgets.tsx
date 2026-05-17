@@ -46,6 +46,7 @@ import {
   buildPriceGapAnnotations,
   buildPriceStructureTrendLines,
   buildSupportResistanceLevels,
+  buildTdsSequentialAnnotations,
   buildTechnicalDivergenceAnnotations,
   buildTechnicalIndicatorAnnotations,
   buildTrendOverlayIndicators,
@@ -260,6 +261,7 @@ interface TradingChartPreferences {
   supportResistance: boolean;
   trendLines: boolean;
   patterns: boolean;
+  tds9: boolean;
   indicatorSignals: boolean;
   divergences: boolean;
   volumeSignals: boolean;
@@ -466,6 +468,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   supportResistance: true,
   trendLines: true,
   patterns: true,
+  tds9: true,
   indicatorSignals: true,
   divergences: true,
   volumeSignals: true,
@@ -545,6 +548,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     supportResistance: typeof next.supportResistance === "boolean" ? next.supportResistance : DEFAULT_TRADING_CHART_PREFS.supportResistance,
     trendLines: typeof next.trendLines === "boolean" ? next.trendLines : DEFAULT_TRADING_CHART_PREFS.trendLines,
     patterns: typeof next.patterns === "boolean" ? next.patterns : DEFAULT_TRADING_CHART_PREFS.patterns,
+    tds9: typeof next.tds9 === "boolean" ? next.tds9 : DEFAULT_TRADING_CHART_PREFS.tds9,
     indicatorSignals: typeof next.indicatorSignals === "boolean" ? next.indicatorSignals : DEFAULT_TRADING_CHART_PREFS.indicatorSignals,
     divergences: typeof next.divergences === "boolean" ? next.divergences : DEFAULT_TRADING_CHART_PREFS.divergences,
     volumeSignals: typeof next.volumeSignals === "boolean" ? next.volumeSignals : DEFAULT_TRADING_CHART_PREFS.volumeSignals,
@@ -1924,6 +1928,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.supportResistance ? "active" : ""} onClick={() => toggleChartPref("supportResistance")} type="button">支阻</button>
         <button className={chartPrefs.trendLines ? "active" : ""} onClick={() => toggleChartPref("trendLines")} type="button">趋势线</button>
         <button className={chartPrefs.patterns ? "active" : ""} onClick={() => toggleChartPref("patterns")} type="button">形态</button>
+        <button className={chartPrefs.tds9 ? "active" : ""} onClick={() => toggleChartPref("tds9")} type="button">TDS9</button>
         <button className={chartPrefs.indicatorSignals ? "active" : ""} onClick={() => toggleChartPref("indicatorSignals")} type="button">技信</button>
         <button className={chartPrefs.divergences ? "active" : ""} onClick={() => toggleChartPref("divergences")} type="button">背离</button>
         <button className={chartPrefs.sar ? "active" : ""} onClick={() => toggleChartPref("sar")} type="button">SAR</button>
@@ -2651,6 +2656,15 @@ export function TradingSignalKlinePanel({
               <text x={pattern.labelX} y={pattern.labelY}>{pattern.label}</text>
               <title>
                 {pattern.dateLabel} {pattern.label} {formatNumber(pattern.price, 2)}
+              </title>
+            </g>
+          ))}
+          {chartPrefs.tds9 && chart.tdsSequentialEvents.map((event) => (
+            <g className={`tds9-marker ${event.direction} ${event.tone}`} key={event.key}>
+              <rect height="14" rx="3" width="14" x={event.x - 7} y={event.markerY - 7} />
+              <text x={event.x} y={event.markerY}>{event.count}</text>
+              <title>
+                {event.dateLabel} TDS9{event.direction === "sell" ? "上涨" : "下跌"}序列 {event.count} · {formatNumber(event.price, 2)}
               </title>
             </g>
           ))}
@@ -4198,6 +4212,7 @@ function buildTradingSignalGeometry(
       entryLinks: [],
       priceGaps: [],
       candlestickPatterns: [],
+      tdsSequentialEvents: [],
       technicalIndicatorEvents: [],
       technicalDivergenceEvents: [],
       volumeSignalEvents: [],
@@ -4552,6 +4567,22 @@ function buildTradingSignalGeometry(
       markerY,
       labelX: clampNumber(x + (x > PLOT_RIGHT - 92 ? -58 : 10), PLOT_LEFT + 8, PLOT_RIGHT - 78),
       labelY: clampNumber(markerY - 7, PRICE_TOP + 14, PRICE_BOTTOM - 6),
+    };
+  });
+  const tdsRanks = new Map<number, number>();
+  const tdsSequentialEvents = buildTdsSequentialAnnotations(visible).map((event) => {
+    const rank = tdsRanks.get(event.index) || 0;
+    tdsRanks.set(event.index, rank + 1);
+    const x = xOf(event.index);
+    const priceY = yOf(event.price);
+    const markerY = event.direction === "sell"
+      ? Math.max(PRICE_TOP + 15, priceY - 15 - rank * 14)
+      : Math.min(PRICE_BOTTOM - 12, priceY + 15 + rank * 14);
+    return {
+      ...event,
+      x,
+      priceY,
+      markerY,
     };
   });
   const priceTickValues = [
@@ -5534,6 +5565,7 @@ function buildTradingSignalGeometry(
     entryLinks,
     priceGaps,
     candlestickPatterns,
+    tdsSequentialEvents,
     technicalIndicatorEvents,
     technicalDivergenceEvents,
     volumeSignalEvents,

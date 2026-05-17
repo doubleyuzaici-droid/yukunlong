@@ -38,6 +38,7 @@ import {
   buildPriceGapAnnotations,
   buildPriceStructureTrendLines,
   buildSupportResistanceLevels,
+  buildTdsSequentialAnnotations,
   buildTechnicalIndicatorAnnotations,
   buildTechnicalDivergenceAnnotations,
   buildTrendOverlayIndicators,
@@ -104,6 +105,7 @@ const baseChartPrefs = {
   supportResistance: true,
   trendLines: true,
   patterns: true,
+  tds9: true,
   indicatorSignals: true,
   divergences: true,
   volumeSignals: true,
@@ -205,6 +207,38 @@ const patternBars = [
   { date: "2026-05-05", open: 10.4, high: 11.2, low: 10.3, close: 11, volume: 210, amount: 2_310 },
   { date: "2026-05-06", open: 11.1, high: 11.3, low: 10.1, close: 10.2, volume: 280, amount: 2_856 },
   { date: "2026-05-07", open: 10.3, high: 10.55, low: 9.4, close: 10.5, volume: 320, amount: 3_360 },
+];
+
+const risingTdsBars = Array.from({ length: 13 }, (_, index) => {
+  const close = index < 4 ? 10 : 10 + index - 3;
+  return {
+    date: `2026-06-${String(index + 1).padStart(2, "0")}`,
+    open: close - 0.2,
+    high: close + 0.5,
+    low: close - 0.5,
+    close,
+    volume: 100 + index,
+    amount: close * (100 + index),
+  };
+});
+
+const fallingTdsBars = Array.from({ length: 13 }, (_, index) => {
+  const close = index < 4 ? 20 : 20 - index + 3;
+  return {
+    date: `2026-07-${String(index + 1).padStart(2, "0")}`,
+    open: close + 0.2,
+    high: close + 0.5,
+    low: close - 0.5,
+    close,
+    volume: 100 + index,
+    amount: close * (100 + index),
+  };
+});
+
+const partialTdsBars = risingTdsBars.slice(0, 10);
+const failedPartialTdsBars = [
+  ...risingTdsBars.slice(0, 10),
+  { date: "2026-06-11", open: 9.5, high: 9.8, low: 9.2, close: 9.5, volume: 120, amount: 1_140 },
 ];
 
 const technicalSignalBars = [
@@ -1434,6 +1468,50 @@ function testCandlestickPatternsNeedUsableBars() {
   assertEqual(patterns.length, 0, "empty input has no candlestick patterns");
 }
 
+function testBuildsTdsSequentialSellSetup() {
+  const annotations = buildTdsSequentialAnnotations(risingTdsBars);
+
+  assertEqual(annotations.length, 9, "completed rising TDS setup exposes nine sell-count labels");
+  assertEqual(annotations.map((item) => item.count).join(","), "1,2,3,4,5,6,7,8,9", "sell setup labels count upward");
+  assertEqual(
+    annotations.map((item) => item.direction).join(","),
+    "sell,sell,sell,sell,sell,sell,sell,sell,sell",
+    "rising setup is a sell-side TDS sequence",
+  );
+  assertEqual(annotations[0]?.index, 4, "sell setup starts at the first close above four bars ago");
+  assertEqual(annotations[8]?.index, 12, "sell setup ends at the ninth qualifying bar");
+  assertEqual(annotations[8]?.tone, "risk", "sell-side TDS 9 is marked as risk");
+  assertApprox(annotations[8]?.price, 19.5, 0.001, "sell-side label anchors above the high");
+}
+
+function testBuildsTdsSequentialBuySetup() {
+  const annotations = buildTdsSequentialAnnotations(fallingTdsBars);
+
+  assertEqual(annotations.length, 9, "completed falling TDS setup exposes nine buy-count labels");
+  assertEqual(annotations.map((item) => item.count).join(","), "1,2,3,4,5,6,7,8,9", "buy setup labels count upward");
+  assertEqual(
+    annotations.map((item) => item.direction).join(","),
+    "buy,buy,buy,buy,buy,buy,buy,buy,buy",
+    "falling setup is a buy-side TDS sequence",
+  );
+  assertEqual(annotations[8]?.tone, "good", "buy-side TDS 9 is marked constructive");
+  assertApprox(annotations[8]?.price, 10.5, 0.001, "buy-side label anchors below the low");
+}
+
+function testBuildsTrailingPartialTdsSequentialSetup() {
+  const annotations = buildTdsSequentialAnnotations(partialTdsBars);
+
+  assertEqual(annotations.length, 6, "active TDS setup displays from count six onward");
+  assertEqual(annotations.map((item) => item.count).join(","), "1,2,3,4,5,6", "active setup backfills visible counts");
+  assertEqual(annotations[5]?.index, 9, "active setup ends at the latest qualifying bar");
+}
+
+function testTdsSequentialDropsFailedPartialSetup() {
+  const annotations = buildTdsSequentialAnnotations(failedPartialTdsBars);
+
+  assertEqual(annotations.length, 0, "failed partial TDS setup is hidden after the streak breaks");
+}
+
 function testBuildsTechnicalIndicatorAnnotations() {
   const events = buildTechnicalIndicatorAnnotations(technicalSignalBars);
 
@@ -1754,6 +1832,10 @@ testBuildsSupportResistanceLevelsFromSwingPivots();
 testSupportResistanceNeedsUsableBars();
 testBuildsCandlestickPatternAnnotations();
 testCandlestickPatternsNeedUsableBars();
+testBuildsTdsSequentialSellSetup();
+testBuildsTdsSequentialBuySetup();
+testBuildsTrailingPartialTdsSequentialSetup();
+testTdsSequentialDropsFailedPartialSetup();
 testBuildsTechnicalIndicatorAnnotations();
 testBuildsMomentumTechnicalIndicatorAnnotations();
 testTechnicalIndicatorAnnotationsNeedComparableValues();

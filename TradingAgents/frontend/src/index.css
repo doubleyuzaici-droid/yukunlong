@@ -4593,6 +4593,46 @@ label {
   fill: #ffe4a3 !important;
 }
 
+.tds9-marker {
+  pointer-events: none;
+}
+
+.tds9-marker rect {
+  stroke: rgba(11, 15, 20, 0.82);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.tds9-marker text {
+  dominant-baseline: central;
+  font-size: 9.5px !important;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(11, 15, 20, 0.72);
+  stroke-width: 1.5px;
+  text-anchor: middle;
+}
+
+.tds9-marker.sell rect {
+  fill: rgba(255, 140, 132, 0.95);
+}
+
+.tds9-marker.sell text {
+  fill: #fff2ef !important;
+}
+
+.tds9-marker.buy rect {
+  fill: rgba(126, 224, 163, 0.95);
+}
+
+.tds9-marker.buy text {
+  fill: #09261a !important;
+  stroke: rgba(240, 255, 247, 0.42);
+  stroke-width: 0.8px;
+}
+
 .technical-indicator-event {
   pointer-events: none;
 }
