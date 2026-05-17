@@ -12,6 +12,7 @@ import {
   buildIndicatorSectionLayout,
   buildMomentumIndicators,
   buildTrendOverlayIndicators,
+  buildVolumeMomentumIndicators,
   buildVolumeProfile,
   type VolumeProfileModel,
 } from "./TradingSignalKline.helpers";
@@ -107,6 +108,11 @@ interface TradingIndicatorSnapshot {
   bias?: number | null;
   dma?: number | null;
   ama?: number | null;
+  vr?: number | null;
+  mfi?: number | null;
+  roc?: number | null;
+  trix?: number | null;
+  trma?: number | null;
   cr?: number | null;
   ar?: number | null;
   br?: number | null;
@@ -167,6 +173,7 @@ interface TradingChartPreferences {
   advanced: boolean;
   momentum: boolean;
   biasDma: boolean;
+  volumeMomentum: boolean;
   subCharts: boolean;
   measure: boolean;
 }
@@ -189,6 +196,10 @@ interface TradingChartParameters {
   dmaFast: number;
   dmaSlow: number;
   dmaSignal: number;
+  volumeMomentumPeriod: number;
+  rocPeriod: number;
+  trixPeriod: number;
+  trixSignal: number;
   atrPeriod: number;
 }
 
@@ -334,6 +345,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   advanced: true,
   momentum: true,
   biasDma: true,
+  volumeMomentum: true,
   subCharts: true,
   measure: false,
 };
@@ -356,6 +368,10 @@ const DEFAULT_TRADING_CHART_PARAMS: TradingChartParameters = {
   dmaFast: 10,
   dmaSlow: 50,
   dmaSignal: 10,
+  volumeMomentumPeriod: 26,
+  rocPeriod: 12,
+  trixPeriod: 12,
+  trixSignal: 9,
   atrPeriod: 14,
 };
 
@@ -388,6 +404,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     advanced: typeof next.advanced === "boolean" ? next.advanced : DEFAULT_TRADING_CHART_PREFS.advanced,
     momentum: typeof next.momentum === "boolean" ? next.momentum : DEFAULT_TRADING_CHART_PREFS.momentum,
     biasDma: typeof next.biasDma === "boolean" ? next.biasDma : DEFAULT_TRADING_CHART_PREFS.biasDma,
+    volumeMomentum: typeof next.volumeMomentum === "boolean" ? next.volumeMomentum : DEFAULT_TRADING_CHART_PREFS.volumeMomentum,
     subCharts: typeof next.subCharts === "boolean" ? next.subCharts : DEFAULT_TRADING_CHART_PREFS.subCharts,
     measure: typeof next.measure === "boolean" ? next.measure : DEFAULT_TRADING_CHART_PREFS.measure,
   };
@@ -414,6 +431,10 @@ function normalizeTradingChartParams(value: unknown): TradingChartParameters {
     dmaFast: boundedInteger(next.dmaFast, 3, 40, DEFAULT_TRADING_CHART_PARAMS.dmaFast),
     dmaSlow: boundedInteger(next.dmaSlow, 8, 160, DEFAULT_TRADING_CHART_PARAMS.dmaSlow),
     dmaSignal: boundedInteger(next.dmaSignal, 3, 40, DEFAULT_TRADING_CHART_PARAMS.dmaSignal),
+    volumeMomentumPeriod: boundedInteger(next.volumeMomentumPeriod, 5, 80, DEFAULT_TRADING_CHART_PARAMS.volumeMomentumPeriod),
+    rocPeriod: boundedInteger(next.rocPeriod, 3, 80, DEFAULT_TRADING_CHART_PARAMS.rocPeriod),
+    trixPeriod: boundedInteger(next.trixPeriod, 3, 40, DEFAULT_TRADING_CHART_PARAMS.trixPeriod),
+    trixSignal: boundedInteger(next.trixSignal, 3, 40, DEFAULT_TRADING_CHART_PARAMS.trixSignal),
     atrPeriod: boundedInteger(next.atrPeriod, 5, 40, DEFAULT_TRADING_CHART_PARAMS.atrPeriod),
   };
 }
@@ -1418,6 +1439,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.advanced ? "active" : ""} onClick={() => toggleChartPref("advanced")} type="button">CR/ARBR/EMV</button>
         <button className={chartPrefs.momentum ? "active" : ""} onClick={() => toggleChartPref("momentum")} type="button">DMI/CCI/WR</button>
         <button className={chartPrefs.biasDma ? "active" : ""} onClick={() => toggleChartPref("biasDma")} type="button">BIAS/DMA</button>
+        <button className={chartPrefs.volumeMomentum ? "active" : ""} onClick={() => toggleChartPref("volumeMomentum")} type="button">VR/MFI/TRIX</button>
         <button className={chartPrefs.subCharts ? "active" : ""} onClick={() => toggleChartPref("subCharts")} type="button">分屏</button>
         <button className={chartPrefs.measure ? "active measure" : "measure"} onClick={() => toggleChartPref("measure")} type="button">测距</button>
         <button className={paramsOpen ? "active" : ""} onClick={() => setParamsOpen((value) => !value)} type="button">参数</button>
@@ -1443,6 +1465,10 @@ export function TradingSignalKlinePanel({
           <ChartParamInput label="DMA快" value={chartParams.dmaFast} onChange={updateChartParam("dmaFast")} />
           <ChartParamInput label="DMA慢" value={chartParams.dmaSlow} onChange={updateChartParam("dmaSlow")} />
           <ChartParamInput label="AMA" value={chartParams.dmaSignal} onChange={updateChartParam("dmaSignal")} />
+          <ChartParamInput label="VR/MFI" value={chartParams.volumeMomentumPeriod} onChange={updateChartParam("volumeMomentumPeriod")} />
+          <ChartParamInput label="ROC" value={chartParams.rocPeriod} onChange={updateChartParam("rocPeriod")} />
+          <ChartParamInput label="TRIX" value={chartParams.trixPeriod} onChange={updateChartParam("trixPeriod")} />
+          <ChartParamInput label="TRMA" value={chartParams.trixSignal} onChange={updateChartParam("trixSignal")} />
           <ChartParamInput label="ATR" value={chartParams.atrPeriod} onChange={updateChartParam("atrPeriod")} />
         </div>
       )}
@@ -1531,6 +1557,18 @@ export function TradingSignalKlinePanel({
           value={formatNumber(readoutIndicators?.bias, 2)}
           sub={`DMA ${formatNumber(readoutIndicators?.dma, 2)} · AMA ${formatNumber(readoutIndicators?.ama, 2)}`}
           tone={quoteTone(readoutIndicators?.bias)}
+        />
+        <MarketReadoutStat
+          label={`MFI / VR ${chartParams.volumeMomentumPeriod}`}
+          value={`${formatNumber(readoutIndicators?.mfi, 1)} / ${formatNumber(readoutIndicators?.vr, 1)}`}
+          sub="量价资金流强弱"
+          tone={quoteTone((readoutIndicators?.mfi || 50) - 50)}
+        />
+        <MarketReadoutStat
+          label={`ROC${chartParams.rocPeriod} / TRIX`}
+          value={formatSignedNumber(readoutIndicators?.roc, 2)}
+          sub={`TRIX ${formatSignedNumber(readoutIndicators?.trix, 2)} · TRMA ${formatSignedNumber(readoutIndicators?.trma, 2)}`}
+          tone={quoteTone(readoutIndicators?.roc)}
         />
         <MarketReadoutStat
           label={`ATR${chartParams.atrPeriod} / OBV`}
@@ -1680,6 +1718,17 @@ export function TradingSignalKlinePanel({
           {chartPrefs.biasDma && chart.biasLine && <polyline className="indicator-line bias" points={chart.biasLine} />}
           {chartPrefs.biasDma && chart.dmaLine && <polyline className="indicator-line dma" points={chart.dmaLine} />}
           {chartPrefs.biasDma && chart.amaLine && <polyline className="indicator-line ama" points={chart.amaLine} />}
+          {chartPrefs.volumeMomentum && (
+            <>
+              <line className="advanced-indicator-baseline" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.moneyFlow100Y} y2={chart.moneyFlow100Y} />
+              <line className="volume-momentum-zero-line" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.volumeMomentumZeroY} y2={chart.volumeMomentumZeroY} />
+            </>
+          )}
+          {chartPrefs.volumeMomentum && chart.mfiLine && <polyline className="indicator-line mfi" points={chart.mfiLine} />}
+          {chartPrefs.volumeMomentum && chart.vrLine && <polyline className="indicator-line vr" points={chart.vrLine} />}
+          {chartPrefs.volumeMomentum && chart.rocLine && <polyline className="indicator-line roc" points={chart.rocLine} />}
+          {chartPrefs.volumeMomentum && chart.trixLine && <polyline className="indicator-line trix" points={chart.trixLine} />}
+          {chartPrefs.volumeMomentum && chart.trmaLine && <polyline className="indicator-line trma" points={chart.trmaLine} />}
           {chartPrefs.boll && chart.bollUpper && <polyline className="boll-line upper" points={chart.bollUpper} />}
           {chartPrefs.boll && chart.bollMid && <polyline className="boll-line mid" points={chart.bollMid} />}
           {chartPrefs.boll && chart.bollLower && <polyline className="boll-line lower" points={chart.bollLower} />}
@@ -1823,7 +1872,7 @@ export function TradingSignalKlinePanel({
               <text className="crosshair-date-text" x={clampNumber(crosshair.x, chart.plotLeft + 38, chart.plotRight - 38)} y={chart.timeAxisY - 5}>
                 {shortDateLabel(crosshair.candle.periodLabel || crosshair.candle.date)}
               </text>
-              <rect x={crosshair.labelX} y="52" width="254" height="174" rx="4" />
+              <rect x={crosshair.labelX} y="52" width="254" height="194" rx="4" />
               <text x={crosshair.labelX + 12} y="76">{crosshair.candle.periodLabel || crosshair.candle.date}</text>
               <text x={crosshair.labelX + 12} y="98">周期 {periodData.unit} · 信号 {crosshairSignalCount}</text>
               <text x={crosshair.labelX + 12} y="120">O {formatNumber(crosshair.candle.open, 2)} H {formatNumber(crosshair.candle.high, 2)}</text>
@@ -1833,6 +1882,7 @@ export function TradingSignalKlinePanel({
               </text>
               <text x={crosshair.labelX + 12} y="186">量 {formatCompactNumber(crosshair.candle.volume)} · 额 {formatMoney(crosshair.candle.amount)}</text>
               <text x={crosshair.labelX + 12} y="208">RSI {formatNumber(crosshair.candle.indicators.rsi14, 1)} · MACD {formatNumber(crosshair.candle.indicators.macd, 2)} · ATR {formatNumber(crosshair.candle.indicators.atr, 2)}</text>
+              <text x={crosshair.labelX + 12} y="230">MFI {formatNumber(crosshair.candle.indicators.mfi, 1)} · VR {formatNumber(crosshair.candle.indicators.vr, 1)} · ROC {formatSignedNumber(crosshair.candle.indicators.roc, 2)}</text>
             </g>
           )}
           {chart.candles.length === 0 && <text x="3" y="104">暂无历史行情</text>}
@@ -1887,6 +1937,8 @@ export function TradingSignalKlinePanel({
                   <MiniChartStat label="DMI+/DMI-" value={`${formatNumber(activeIndicators?.pdi, 1)} / ${formatNumber(activeIndicators?.mdi, 1)}`} />
                   <MiniChartStat label="CCI / WR" value={`${formatNumber(activeIndicators?.cci, 1)} / ${formatNumber(activeIndicators?.wr, 1)}`} />
                   <MiniChartStat label="BIAS / DMA" value={`${formatNumber(activeIndicators?.bias, 2)} / ${formatNumber(activeIndicators?.dma, 2)}`} />
+                  <MiniChartStat label="MFI / VR" value={`${formatNumber(activeIndicators?.mfi, 1)} / ${formatNumber(activeIndicators?.vr, 1)}`} />
+                  <MiniChartStat label="ROC / TRIX" value={`${formatSignedNumber(activeIndicators?.roc, 2)} / ${formatSignedNumber(activeIndicators?.trix, 2)}`} />
                 </div>
               </div>
             </div>
@@ -1940,6 +1992,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line advanced" />CR/ARBR/EMV</span>
         <span><i className="legend-line momentum" />DMI/CCI/WR</span>
         <span><i className="legend-line bias-dma" />BIAS/DMA</span>
+        <span><i className="legend-line volume-momentum" />VR/MFI/TRIX</span>
         <span><i className="legend-line profile" />筹码分布</span>
         <span><i className="legend-marker" />信号日至入场日</span>
       </div>
@@ -3042,6 +3095,11 @@ function buildTradingSignalGeometry(
       biasLine: "",
       dmaLine: "",
       amaLine: "",
+      mfiLine: "",
+      vrLine: "",
+      rocLine: "",
+      trixLine: "",
+      trmaLine: "",
       relativeLine: "",
       relativeZeroY: (PRICE_TOP + PRICE_BOTTOM) / 2,
       relativeLatest: null as number | null,
@@ -3054,6 +3112,8 @@ function buildTradingSignalGeometry(
       advanced100Y: ADVANCED_BOTTOM - 0.5 * (ADVANCED_BOTTOM - ADVANCED_TOP),
       emvZeroY: ADVANCED_BOTTOM - 0.5 * (ADVANCED_BOTTOM - ADVANCED_TOP),
       momentumZeroY: MOMENTUM_BOTTOM - 0.5 * (MOMENTUM_BOTTOM - MOMENTUM_TOP),
+      moneyFlow100Y: ADVANCED_BOTTOM - 0.5 * (ADVANCED_BOTTOM - ADVANCED_TOP),
+      volumeMomentumZeroY: MOMENTUM_BOTTOM - 0.5 * (MOMENTUM_BOTTOM - MOMENTUM_TOP),
       rsi70Y: RSI_BOTTOM - 0.7 * (RSI_BOTTOM - RSI_TOP),
       rsi30Y: RSI_BOTTOM - 0.3 * (RSI_BOTTOM - RSI_TOP),
       signalLaneY: SIGNAL_LANE_Y,
@@ -3090,11 +3150,22 @@ function buildTradingSignalGeometry(
     dmaSlow: params.dmaSlow,
     dmaSignal: params.dmaSignal,
   });
+  const volumeMomentumValues = buildVolumeMomentumIndicators(visible, {
+    period: params.volumeMomentumPeriod,
+    rocPeriod: params.rocPeriod,
+    trixPeriod: params.trixPeriod,
+    trixSignal: params.trixSignal,
+  });
   const sarValues = trendOverlayValues.map((value) => value.sar);
   const bbiValues = trendOverlayValues.map((value) => value.bbi);
   const biasValues = trendOverlayValues.map((value) => value.bias);
   const dmaValues = trendOverlayValues.map((value) => value.dma);
   const amaValues = trendOverlayValues.map((value) => value.ama);
+  const vrValues = volumeMomentumValues.map((value) => value.vr);
+  const mfiValues = volumeMomentumValues.map((value) => value.mfi);
+  const rocValues = volumeMomentumValues.map((value) => value.roc);
+  const trixValues = volumeMomentumValues.map((value) => value.trix);
+  const trmaValues = volumeMomentumValues.map((value) => value.trma);
   const bollDomainValues = bollValues.flatMap((value) =>
     value ? [value.upper, value.lower] : [],
   );
@@ -3200,6 +3271,16 @@ function buildTradingSignalGeometry(
   const dmaZeroY = (MOMENTUM_TOP + MOMENTUM_BOTTOM) / 2;
   const dmaY = (value?: number | null) =>
     dmaZeroY - (Number(value ?? 0) / maxDmaAbs) * ((MOMENTUM_BOTTOM - MOMENTUM_TOP) / 2 - 3);
+  const moneyFlowFiniteValues = [0, 50, 100, 200, ...vrValues, ...mfiValues].filter(isFiniteNumber);
+  const moneyFlowMin = Math.min(...moneyFlowFiniteValues);
+  const moneyFlowMax = Math.max(...moneyFlowFiniteValues);
+  const moneyFlowSpan = moneyFlowMax - moneyFlowMin || 1;
+  const moneyFlowY = (value?: number | null) =>
+    ADVANCED_BOTTOM - ((Number(value ?? 50) - moneyFlowMin) / moneyFlowSpan) * (ADVANCED_BOTTOM - ADVANCED_TOP);
+  const maxRocAbs = Math.max(0.000001, ...[...rocValues, ...trixValues, ...trmaValues].filter(isFiniteNumber).map((value) => Math.abs(value)));
+  const volumeMomentumZeroY = (MOMENTUM_TOP + MOMENTUM_BOTTOM) / 2;
+  const rocY = (value?: number | null) =>
+    volumeMomentumZeroY - (Number(value ?? 0) / maxRocAbs) * ((MOMENTUM_BOTTOM - MOMENTUM_TOP) / 2 - 3);
   const relativeValues = closeValues.map((close) => (closeValues[0] ? close / closeValues[0] - 1 : 0));
   const maxRelativeAbs = Math.max(0.01, ...relativeValues.map(Math.abs));
   const relativeY = (value: number) =>
@@ -3230,6 +3311,7 @@ function buildTradingSignalGeometry(
     const advanced = advancedValues[index];
     const momentum = momentumValues[index];
     const trendOverlay = trendOverlayValues[index];
+    const volumeMomentum = volumeMomentumValues[index];
     return {
       date: bar.date,
       periodLabel: bar.period_label,
@@ -3288,6 +3370,11 @@ function buildTradingSignalGeometry(
         bias: trendOverlay?.bias ?? null,
         dma: trendOverlay?.dma ?? null,
         ama: trendOverlay?.ama ?? null,
+        vr: volumeMomentum?.vr ?? null,
+        mfi: volumeMomentum?.mfi ?? null,
+        roc: volumeMomentum?.roc ?? null,
+        trix: volumeMomentum?.trix ?? null,
+        trma: volumeMomentum?.trma ?? null,
         cr: advanced?.cr ?? null,
         ar: advanced?.ar ?? null,
         br: advanced?.br ?? null,
@@ -3424,6 +3511,11 @@ function buildTradingSignalGeometry(
     biasLine: indicatorPoints(biasValues, biasY),
     dmaLine: indicatorPoints(dmaValues, dmaY),
     amaLine: indicatorPoints(amaValues, dmaY),
+    mfiLine: indicatorPoints(mfiValues, moneyFlowY),
+    vrLine: indicatorPoints(vrValues, moneyFlowY),
+    rocLine: indicatorPoints(rocValues, rocY),
+    trixLine: indicatorPoints(trixValues, rocY),
+    trmaLine: indicatorPoints(trmaValues, rocY),
     relativeLine,
     relativeZeroY: relativeY(0),
     relativeLatest: relativeValues[relativeValues.length - 1] ?? null,
@@ -3438,6 +3530,8 @@ function buildTradingSignalGeometry(
     advanced100Y: advancedY(100),
     emvZeroY,
     momentumZeroY: momentumY(0),
+    moneyFlow100Y: moneyFlowY(100),
+    volumeMomentumZeroY,
     rsi70Y: rsiY(70),
     rsi30Y: rsiY(30),
     signalLaneY: SIGNAL_LANE_Y,

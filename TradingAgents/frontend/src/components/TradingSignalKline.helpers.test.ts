@@ -3,6 +3,7 @@ import {
   buildIndicatorSectionLayout,
   buildMomentumIndicators,
   buildTrendOverlayIndicators,
+  buildVolumeMomentumIndicators,
   buildVolumeProfile,
 } from "./TradingSignalKline.helpers.js";
 
@@ -168,6 +169,40 @@ function testTrendOverlayIndicatorsNeedEnoughSamples() {
   assertEqual(latest?.ama, null, "AMA is missing before enough DMA samples are ready");
 }
 
+function testBuildsVolumeMomentumIndicators() {
+  const indicators = buildVolumeMomentumIndicators(trendOverlayBars, {
+    period: 3,
+    rocPeriod: 3,
+    trixPeriod: 3,
+    trixSignal: 3,
+  });
+  const latest = indicators[indicators.length - 1];
+
+  assertEqual(indicators.length, trendOverlayBars.length, "volume momentum indicators preserve bar count");
+  assertOk(latest, "latest volume momentum indicator exists");
+  assertApprox(latest?.vr, 44.5205, 0.001, "VR compares rising volume against falling volume");
+  assertApprox(latest?.mfi, 32.9492, 0.001, "MFI compares positive and negative money flow");
+  assertApprox(latest?.roc, -9.7561, 0.001, "ROC reports close distance from the lookback close");
+  assertApprox(latest?.trix, -0.4237, 0.001, "TRIX reports triple-smoothed EMA momentum");
+  assertApprox(latest?.trma, 1.5352, 0.001, "TRMA smooths recent TRIX values");
+}
+
+function testVolumeMomentumIndicatorsNeedEnoughSamples() {
+  const indicators = buildVolumeMomentumIndicators(trendOverlayBars.slice(0, 2), {
+    period: 3,
+    rocPeriod: 3,
+    trixPeriod: 3,
+    trixSignal: 3,
+  });
+  const latest = indicators[indicators.length - 1];
+
+  assertEqual(latest?.vr, null, "VR is missing before enough directional volume samples");
+  assertEqual(latest?.mfi, null, "MFI is missing before enough money flow samples");
+  assertEqual(latest?.roc, null, "ROC is missing before enough lookback bars");
+  assertOk(typeof latest?.trix === "number", "TRIX starts once triple EMA has a previous value");
+  assertEqual(latest?.trma, null, "TRMA is missing before enough TRIX samples");
+}
+
 testBuildsVisibleVolumeDistribution();
 testHandlesMissingBarsExplicitly();
 testBuildsFutuStyleAdvancedIndicators();
@@ -178,3 +213,5 @@ testCompactIndicatorLayoutKeepsLegacyBands();
 testSplitIndicatorLayoutCreatesSeparateSubCharts();
 testBuildsTrendOverlayIndicators();
 testTrendOverlayIndicatorsNeedEnoughSamples();
+testBuildsVolumeMomentumIndicators();
+testVolumeMomentumIndicatorsNeedEnoughSamples();

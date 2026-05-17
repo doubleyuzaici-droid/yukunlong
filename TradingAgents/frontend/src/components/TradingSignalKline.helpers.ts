@@ -63,6 +63,14 @@ export interface TrendOverlayIndicatorSnapshot {
   ama: number | null;
 }
 
+export interface VolumeMomentumIndicatorSnapshot {
+  vr: number | null;
+  mfi: number | null;
+  roc: number | null;
+  trix: number | null;
+  trma: number | null;
+}
+
 export type IndicatorSectionLayoutMode = "compact" | "split";
 
 export interface IndicatorChartBand {
@@ -104,11 +112,11 @@ export function buildIndicatorSectionLayout(mode: IndicatorSectionLayoutMode = "
   ];
   if (mode === "split") {
     sections.push(
-      { key: "advanced", label: "CR / ARBR / EMV", ...advanced },
-      { key: "momentum", label: "DMI / CCI / WR / BIAS / DMA", ...momentum },
+      { key: "advanced", label: "CR / ARBR / EMV / VR / MFI", ...advanced },
+      { key: "momentum", label: "DMI / CCI / WR / BIAS / DMA / TRIX", ...momentum },
     );
   } else {
-    sections[3] = { key: "oscillator", label: "RSI / KDJ / CR / DMI / BIAS", ...oscillator };
+    sections[3] = { key: "oscillator", label: "RSI / KDJ / CR / DMI / BIAS / TRIX", ...oscillator };
   }
 
   return {
@@ -282,6 +290,32 @@ export function buildTrendOverlayIndicators(
       ama: movingAverageAt(dmaValues, dmaSignal, index),
     };
   });
+}
+
+export function buildVolumeMomentumIndicators(
+  bars: VolumeProfileBarLike[],
+  options: {
+    period?: number;
+    rocPeriod?: number;
+    trixPeriod?: number;
+    trixSignal?: number;
+  } = {},
+): VolumeMomentumIndicatorSnapshot[] {
+  const normalized = bars.map(normalizeAdvancedBar);
+  const period = clampInteger(options.period ?? 26, 2, 120);
+  const rocPeriod = clampInteger(options.rocPeriod ?? 12, 2, 120);
+  const trixPeriod = clampInteger(options.trixPeriod ?? 12, 2, 80);
+  const trixSignal = clampInteger(options.trixSignal ?? 9, 2, 80);
+  const closeValues = normalized.map((bar) => bar?.close ?? null);
+  const trixValues = buildTrixValues(closeValues, trixPeriod);
+
+  return normalized.map((bar, index) => ({
+    vr: bar ? buildVolumeRatioAt(normalized, period, index) : null,
+    mfi: bar ? buildMoneyFlowIndexAt(normalized, period, index) : null,
+    roc: buildRateOfChangeAt(closeValues, rocPeriod, index),
+    trix: trixValues[index] ?? null,
+    trma: movingAverageAt(trixValues, trixSignal, index),
+  }));
 }
 
 export function buildVolumeProfile(
@@ -493,6 +527,83 @@ function buildSarValues(
 function normalizeBbiPeriods(value: number[] | undefined) {
   const periods = Array.isArray(value) && value.length >= 4 ? value.slice(0, 4) : [3, 6, 12, 24];
   return periods.map((period, index) => clampInteger(period, index === 0 ? 2 : 3, 160));
+}
+
+function buildVolumeRatioAt(
+  bars: Array<ReturnType<typeof normalizeAdvancedBar>>,
+  period: number,
+  index: number,
+) {
+  const start = index - period + 1;
+  if (start < 1) return null;
+  let upVolume = 0;
+  let downVolume = 0;
+  let flatVolume = 0;
+  for (let cursor = start; cursor <= index; cursor += 1) {
+    const current = bars[cursor];
+    const previous = bars[cursor - 1];
+    if (!current || !previous) return null;
+    if (current.close > previous.close) upVolume += current.volume;
+    else if (current.close < previous.close) downVolume += current.volume;
+    else flatVolume += current.volume;
+  }
+  const denominator = downVolume + flatVolume / 2;
+  return denominator > 0 ? ((upVolume + flatVolume / 2) / denominator) * 100 : null;
+}
+
+function buildMoneyFlowIndexAt(
+  bars: Array<ReturnType<typeof normalizeAdvancedBar>>,
+  period: number,
+  index: number,
+) {
+  const start = index - period + 1;
+  if (start < 1) return null;
+  let positiveFlow = 0;
+  let negativeFlow = 0;
+  for (let cursor = start; cursor <= index; cursor += 1) {
+    const current = bars[cursor];
+    const previous = bars[cursor - 1];
+    if (!current || !previous) return null;
+    const typicalPrice = (current.high + current.low + current.close) / 3;
+    const previousTypicalPrice = (previous.high + previous.low + previous.close) / 3;
+    const moneyFlow = typicalPrice * current.volume;
+    if (typicalPrice > previousTypicalPrice) positiveFlow += moneyFlow;
+    else if (typicalPrice < previousTypicalPrice) negativeFlow += moneyFlow;
+  }
+  if (negativeFlow === 0 && positiveFlow === 0) return 50;
+  if (negativeFlow === 0) return 100;
+  const moneyRatio = positiveFlow / negativeFlow;
+  return 100 - 100 / (1 + moneyRatio);
+}
+
+function buildRateOfChangeAt(values: Array<number | null>, period: number, index: number) {
+  const previous = values[index - period];
+  const current = values[index];
+  return isFiniteNumber(current) && isFiniteNumber(previous) && previous !== 0
+    ? ((current - previous) / previous) * 100
+    : null;
+}
+
+function buildTrixValues(values: Array<number | null>, period: number) {
+  const firstEma = emaNullableValues(values, period);
+  const secondEma = emaNullableValues(firstEma, period);
+  const thirdEma = emaNullableValues(secondEma, period);
+  return thirdEma.map((value, index) => {
+    const previous = thirdEma[index - 1];
+    return isFiniteNumber(value) && isFiniteNumber(previous) && previous !== 0
+      ? ((value - previous) / previous) * 100
+      : null;
+  });
+}
+
+function emaNullableValues(values: Array<number | null>, period: number) {
+  const multiplier = 2 / (period + 1);
+  let previousEma: number | null = null;
+  return values.map((value) => {
+    if (!isFiniteNumber(value)) return null;
+    previousEma = previousEma == null ? value : value * multiplier + previousEma * (1 - multiplier);
+    return previousEma;
+  });
 }
 
 function movingAverageAt(values: Array<number | null>, period: number, index: number) {
