@@ -18,6 +18,7 @@ import {
   buildVisiblePriceExtrema,
   buildVolumeProfileLevelAnnotations,
   buildVolumeMomentumIndicators,
+  buildVolatilityVolumeIndicators,
   buildVolumeProfile,
   type IndicatorPanelReadoutItem,
   type VolumeProfileModel,
@@ -194,6 +195,7 @@ interface TradingChartPreferences {
   momentum: boolean;
   biasDma: boolean;
   volumeMomentum: boolean;
+  volatility: boolean;
   subCharts: boolean;
   measure: boolean;
 }
@@ -368,6 +370,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   momentum: true,
   biasDma: true,
   volumeMomentum: true,
+  volatility: true,
   subCharts: true,
   measure: false,
 };
@@ -429,6 +432,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     momentum: typeof next.momentum === "boolean" ? next.momentum : DEFAULT_TRADING_CHART_PREFS.momentum,
     biasDma: typeof next.biasDma === "boolean" ? next.biasDma : DEFAULT_TRADING_CHART_PREFS.biasDma,
     volumeMomentum: typeof next.volumeMomentum === "boolean" ? next.volumeMomentum : DEFAULT_TRADING_CHART_PREFS.volumeMomentum,
+    volatility: typeof next.volatility === "boolean" ? next.volatility : DEFAULT_TRADING_CHART_PREFS.volatility,
     subCharts: typeof next.subCharts === "boolean" ? next.subCharts : DEFAULT_TRADING_CHART_PREFS.subCharts,
     measure: typeof next.measure === "boolean" ? next.measure : DEFAULT_TRADING_CHART_PREFS.measure,
   };
@@ -1497,6 +1501,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.momentum ? "active" : ""} onClick={() => toggleChartPref("momentum")} type="button">DMI/CCI/WR</button>
         <button className={chartPrefs.biasDma ? "active" : ""} onClick={() => toggleChartPref("biasDma")} type="button">BIAS/DMA</button>
         <button className={chartPrefs.volumeMomentum ? "active" : ""} onClick={() => toggleChartPref("volumeMomentum")} type="button">VR/MFI/TRIX</button>
+        <button className={chartPrefs.volatility ? "active" : ""} onClick={() => toggleChartPref("volatility")} type="button">ATR/OBV</button>
         <button className={chartPrefs.subCharts ? "active" : ""} onClick={() => toggleChartPref("subCharts")} type="button">分屏</button>
         <button className={chartPrefs.measure ? "active measure" : "measure"} onClick={() => toggleChartPref("measure")} type="button">测距</button>
         <button className={paramsOpen ? "active" : ""} onClick={() => setParamsOpen((value) => !value)} type="button">参数</button>
@@ -1828,6 +1833,9 @@ export function TradingSignalKlinePanel({
           {chartPrefs.volumeMomentum && chart.rocLine && <polyline className="indicator-line roc" points={chart.rocLine} />}
           {chartPrefs.volumeMomentum && chart.trixLine && <polyline className="indicator-line trix" points={chart.trixLine} />}
           {chartPrefs.volumeMomentum && chart.trmaLine && <polyline className="indicator-line trma" points={chart.trmaLine} />}
+          {chartPrefs.volatility && <line className="obv-zero-line" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.obvZeroY} y2={chart.obvZeroY} />}
+          {chartPrefs.volatility && chart.atrLine && <polyline className="indicator-line atr" points={chart.atrLine} />}
+          {chartPrefs.volatility && chart.obvLine && <polyline className="indicator-line obv" points={chart.obvLine} />}
           {chartPrefs.boll && chart.bollUpper && <polyline className="boll-line upper" points={chart.bollUpper} />}
           {chartPrefs.boll && chart.bollMid && <polyline className="boll-line mid" points={chart.bollMid} />}
           {chartPrefs.boll && chart.bollLower && <polyline className="boll-line lower" points={chart.bollLower} />}
@@ -2167,6 +2175,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line momentum" />DMI/CCI/WR</span>
         <span><i className="legend-line bias-dma" />BIAS/DMA</span>
         <span><i className="legend-line volume-momentum" />VR/MFI/TRIX</span>
+        <span><i className="legend-line volatility" />ATR/OBV</span>
         <span><i className="legend-line profile" />筹码分布</span>
         <span><i className="legend-line profile-level" />筹码价位</span>
         <span><i className="legend-line fibonacci" />斐波回撤</span>
@@ -3264,6 +3273,8 @@ function buildTradingSignalGeometry(
   const ADVANCED_BOTTOM = layout.advanced.bottom;
   const MOMENTUM_TOP = layout.momentum.top;
   const MOMENTUM_BOTTOM = layout.momentum.bottom;
+  const VOLATILITY_TOP = layout.volatility.top;
+  const VOLATILITY_BOTTOM = layout.volatility.bottom;
   const SIGNAL_LANE_Y = layout.signalLaneY;
   const sections = layout.sections;
   const visible = sliceVisibleBars(bars, range, rightOffset).filter((bar) => typeof bar.close === "number");
@@ -3313,6 +3324,8 @@ function buildTradingSignalGeometry(
       rocLine: "",
       trixLine: "",
       trmaLine: "",
+      atrLine: "",
+      obvLine: "",
       relativeLine: "",
       relativeZeroY: (PRICE_TOP + PRICE_BOTTOM) / 2,
       relativeLatest: null as number | null,
@@ -3328,6 +3341,7 @@ function buildTradingSignalGeometry(
       momentumZeroY: MOMENTUM_BOTTOM - 0.5 * (MOMENTUM_BOTTOM - MOMENTUM_TOP),
       moneyFlow100Y: ADVANCED_BOTTOM - 0.5 * (ADVANCED_BOTTOM - ADVANCED_TOP),
       volumeMomentumZeroY: MOMENTUM_BOTTOM - 0.5 * (MOMENTUM_BOTTOM - MOMENTUM_TOP),
+      obvZeroY: VOLATILITY_BOTTOM - 0.5 * (VOLATILITY_BOTTOM - VOLATILITY_TOP),
       rsi70Y: RSI_BOTTOM - 0.7 * (RSI_BOTTOM - RSI_TOP),
       rsi30Y: RSI_BOTTOM - 0.3 * (RSI_BOTTOM - RSI_TOP),
       signalLaneY: SIGNAL_LANE_Y,
@@ -3370,6 +3384,9 @@ function buildTradingSignalGeometry(
     trixPeriod: params.trixPeriod,
     trixSignal: params.trixSignal,
   });
+  const volatilityValues = buildVolatilityVolumeIndicators(visible, {
+    atrPeriod: params.atrPeriod,
+  });
   const sarValues = trendOverlayValues.map((value) => value.sar);
   const bbiValues = trendOverlayValues.map((value) => value.bbi);
   const biasValues = trendOverlayValues.map((value) => value.bias);
@@ -3380,6 +3397,8 @@ function buildTradingSignalGeometry(
   const rocValues = volumeMomentumValues.map((value) => value.roc);
   const trixValues = volumeMomentumValues.map((value) => value.trix);
   const trmaValues = volumeMomentumValues.map((value) => value.trma);
+  const atrValues = volatilityValues.map((value) => value.atr);
+  const obvValues = volatilityValues.map((value) => value.obv);
   const bollDomainValues = bollValues.flatMap((value) =>
     value ? [value.upper, value.lower] : [],
   );
@@ -3468,8 +3487,6 @@ function buildTradingSignalGeometry(
   const macdValues = difValues.map((value, index) => (value - deaValues[index]) * 2);
   const rsiValues = rsiNumberValues(closeValues, params.rsiPeriod);
   const kdjValues = kdjNumberValues(highValues, lowValues, closeValues, params.kdjPeriod);
-  const atrValues = atrNumberValues(highValues, lowValues, closeValues, params.atrPeriod);
-  const obvValues = obvNumberValues(closeValues, volumes);
   const advancedValues = buildAdvancedIndicators(visible, {
     period: params.crPeriod,
     emvPeriod: params.emvPeriod,
@@ -3543,6 +3560,18 @@ function buildTradingSignalGeometry(
   const volumeMomentumZeroY = (MOMENTUM_TOP + MOMENTUM_BOTTOM) / 2;
   const rocY = (value?: number | null) =>
     volumeMomentumZeroY - (Number(value ?? 0) / maxRocAbs) * ((MOMENTUM_BOTTOM - MOMENTUM_TOP) / 2 - 3);
+  const atrFiniteValues = [0, ...atrValues].filter(isFiniteNumber);
+  const atrMin = Math.min(...atrFiniteValues);
+  const atrMax = Math.max(...atrFiniteValues);
+  const atrSpan = atrMax - atrMin || 1;
+  const atrY = (value?: number | null) =>
+    VOLATILITY_BOTTOM - ((Number(value ?? atrMin) - atrMin) / atrSpan) * (VOLATILITY_BOTTOM - VOLATILITY_TOP);
+  const obvFiniteValues = [0, ...obvValues].filter(isFiniteNumber);
+  const obvMin = Math.min(...obvFiniteValues);
+  const obvMax = Math.max(...obvFiniteValues);
+  const obvSpan = obvMax - obvMin || 1;
+  const obvY = (value?: number | null) =>
+    VOLATILITY_BOTTOM - ((Number(value ?? 0) - obvMin) / obvSpan) * (VOLATILITY_BOTTOM - VOLATILITY_TOP);
   const relativeValues = closeValues.map((close) => (closeValues[0] ? close / closeValues[0] - 1 : 0));
   const maxRelativeAbs = Math.max(0.01, ...relativeValues.map(Math.abs));
   const relativeY = (value: number) =>
@@ -3797,6 +3826,8 @@ function buildTradingSignalGeometry(
     rocLine: indicatorPoints(rocValues, rocY),
     trixLine: indicatorPoints(trixValues, rocY),
     trmaLine: indicatorPoints(trmaValues, rocY),
+    atrLine: indicatorPoints(atrValues, atrY),
+    obvLine: indicatorPoints(obvValues, obvY),
     relativeLine,
     relativeZeroY: relativeY(0),
     relativeLatest: relativeValues[relativeValues.length - 1] ?? null,
@@ -3814,6 +3845,7 @@ function buildTradingSignalGeometry(
     momentumZeroY: momentumY(0),
     moneyFlow100Y: moneyFlowY(100),
     volumeMomentumZeroY,
+    obvZeroY: obvY(0),
     rsi70Y: rsiY(70),
     rsi30Y: rsiY(30),
     signalLaneY: SIGNAL_LANE_Y,
@@ -3899,28 +3931,6 @@ function vwapNumberValues(bars: PeriodMarketBar[]) {
     cumulativeAmount += amount;
     cumulativeVolume += volume;
     return cumulativeVolume > 0 ? cumulativeAmount / cumulativeVolume : null;
-  });
-}
-
-function atrNumberValues(highs: number[], lows: number[], closes: number[], period: number) {
-  const trueRanges = highs.map((high, index) => {
-    if (index === 0) return high - lows[index];
-    const previousClose = closes[index - 1];
-    return Math.max(high - lows[index], Math.abs(high - previousClose), Math.abs(lows[index] - previousClose));
-  });
-  return trueRanges.map((_, index) => {
-    if (index < period - 1) return null;
-    return averageNumberValues(trueRanges.slice(index - period + 1, index + 1));
-  });
-}
-
-function obvNumberValues(closes: number[], volumes: number[]) {
-  let obv = 0;
-  return closes.map((close, index) => {
-    if (index === 0) return obv;
-    if (close > closes[index - 1]) obv += volumes[index] || 0;
-    else if (close < closes[index - 1]) obv -= volumes[index] || 0;
-    return obv;
   });
 }
 

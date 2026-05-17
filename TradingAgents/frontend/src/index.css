@@ -4461,6 +4461,22 @@ label {
   stroke-dasharray: 6 4;
 }
 
+.indicator-line.atr {
+  stroke: #f4d37e;
+}
+
+.indicator-line.obv {
+  stroke: #5eead4;
+  stroke-dasharray: 5 4;
+}
+
+.obv-zero-line {
+  stroke: rgba(238, 242, 247, 0.18);
+  stroke-dasharray: 4 5;
+  stroke-width: 0.75;
+  vector-effect: non-scaling-stroke;
+}
+
 .boll-line {
   fill: none;
   stroke-linecap: round;
@@ -5033,6 +5049,10 @@ label {
 
 .legend-line.volume-momentum {
   background: linear-gradient(90deg, #7ee0a3 0 25%, #f4b000 25% 50%, #8fb3ff 50% 75%, #ff8c84 75% 100%);
+}
+
+.legend-line.volatility {
+  background: linear-gradient(90deg, #f4d37e 0 48%, #5eead4 52% 100%);
 }
 
 .legend-line.profile {

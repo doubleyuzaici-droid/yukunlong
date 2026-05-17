@@ -9,6 +9,7 @@ import {
   buildVisiblePriceExtrema,
   buildVolumeProfileLevelAnnotations,
   buildVolumeMomentumIndicators,
+  buildVolatilityVolumeIndicators,
   buildVolumeProfile,
 } from "./TradingSignalKline.helpers.js";
 
@@ -151,10 +152,11 @@ function testSplitIndicatorLayoutCreatesSeparateSubCharts() {
   const layout = buildIndicatorSectionLayout("split");
 
   assertOk(layout.viewBoxHeight > 720, "split layout increases vertical chart space");
-  assertEqual(layout.sections.length, 6, "split layout exposes six chart sections");
+  assertEqual(layout.sections.length, 7, "split layout exposes seven chart sections");
   assertOk(layout.advanced.top > layout.oscillator.bottom, "advanced indicators get their own band");
   assertOk(layout.momentum.top > layout.advanced.bottom, "momentum indicators get their own band");
-  assertOk(layout.signalLaneY > layout.momentum.bottom, "signal lane remains below all sub charts");
+  assertOk(layout.volatility.top > layout.momentum.bottom, "ATR and OBV get their own band");
+  assertOk(layout.signalLaneY > layout.volatility.bottom, "signal lane remains below all sub charts");
 }
 
 function testBuildsSplitIndicatorPanelReadouts() {
@@ -182,12 +184,15 @@ function testBuildsSplitIndicatorPanelReadouts() {
     bias: 3.6,
     dma: 0.24,
     trix: 0.42,
+    atr: 1.52,
+    obv: 1280000,
   }, { mode: "split" });
 
-  assertEqual(readouts.length, 6, "split readouts cover every visible chart section");
+  assertEqual(readouts.length, 7, "split readouts cover every visible chart section");
   assertEqual(readouts.find((group) => group.key === "price")?.items.map((item) => item.label).join(","), "C,MA20,BOLL", "price readout keeps core price overlays");
   assertEqual(readouts.find((group) => group.key === "advanced")?.items.map((item) => item.label).join(","), "CR,BR,EMV,MFI,VR", "advanced readout keeps energy and money-flow values");
   assertEqual(readouts.find((group) => group.key === "momentum")?.items.map((item) => item.label).join(","), "+DI,-DI,ADX,CCI,WR,BIAS,DMA,TRIX", "momentum readout keeps directional and momentum values");
+  assertEqual(readouts.find((group) => group.key === "volatility")?.items.map((item) => item.label).join(","), "ATR,OBV", "volatility readout keeps range and cumulative volume values");
 }
 
 function testCompactIndicatorPanelReadoutsFoldExtraIndicators() {
@@ -276,6 +281,26 @@ function testVolumeMomentumIndicatorsNeedEnoughSamples() {
   assertEqual(latest?.trma, null, "TRMA is missing before enough TRIX samples");
 }
 
+function testBuildsVolatilityVolumeIndicators() {
+  const indicators = buildVolatilityVolumeIndicators(trendOverlayBars, { atrPeriod: 3 });
+  const latest = indicators[indicators.length - 1];
+
+  assertEqual(indicators.length, trendOverlayBars.length, "volatility volume indicators preserve bar count");
+  assertOk(latest, "latest volatility volume indicator exists");
+  assertEqual(indicators[0]?.obv, 0, "OBV starts from a neutral baseline");
+  assertApprox(indicators[2]?.atr, 1.3, 0.001, "ATR averages true range once the period is ready");
+  assertApprox(latest?.atr, 1.6667, 0.001, "ATR captures the latest volatility range");
+  assertApprox(latest?.obv, -660, 0.001, "OBV accumulates signed volume by close direction");
+}
+
+function testVolatilityVolumeIndicatorsNeedEnoughSamples() {
+  const indicators = buildVolatilityVolumeIndicators(trendOverlayBars.slice(0, 2), { atrPeriod: 3 });
+  const latest = indicators[indicators.length - 1];
+
+  assertEqual(latest?.atr, null, "ATR is missing before its period is ready");
+  assertApprox(latest?.obv, 300, 0.001, "OBV is available from the first close direction");
+}
+
 function testBuildsVisiblePriceExtrema() {
   const extrema = buildVisiblePriceExtrema(trendOverlayBars);
 
@@ -352,6 +377,8 @@ testBuildsTrendOverlayIndicators();
 testTrendOverlayIndicatorsNeedEnoughSamples();
 testBuildsVolumeMomentumIndicators();
 testVolumeMomentumIndicatorsNeedEnoughSamples();
+testBuildsVolatilityVolumeIndicators();
+testVolatilityVolumeIndicatorsNeedEnoughSamples();
 testBuildsVisiblePriceExtrema();
 testVisiblePriceExtremaNeedUsableBars();
 testBuildsFibonacciRetracementLevels();

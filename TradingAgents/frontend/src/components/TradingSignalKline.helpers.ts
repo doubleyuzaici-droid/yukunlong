@@ -126,6 +126,11 @@ export interface VolumeMomentumIndicatorSnapshot {
   trma: number | null;
 }
 
+export interface VolatilityVolumeIndicatorSnapshot {
+  atr: number | null;
+  obv: number | null;
+}
+
 export type IndicatorSectionLayoutMode = "compact" | "split";
 
 export interface IndicatorPanelReadoutSnapshot {
@@ -156,6 +161,8 @@ export interface IndicatorPanelReadoutSnapshot {
   bias?: number | null;
   dma?: number | null;
   trix?: number | null;
+  atr?: number | null;
+  obv?: number | null;
 }
 
 export interface IndicatorPanelReadoutItem {
@@ -192,6 +199,7 @@ export interface IndicatorSectionLayout {
   oscillator: IndicatorChartBand;
   advanced: IndicatorChartBand;
   momentum: IndicatorChartBand;
+  volatility: IndicatorChartBand;
   sections: IndicatorChartSection[];
 }
 
@@ -202,6 +210,7 @@ export function buildIndicatorSectionLayout(mode: IndicatorSectionLayoutMode = "
   const oscillator = mode === "split" ? { top: 554, bottom: 624 } : { top: 612, bottom: 684 };
   const advanced = mode === "split" ? { top: 656, bottom: 736 } : oscillator;
   const momentum = mode === "split" ? { top: 768, bottom: 848 } : oscillator;
+  const volatility = mode === "split" ? { top: 880, bottom: 960 } : oscillator;
   const sections: IndicatorChartSection[] = [
     { key: "price", label: "PRICE · MA5 / MA20 / MA60", ...price },
     { key: "volume", label: "VOL", ...volume },
@@ -212,22 +221,24 @@ export function buildIndicatorSectionLayout(mode: IndicatorSectionLayoutMode = "
     sections.push(
       { key: "advanced", label: "CR / ARBR / EMV / VR / MFI", ...advanced },
       { key: "momentum", label: "DMI / CCI / WR / BIAS / DMA / TRIX", ...momentum },
+      { key: "volatility", label: "ATR / OBV", ...volatility },
     );
   } else {
-    sections[3] = { key: "oscillator", label: "RSI / KDJ / CR / DMI / BIAS / TRIX", ...oscillator };
+    sections[3] = { key: "oscillator", label: "RSI / KDJ / CR / DMI / BIAS / TRIX / ATR", ...oscillator };
   }
 
   return {
     mode,
-    viewBoxHeight: mode === "split" ? 900 : 720,
-    timeAxisY: mode === "split" ? 894 : 716,
-    signalLaneY: mode === "split" ? 876 : 704,
+    viewBoxHeight: mode === "split" ? 1012 : 720,
+    timeAxisY: mode === "split" ? 1006 : 716,
+    signalLaneY: mode === "split" ? 988 : 704,
     price,
     volume,
     macd,
     oscillator,
     advanced,
     momentum,
+    volatility,
     sections,
   };
 }
@@ -275,6 +286,10 @@ export function buildIndicatorPanelReadouts(
     item("DMA", snapshot.dma, 2, { signed: true }),
     item("TRIX", snapshot.trix, 2, { signed: true }),
   ];
+  const volatilityItems = [
+    item("ATR", snapshot.atr, 2),
+    item("OBV", snapshot.obv, 0, { compact: true, signed: true }),
+  ];
 
   const groups = [
     group("price", [
@@ -295,11 +310,12 @@ export function buildIndicatorPanelReadouts(
     ]),
     group("oscillator", mode === "split"
       ? oscillatorItems
-      : [...oscillatorItems, ...advancedItems, ...momentumItems]),
+      : [...oscillatorItems, ...advancedItems, ...momentumItems, ...volatilityItems]),
     ...(mode === "split"
       ? [
           group("advanced", advancedItems),
           group("momentum", momentumItems),
+          group("volatility", volatilityItems),
         ]
       : []),
   ];
@@ -489,6 +505,42 @@ export function buildVolumeMomentumIndicators(
     trix: trixValues[index] ?? null,
     trma: movingAverageAt(trixValues, trixSignal, index),
   }));
+}
+
+export function buildVolatilityVolumeIndicators(
+  bars: VolumeProfileBarLike[],
+  options: { atrPeriod?: number } = {},
+): VolatilityVolumeIndicatorSnapshot[] {
+  const normalized = bars.map(normalizeAdvancedBar);
+  const atrPeriod = clampInteger(options.atrPeriod ?? 14, 2, 80);
+  const trueRanges = normalized.map((bar, index) => {
+    if (!bar) return null;
+    const previous = normalized[index - 1];
+    if (!previous) return bar.high - bar.low;
+    return Math.max(
+      bar.high - bar.low,
+      Math.abs(bar.high - previous.close),
+      Math.abs(bar.low - previous.close),
+    );
+  });
+  let obv = 0;
+
+  return normalized.map((bar, index) => {
+    const previous = normalized[index - 1];
+    if (!bar) return { atr: null, obv: null };
+    if (index > 0 && previous) {
+      if (bar.close > previous.close) obv += bar.volume;
+      else if (bar.close < previous.close) obv -= bar.volume;
+    }
+
+    const rangeWindow = trueRanges.slice(index - atrPeriod + 1, index + 1);
+    return {
+      atr: rangeWindow.length === atrPeriod && rangeWindow.every(isFiniteNumber)
+        ? averageNumbers(rangeWindow)
+        : null,
+      obv,
+    };
+  });
 }
 
 export function buildVisiblePriceExtrema(bars: PriceExtremaBarLike[]): VisiblePriceExtremaSnapshot | null {
