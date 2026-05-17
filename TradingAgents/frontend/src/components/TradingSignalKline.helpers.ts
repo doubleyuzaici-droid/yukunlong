@@ -42,6 +42,15 @@ export interface VisiblePriceExtremaSnapshot {
   rangePct: number | null;
 }
 
+export interface FibonacciRetracementLevel {
+  key: string;
+  ratio: number;
+  label: string;
+  price: number;
+  high: number;
+  low: number;
+}
+
 export interface VolumeProfileBin {
   index: number;
   low: number;
@@ -504,6 +513,27 @@ export function buildVisiblePriceExtrema(bars: PriceExtremaBarLike[]): VisiblePr
   };
 }
 
+export function buildFibonacciRetracementLevels(
+  extrema: VisiblePriceExtremaSnapshot | null | undefined,
+  ratios = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1],
+): FibonacciRetracementLevel[] {
+  if (!extrema || !isFiniteNumber(extrema.high) || !isFiniteNumber(extrema.low) || extrema.high <= extrema.low) {
+    return [];
+  }
+
+  const span = extrema.high - extrema.low;
+  return ratios
+    .filter((ratio) => isFiniteNumber(ratio) && ratio >= 0 && ratio <= 1)
+    .map((ratio) => ({
+      key: `fib-${ratio}`,
+      ratio,
+      label: formatFibonacciRatioLabel(ratio),
+      price: extrema.high - span * ratio,
+      high: extrema.high,
+      low: extrema.low,
+    }));
+}
+
 export function buildVolumeProfileLevelAnnotations(profile: VolumeProfileModel): VolumeProfileLevelAnnotation[] {
   const candidates: Array<{ key: VolumeProfileLevelKey; label: string; bin: VolumeProfileBin | null }> = [
     { key: "poc", label: "峰值筹码", bin: profile.pointOfControl },
@@ -710,6 +740,11 @@ function normalizePriceGapBar(bar: PriceExtremaBarLike, index: number) {
     low: Math.min(high, low, open, close),
     close,
   };
+}
+
+function formatFibonacciRatioLabel(ratio: number) {
+  if (ratio === 0 || ratio === 0.5 || ratio === 1) return `${(ratio * 100).toFixed(0)}%`;
+  return `${(ratio * 100).toFixed(1)}%`;
 }
 
 function normalizeAdvancedBar(bar: VolumeProfileBarLike) {

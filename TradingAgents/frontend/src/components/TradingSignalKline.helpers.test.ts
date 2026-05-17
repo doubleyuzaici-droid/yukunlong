@@ -1,5 +1,6 @@
 import {
   buildAdvancedIndicators,
+  buildFibonacciRetracementLevels,
   buildIndicatorSectionLayout,
   buildIndicatorPanelReadouts,
   buildMomentumIndicators,
@@ -294,6 +295,27 @@ function testVisiblePriceExtremaNeedUsableBars() {
   assertEqual(extrema, null, "empty input has no fake visible extrema");
 }
 
+function testBuildsFibonacciRetracementLevels() {
+  const extrema = buildVisiblePriceExtrema(trendOverlayBars);
+  const levels = buildFibonacciRetracementLevels(extrema);
+
+  assertEqual(levels.length, 7, "fibonacci retracement exposes standard levels");
+  assertEqual(levels.map((level) => level.label).join(","), "0%,23.6%,38.2%,50%,61.8%,78.6%,100%", "fibonacci labels keep standard ratios");
+  assertApprox(levels[0]?.price, 13.8, 0.001, "0% level starts at visible high");
+  assertApprox(levels[1]?.price, 12.856, 0.001, "23.6% level retraces from visible high");
+  assertApprox(levels[2]?.price, 12.272, 0.001, "38.2% level retraces from visible high");
+  assertApprox(levels[3]?.price, 11.8, 0.001, "50% level retraces half the visible range");
+  assertApprox(levels[4]?.price, 11.328, 0.001, "61.8% level retraces from visible high");
+  assertApprox(levels[5]?.price, 10.656, 0.001, "78.6% level retraces from visible high");
+  assertApprox(levels[6]?.price, 9.8, 0.001, "100% level ends at visible low");
+}
+
+function testFibonacciRetracementNeedsExtrema() {
+  const levels = buildFibonacciRetracementLevels(null);
+
+  assertEqual(levels.length, 0, "missing extrema has no fibonacci levels");
+}
+
 function testBuildsPriceGapAnnotations() {
   const gaps = buildPriceGapAnnotations(gapBars, { minGapPct: 1 });
 
@@ -332,5 +354,7 @@ testBuildsVolumeMomentumIndicators();
 testVolumeMomentumIndicatorsNeedEnoughSamples();
 testBuildsVisiblePriceExtrema();
 testVisiblePriceExtremaNeedUsableBars();
+testBuildsFibonacciRetracementLevels();
+testFibonacciRetracementNeedsExtrema();
 testBuildsPriceGapAnnotations();
 testPriceGapAnnotationsRespectThreshold();

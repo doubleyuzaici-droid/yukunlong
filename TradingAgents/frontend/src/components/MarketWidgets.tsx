@@ -9,6 +9,7 @@ import type {
 } from "../types/market";
 import {
   buildAdvancedIndicators,
+  buildFibonacciRetracementLevels,
   buildIndicatorPanelReadouts,
   buildIndicatorSectionLayout,
   buildMomentumIndicators,
@@ -182,6 +183,7 @@ interface TradingChartPreferences {
   events: boolean;
   relative: boolean;
   profile: boolean;
+  fibonacci: boolean;
   sar: boolean;
   bbi: boolean;
   volume: boolean;
@@ -355,6 +357,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   events: true,
   relative: false,
   profile: true,
+  fibonacci: false,
   sar: true,
   bbi: true,
   volume: true,
@@ -415,6 +418,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     events: typeof next.events === "boolean" ? next.events : DEFAULT_TRADING_CHART_PREFS.events,
     relative: typeof next.relative === "boolean" ? next.relative : DEFAULT_TRADING_CHART_PREFS.relative,
     profile: typeof next.profile === "boolean" ? next.profile : DEFAULT_TRADING_CHART_PREFS.profile,
+    fibonacci: typeof next.fibonacci === "boolean" ? next.fibonacci : DEFAULT_TRADING_CHART_PREFS.fibonacci,
     sar: typeof next.sar === "boolean" ? next.sar : DEFAULT_TRADING_CHART_PREFS.sar,
     bbi: typeof next.bbi === "boolean" ? next.bbi : DEFAULT_TRADING_CHART_PREFS.bbi,
     volume: typeof next.volume === "boolean" ? next.volume : DEFAULT_TRADING_CHART_PREFS.volume,
@@ -1481,6 +1485,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.events ? "active" : ""} onClick={() => toggleChartPref("events")} type="button">事件</button>
         <button className={chartPrefs.relative ? "active" : ""} onClick={() => toggleChartPref("relative")} type="button">相对</button>
         <button className={chartPrefs.profile ? "active" : ""} onClick={() => toggleChartPref("profile")} type="button">筹码</button>
+        <button className={chartPrefs.fibonacci ? "active" : ""} onClick={() => toggleChartPref("fibonacci")} type="button">斐波</button>
         <button className={chartPrefs.sar ? "active" : ""} onClick={() => toggleChartPref("sar")} type="button">SAR</button>
         <button className={chartPrefs.bbi ? "active" : ""} onClick={() => toggleChartPref("bbi")} type="button">BBI</button>
         <span>指标·副图</span>
@@ -1748,6 +1753,15 @@ export function TradingSignalKlinePanel({
           {chartPrefs.profile && chart.volumeProfile.bins.length > 0 && (
             <VolumeProfileLayer chart={chart} profile={chart.volumeProfile} />
           )}
+          {chartPrefs.fibonacci && chart.fibonacciLevels.map((level) => (
+            <g className={`fibonacci-level ${level.ratio === 0 || level.ratio === 1 ? "edge" : ""}`} key={level.key}>
+              <line x1={chart.plotLeft} x2={chart.plotRight} y1={level.y} y2={level.y} />
+              <text x={level.labelX} y={level.labelY}>
+                {level.label} {formatNumber(level.price, 2)}
+              </text>
+              <title>斐波回撤 {level.label} {formatNumber(level.price, 2)}</title>
+            </g>
+          ))}
           {chart.priceGaps.map((gap) => (
             <g className={`price-gap-layer ${gap.direction}`} key={gap.key}>
               <rect height={gap.height} width={gap.width} x={gap.x} y={gap.y} />
@@ -2155,6 +2169,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line volume-momentum" />VR/MFI/TRIX</span>
         <span><i className="legend-line profile" />筹码分布</span>
         <span><i className="legend-line profile-level" />筹码价位</span>
+        <span><i className="legend-line fibonacci" />斐波回撤</span>
         <span><i className="legend-extrema" />窗口高低</span>
         <span><i className="legend-gap" />跳空缺口</span>
         <span><i className="legend-marker" />信号日至入场日</span>
@@ -3259,6 +3274,7 @@ function buildTradingSignalGeometry(
       eventMarkers: [],
       entryLinks: [],
       priceGaps: [],
+      fibonacciLevels: [],
       ma5: "",
       ma20: "",
       ma60: "",
@@ -3410,6 +3426,15 @@ function buildTradingSignalGeometry(
         lowAnchor: visibleExtrema.lowIndex > visible.length / 2 ? ("end" as const) : ("start" as const),
       }
     : null;
+  const fibonacciLevels = buildFibonacciRetracementLevels(visibleExtrema).map((level, index) => {
+    const y = yOf(level.price);
+    return {
+      ...level,
+      y,
+      labelX: PLOT_RIGHT - 76,
+      labelY: clampNumber(y - 5, PRICE_TOP + 22 + index * 2, PRICE_BOTTOM - 8),
+    };
+  });
   const priceGaps = buildPriceGapAnnotations(visible, { minGapPct: 0.5 }).map((gap) => {
     const startX = clampNumber(xOf(gap.endIndex) - candleWidth / 2, PLOT_LEFT, PLOT_RIGHT);
     const endX = PLOT_RIGHT;
@@ -3733,6 +3758,7 @@ function buildTradingSignalGeometry(
     eventMarkers,
     entryLinks,
     priceGaps,
+    fibonacciLevels,
     ma5: maPoints("ma5"),
     ma20: maPoints("ma20"),
     ma60: maPoints("ma60"),
