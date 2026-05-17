@@ -8,6 +8,7 @@ import {
   buildIndicatorSectionLayout,
   buildIndicatorPanelReadouts,
   buildIndicatorAxisTicks,
+  buildLimitPriceLines,
   buildManualDrawingGeometry,
   buildPriceAxisScale,
   buildPriceAdjustedBars,
@@ -70,6 +71,7 @@ const baseChartPrefs = {
   boll: true,
   vwap: true,
   levels: true,
+  limitLines: true,
   signals: true,
   events: true,
   relative: true,
@@ -253,12 +255,27 @@ function testBuildsVisibleVolumeDistribution() {
   assertEqual(profile.bins.some((bin) => bin.widthPercent === 100), true, "largest bin is normalized to 100 width");
 }
 
+function testBuildsLimitPriceLinesFromFinitePrices() {
+  const lines = buildLimitPriceLines([
+    { x: 48, limit_up: 11, limit_down: 9 },
+    { x: 120, limit_up: null, limit_down: 9.2 },
+    { x: 192, limit_up: 12, limit_down: Number.NaN },
+  ], (price) => 200 - price * 10);
+
+  assertEqual(lines.upLine, "48.00,90.00 192.00,80.00", "limit-up line keeps finite prices only");
+  assertEqual(lines.downLine, "48.00,110.00 120.00,108.00", "limit-down line keeps finite prices only");
+  assertApprox(lines.latestUp?.price, 12, 0.001, "latest valid limit-up price is exposed");
+  assertApprox(lines.latestDown?.price, 9.2, 0.001, "latest valid limit-down price is exposed");
+  assertEqual(lines.values.length, 4, "finite limit prices are available for price-domain expansion");
+}
+
 function testAppliesTrendChartPreferencePreset() {
   const prefs = applyChartPreferencePreset(baseChartPrefs, "trend");
 
   assertEqual(prefs.ma, true, "trend preset keeps moving averages");
   assertEqual(prefs.ema, true, "trend preset enables EMA");
   assertEqual(prefs.boll, true, "trend preset keeps BOLL");
+  assertEqual(prefs.limitLines, true, "trend preset keeps A-share limit price lines");
   assertEqual(prefs.trendRegime, true, "trend preset enables trend background");
   assertEqual(prefs.trendLines, true, "trend preset enables structure trend lines");
   assertEqual(prefs.macd, true, "trend preset keeps MACD");
@@ -1044,6 +1061,7 @@ function testPriceGapAnnotationsRespectThreshold() {
 }
 
 testBuildsVisibleVolumeDistribution();
+testBuildsLimitPriceLinesFromFinitePrices();
 testAppliesTrendChartPreferencePreset();
 testMatchesChartPreferencePresetFromValues();
 testUnknownChartPreferencePresetIsNoop();

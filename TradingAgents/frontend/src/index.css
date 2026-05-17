@@ -5021,6 +5021,43 @@ label {
   stroke-width: 2px;
 }
 
+.limit-price-layer {
+  pointer-events: none;
+}
+
+.limit-price-line {
+  fill: none;
+  stroke-dasharray: 5 4;
+  stroke-width: 0.85;
+  vector-effect: non-scaling-stroke;
+}
+
+.limit-price-line.up {
+  stroke: rgba(255, 140, 132, 0.74);
+}
+
+.limit-price-line.down {
+  stroke: rgba(126, 224, 163, 0.74);
+}
+
+.limit-price-label {
+  font-size: 10.5px !important;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(11, 15, 20, 0.92);
+  stroke-width: 2px;
+}
+
+.limit-price-label.up {
+  fill: #ffb3ad !important;
+}
+
+.limit-price-label.down {
+  fill: #9cf2bc !important;
+}
+
 .trade-plan-level {
   cursor: pointer;
   outline: none;
@@ -5557,6 +5594,15 @@ label {
 
 .legend-line.fibonacci {
   background: repeating-linear-gradient(90deg, rgba(244, 211, 126, 0.9) 0 5px, transparent 5px 8px);
+}
+
+.legend-limit-price {
+  display: inline-block;
+  width: 18px;
+  height: 8px !important;
+  border-top: 2px dashed rgba(255, 140, 132, 0.88);
+  border-bottom: 2px dashed rgba(126, 224, 163, 0.88);
+  border-radius: 0 !important;
 }
 
 .legend-support-resistance {

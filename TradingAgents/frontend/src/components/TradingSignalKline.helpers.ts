@@ -295,6 +295,7 @@ export type ChartPreferenceName =
   | "boll"
   | "vwap"
   | "levels"
+  | "limitLines"
   | "signals"
   | "events"
   | "relative"
@@ -366,6 +367,7 @@ const BASE_CHART_PRESET_VALUES: Record<ChartPreferenceName, boolean> = {
   boll: true,
   vwap: false,
   levels: true,
+  limitLines: true,
   signals: true,
   events: true,
   relative: false,
@@ -702,6 +704,50 @@ export interface VolumeProfileModel {
   pointOfControl: VolumeProfileBin | null;
   supportBin: VolumeProfileBin | null;
   resistanceBin: VolumeProfileBin | null;
+}
+
+export interface LimitPriceBarLike {
+  x?: number | null;
+  limit_up?: number | null;
+  limit_down?: number | null;
+}
+
+export interface LimitPriceLinePoint {
+  x: number;
+  y: number;
+  price: number;
+}
+
+export interface LimitPriceLines {
+  upLine: string;
+  downLine: string;
+  latestUp: LimitPriceLinePoint | null;
+  latestDown: LimitPriceLinePoint | null;
+  values: number[];
+}
+
+export function buildLimitPriceLines(
+  bars: LimitPriceBarLike[],
+  yOf: (price: number) => number | null | undefined,
+): LimitPriceLines {
+  const toPoint = (bar: LimitPriceBarLike, key: "limit_up" | "limit_down"): LimitPriceLinePoint[] => {
+    if (!isFiniteNumber(bar.x) || !isFiniteNumber(bar[key])) return [];
+    const y = yOf(bar[key]);
+    if (!isFiniteNumber(y)) return [];
+    return [{ x: bar.x, y, price: bar[key] }];
+  };
+  const upPoints = bars.flatMap((bar) => toPoint(bar, "limit_up"));
+  const downPoints = bars.flatMap((bar) => toPoint(bar, "limit_down"));
+  const toPolyline = (points: LimitPriceLinePoint[]) =>
+    points.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" ");
+
+  return {
+    upLine: toPolyline(upPoints),
+    downLine: toPolyline(downPoints),
+    latestUp: upPoints.length ? upPoints[upPoints.length - 1] : null,
+    latestDown: downPoints.length ? downPoints[downPoints.length - 1] : null,
+    values: [...upPoints.map((point) => point.price), ...downPoints.map((point) => point.price)],
+  };
 }
 
 export type VolumeProfileLevelKey = "poc" | "support" | "resistance";

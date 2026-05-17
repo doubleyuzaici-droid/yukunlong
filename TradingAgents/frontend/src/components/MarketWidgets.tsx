@@ -19,6 +19,7 @@ import {
   buildIndicatorPanelReadouts,
   buildIndicatorAxisTicks,
   buildIndicatorSectionLayout,
+  buildLimitPriceLines,
   buildManualDrawingGeometry,
   buildPriceAdjustedBars,
   buildPriceAxisScale,
@@ -217,6 +218,7 @@ interface TradingChartPreferences {
   boll: boolean;
   vwap: boolean;
   levels: boolean;
+  limitLines: boolean;
   signals: boolean;
   events: boolean;
   relative: boolean;
@@ -413,6 +415,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   boll: true,
   vwap: false,
   levels: true,
+  limitLines: true,
   signals: true,
   events: true,
   relative: false,
@@ -482,6 +485,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     boll: typeof next.boll === "boolean" ? next.boll : DEFAULT_TRADING_CHART_PREFS.boll,
     vwap: typeof next.vwap === "boolean" ? next.vwap : DEFAULT_TRADING_CHART_PREFS.vwap,
     levels: typeof next.levels === "boolean" ? next.levels : DEFAULT_TRADING_CHART_PREFS.levels,
+    limitLines: typeof next.limitLines === "boolean" ? next.limitLines : DEFAULT_TRADING_CHART_PREFS.limitLines,
     signals: typeof next.signals === "boolean" ? next.signals : DEFAULT_TRADING_CHART_PREFS.signals,
     events: typeof next.events === "boolean" ? next.events : DEFAULT_TRADING_CHART_PREFS.events,
     relative: typeof next.relative === "boolean" ? next.relative : DEFAULT_TRADING_CHART_PREFS.relative,
@@ -1741,6 +1745,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.boll ? "active" : ""} onClick={() => toggleChartPref("boll")} type="button">BOLL</button>
         <button className={chartPrefs.vwap ? "active" : ""} onClick={() => toggleChartPref("vwap")} type="button">VWAP</button>
         <button className={chartPrefs.levels ? "active" : ""} onClick={() => toggleChartPref("levels")} type="button">价位线</button>
+        <button className={chartPrefs.limitLines ? "active" : ""} onClick={() => toggleChartPref("limitLines")} type="button">涨跌停</button>
         <button className={chartPrefs.signals ? "active" : ""} onClick={() => toggleChartPref("signals")} type="button">信号</button>
         <button className={chartPrefs.events ? "active" : ""} onClick={() => toggleChartPref("events")} type="button">事件</button>
         <button className={chartPrefs.relative ? "active" : ""} onClick={() => toggleChartPref("relative")} type="button">相对</button>
@@ -2043,6 +2048,36 @@ export function TradingSignalKlinePanel({
               <text x={chart.plotLeft + 8} y={Math.max(chart.sections[0].top + 14, chart.prevCloseY - 7)}>
                 昨收 {formatNumber(chart.latestIndicators?.prevClose, 2)}
               </text>
+            </g>
+          )}
+          {chartPrefs.limitLines && chart.limitPriceLines.upLine && (
+            <g className="limit-price-layer up">
+              <polyline className="limit-price-line up" points={chart.limitPriceLines.upLine} />
+              {chart.limitPriceLines.latestUp && (
+                <text
+                  className="limit-price-label up"
+                  x={chart.plotRight - 82}
+                  y={clampNumber(chart.limitPriceLines.latestUp.y - 7, chart.priceTop + 16, chart.priceBottom - 8)}
+                >
+                  涨停 {formatNumber(chart.limitPriceLines.latestUp.price, 2)}
+                </text>
+              )}
+              <title>涨停价参考线</title>
+            </g>
+          )}
+          {chartPrefs.limitLines && chart.limitPriceLines.downLine && (
+            <g className="limit-price-layer down">
+              <polyline className="limit-price-line down" points={chart.limitPriceLines.downLine} />
+              {chart.limitPriceLines.latestDown && (
+                <text
+                  className="limit-price-label down"
+                  x={chart.plotRight - 82}
+                  y={clampNumber(chart.limitPriceLines.latestDown.y + 13, chart.priceTop + 18, chart.priceBottom - 6)}
+                >
+                  跌停 {formatNumber(chart.limitPriceLines.latestDown.price, 2)}
+                </text>
+              )}
+              <title>跌停价参考线</title>
             </g>
           )}
           {chartPrefs.levels && tradePlanLevels.map((level) => (
@@ -2611,6 +2646,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line profile" />筹码分布</span>
         <span><i className="legend-line profile-level" />筹码价位</span>
         <span><i className="legend-line fibonacci" />斐波回撤</span>
+        <span><i className="legend-limit-price" />涨跌停</span>
         <span><i className="legend-support-resistance" />自动支阻</span>
         <span><i className="legend-trend-line" />结构趋势线</span>
         <span><i className="legend-extrema" />窗口高低</span>
@@ -3768,6 +3804,7 @@ function buildTradingSignalGeometry(
       fibonacciLevels: [],
       supportResistanceLevels: [],
       priceStructureTrendLines: [],
+      limitPriceLines: buildLimitPriceLines([], () => null),
       ma5: "",
       ma20: "",
       ma60: "",
@@ -3891,6 +3928,7 @@ function buildTradingSignalGeometry(
     value ? [value.upper, value.lower] : [],
   );
   const levelDomainValues = levelPrices.filter(isFiniteNumber);
+  const limitDomainValues = visible.flatMap((bar) => [bar.limit_up, bar.limit_down]).filter(isFiniteNumber);
   const rawPriceStructureTrendLines = buildPriceStructureTrendLines(visible, {
     swingWindow: 2,
     minSlopePct: 0.12,
@@ -3911,6 +3949,7 @@ function buildTradingSignalGeometry(
     ...sarValues.filter(isFiniteNumber),
     ...bbiValues.filter(isFiniteNumber),
     ...levelDomainValues,
+    ...limitDomainValues,
     ...trendLineDomainValues,
   ];
   const domainPriceValues = [...lowValues, ...highValues, ...overlayDomainValues];
@@ -3930,6 +3969,14 @@ function buildTradingSignalGeometry(
   const xOf = (index: number) => PLOT_LEFT + (index / Math.max(visible.length - 1, 1)) * (PLOT_RIGHT - PLOT_LEFT);
   const yOf = (price?: number | null) =>
     priceAxisYOf(priceAxisScale, price) ?? PRICE_BOTTOM;
+  const limitPriceLines = buildLimitPriceLines(
+    visible.map((bar, index) => ({
+      x: xOf(index),
+      limit_up: bar.limit_up,
+      limit_down: bar.limit_down,
+    })),
+    yOf,
+  );
   const visibleExtrema = buildVisiblePriceExtrema(visible);
   const rangeExtrema = visibleExtrema
     ? {
@@ -4526,6 +4573,7 @@ function buildTradingSignalGeometry(
     fibonacciLevels,
     supportResistanceLevels,
     priceStructureTrendLines,
+    limitPriceLines,
     ma5: maPoints("ma5"),
     ma20: maPoints("ma20"),
     ma60: maPoints("ma60"),

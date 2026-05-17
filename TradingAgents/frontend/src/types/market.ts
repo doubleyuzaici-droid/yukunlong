@@ -80,6 +80,11 @@ export interface MarketHistoryBar {
   volume?: number | null;
   amount?: number | null;
   adj_factor?: number | null;
+  limit_up?: number | null;
+  limit_down?: number | null;
+  is_suspended?: boolean | number | null;
+  is_limit_up?: boolean | number | null;
+  is_limit_down?: boolean | number | null;
   source?: string | null;
 }
 
