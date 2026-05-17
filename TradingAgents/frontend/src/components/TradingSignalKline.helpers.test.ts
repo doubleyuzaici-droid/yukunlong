@@ -6,6 +6,7 @@ import {
   buildFibonacciRetracementLevels,
   buildIndicatorSectionLayout,
   buildIndicatorPanelReadouts,
+  buildManualDrawingGeometry,
   buildMeasuredRangeStats,
   buildMomentumIndicators,
   buildPriceGapAnnotations,
@@ -106,6 +107,21 @@ const baseChartParams = {
   trixPeriod: 12,
   trixSignal: 9,
   atrPeriod: 14,
+};
+
+const drawingCandles = [
+  { date: "2026-05-01", periodLabel: "05-01", x: 48 },
+  { date: "2026-05-02", periodLabel: "05-02", x: 120 },
+  { date: "2026-05-03", periodLabel: "05-03", x: 192 },
+];
+
+const drawingBounds = {
+  plotLeft: 48,
+  plotRight: 925,
+  priceTop: 80,
+  priceBottom: 420,
+  priceMin: 10,
+  priceMax: 20,
 };
 
 const mixedTrendBars = [
@@ -276,6 +292,50 @@ function testUnknownChartParameterPresetIsNoop() {
   const params = applyChartParameterPreset(baseChartParams, "missing-preset");
 
   assertEqual(params, baseChartParams, "unknown parameter preset keeps the original parameter object");
+}
+
+function testBuildsManualHorizontalDrawingGeometry() {
+  const geometry = buildManualDrawingGeometry([
+    {
+      id: "h1",
+      type: "horizontal",
+      start: { date: "2026-05-02", label: "05-02", price: 15 },
+    },
+  ], drawingCandles, drawingBounds);
+
+  assertEqual(geometry.length, 1, "horizontal drawing is visible when price is inside chart bounds");
+  assertEqual(geometry[0]?.id, "h1", "horizontal drawing keeps source id");
+  assertEqual(geometry[0]?.type, "horizontal", "horizontal drawing keeps source type");
+  assertApprox(geometry[0]?.x1, 48, 0.001, "horizontal drawing starts at plot left");
+  assertApprox(geometry[0]?.x2, 925, 0.001, "horizontal drawing ends at plot right");
+  assertApprox(geometry[0]?.y1, 250, 0.001, "horizontal drawing maps price to chart y");
+  assertApprox(geometry[0]?.y2, 250, 0.001, "horizontal drawing keeps y flat");
+  assertEqual(geometry[0]?.label, "画线 15.00", "horizontal drawing exposes price label");
+}
+
+function testBuildsManualTrendDrawingGeometry() {
+  const geometry = buildManualDrawingGeometry([
+    {
+      id: "t1",
+      type: "trend",
+      start: { date: "2026-05-01", label: "05-01", price: 12 },
+      end: { date: "2026-05-03", label: "05-03", price: 18 },
+    },
+    {
+      id: "t2",
+      type: "trend",
+      start: { date: "2026-05-01", label: "05-01", price: 12 },
+      end: { date: "2026-05-30", label: "05-30", price: 18 },
+    },
+  ], drawingCandles, drawingBounds);
+
+  assertEqual(geometry.length, 1, "trend drawing needs both anchors in the visible window");
+  assertEqual(geometry[0]?.id, "t1", "trend drawing keeps visible source id");
+  assertApprox(geometry[0]?.x1, 48, 0.001, "trend drawing maps start date to x");
+  assertApprox(geometry[0]?.x2, 192, 0.001, "trend drawing maps end date to x");
+  assertApprox(geometry[0]?.y1, 352, 0.001, "trend drawing maps start price to y");
+  assertApprox(geometry[0]?.y2, 148, 0.001, "trend drawing maps end price to y");
+  assertEqual(geometry[0]?.label, "趋势线", "trend drawing exposes readable label");
 }
 
 function testBuildsMeasuredRangeStats() {
@@ -788,6 +848,8 @@ testUnknownChartPreferencePresetIsNoop();
 testAppliesShortTermChartParameterPreset();
 testMatchesChartParameterPresetFromValues();
 testUnknownChartParameterPresetIsNoop();
+testBuildsManualHorizontalDrawingGeometry();
+testBuildsManualTrendDrawingGeometry();
 testBuildsMeasuredRangeStats();
 testMeasuredRangeStatsKeepSelectionDirection();
 testHandlesMissingBarsExplicitly();

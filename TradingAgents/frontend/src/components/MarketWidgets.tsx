@@ -17,6 +17,7 @@ import {
   buildFibonacciRetracementLevels,
   buildIndicatorPanelReadouts,
   buildIndicatorSectionLayout,
+  buildManualDrawingGeometry,
   buildMeasuredRangeStats,
   buildMomentumIndicators,
   buildPriceGapAnnotations,
@@ -35,6 +36,9 @@ import {
   matchChartParameterPreset,
   matchChartPreferencePreset,
   type IndicatorPanelReadoutItem,
+  type ManualDrawing,
+  type ManualDrawingAnchor,
+  type ManualDrawingType,
   type VolumeProfileModel,
 } from "./TradingSignalKline.helpers";
 import {
@@ -245,6 +249,8 @@ interface TradingChartParameters {
   trixSignal: number;
   atrPeriod: number;
 }
+
+type TradingChartDrawingTool = "none" | ManualDrawingType;
 
 export interface StrategyKlineAnalysis {
   strategy_name: string;
@@ -1226,6 +1232,9 @@ export function TradingSignalKlinePanel({
   const [rightOffset, setRightOffset] = useState(0);
   const [measureStartIndex, setMeasureStartIndex] = useState<number | null>(null);
   const [measureEndIndex, setMeasureEndIndex] = useState<number | null>(null);
+  const [drawingTool, setDrawingTool] = useState<TradingChartDrawingTool>("none");
+  const [manualDrawings, setManualDrawings] = useState<ManualDrawing[]>([]);
+  const [pendingTrendAnchor, setPendingTrendAnchor] = useState<ManualDrawingAnchor | null>(null);
   const dragStart = useRef<{ x: number; offset: number } | null>(null);
   const [crosshair, setCrosshair] = useState<{
     x: number;
@@ -1324,6 +1333,22 @@ export function TradingSignalKlinePanel({
     ),
     [chart.candles, crosshair?.candle?.index, measureEndIndex, measureStartIndex],
   );
+  const manualDrawingGeometry = useMemo(
+    () => buildManualDrawingGeometry(manualDrawings, chart.candles, chart),
+    [chart, manualDrawings],
+  );
+  const pendingDrawingMarker = useMemo(() => {
+    if (!pendingTrendAnchor) return null;
+    const candle = chart.candles.find((item) => item.date === pendingTrendAnchor.date);
+    const y = chartPriceToY(chart, pendingTrendAnchor.price);
+    if (!candle || y == null) return null;
+    return {
+      x: candle.x,
+      y,
+      label: pendingTrendAnchor.label || candle.periodLabel || candle.date,
+      price: pendingTrendAnchor.price,
+    };
+  }, [chart, pendingTrendAnchor]);
   const technicalDecision = useMemo(
     () => buildTradeDecision(activeSignal, activeIndicators),
     [activeSignal, activeIndicators],
@@ -1346,7 +1371,15 @@ export function TradingSignalKlinePanel({
       setMeasureStartIndex(null);
       setMeasureEndIndex(null);
     }
+    if (chartPrefs.measure) {
+      setDrawingTool("none");
+      setPendingTrendAnchor(null);
+    }
   }, [chartPrefs.measure]);
+
+  useEffect(() => {
+    if (drawingTool !== "trend") setPendingTrendAnchor(null);
+  }, [drawingTool]);
 
   const setRangeFromControl = (nextRange: CandleRange) => {
     setRange(nextRange);
@@ -1382,6 +1415,23 @@ export function TradingSignalKlinePanel({
 
   const applyChartParameterPresetValue = (key: string) => {
     setChartParams((value) => applyChartParameterPreset(value, key));
+  };
+
+  const selectDrawingTool = (tool: ManualDrawingType) => {
+    const nextTool = drawingTool === tool ? "none" : tool;
+    setDrawingTool(nextTool);
+    setPendingTrendAnchor(null);
+    if (nextTool !== "none") {
+      setChartPrefs((value) => value.measure ? { ...value, measure: false } : value);
+      setMeasureStartIndex(null);
+      setMeasureEndIndex(null);
+    }
+  };
+
+  const clearManualDrawings = () => {
+    setManualDrawings([]);
+    setPendingTrendAnchor(null);
+    setDrawingTool("none");
   };
 
   const resetChartPrefs = () => {
@@ -1430,6 +1480,16 @@ export function TradingSignalKlinePanel({
     return { candle, x, y };
   };
 
+  const buildManualDrawingAnchor = (point: NonNullable<ReturnType<typeof nearestChartPoint>>): ManualDrawingAnchor | null => {
+    const price = chartPriceFromY(chart, point.y);
+    if (price == null) return null;
+    return {
+      date: point.candle.date,
+      label: point.candle.periodLabel || point.candle.date,
+      price,
+    };
+  };
+
   const handleChartPointer = (event: MouseEvent<SVGSVGElement>) => {
     if (chart.candles.length === 0) return;
     panByPixels(event);
@@ -1448,9 +1508,40 @@ export function TradingSignalKlinePanel({
   };
 
   const handleChartClick = (event: MouseEvent<SVGSVGElement>) => {
-    if (!chartPrefs.measure) return;
     const point = nearestChartPoint(event);
     if (!point) return;
+    if (drawingTool !== "none") {
+      if (point.y < chart.priceTop || point.y > chart.priceBottom) return;
+      const anchor = buildManualDrawingAnchor(point);
+      if (!anchor) return;
+      if (drawingTool === "horizontal") {
+        setManualDrawings((value) => [
+          ...value,
+          {
+            id: `manual-horizontal-${Date.now()}-${value.length}`,
+            type: "horizontal",
+            start: anchor,
+          },
+        ]);
+        return;
+      }
+      if (!pendingTrendAnchor) {
+        setPendingTrendAnchor(anchor);
+        return;
+      }
+      setManualDrawings((value) => [
+        ...value,
+        {
+          id: `manual-trend-${Date.now()}-${value.length}`,
+          type: "trend",
+          start: pendingTrendAnchor,
+          end: anchor,
+        },
+      ]);
+      setPendingTrendAnchor(null);
+      return;
+    }
+    if (!chartPrefs.measure) return;
     setMeasureStartIndex((currentStart) => {
       if (currentStart == null || measureEndIndex != null) {
         setMeasureEndIndex(null);
@@ -1573,6 +1664,11 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.volatility ? "active" : ""} onClick={() => toggleChartPref("volatility")} type="button">ATR/OBV</button>
         <button className={chartPrefs.subCharts ? "active" : ""} onClick={() => toggleChartPref("subCharts")} type="button">分屏</button>
         <button className={chartPrefs.measure ? "active measure" : "measure"} onClick={() => toggleChartPref("measure")} type="button">测距</button>
+        <span>画线</span>
+        <button className={drawingTool === "horizontal" ? "active drawing" : "drawing"} onClick={() => selectDrawingTool("horizontal")} type="button">水平线</button>
+        <button className={drawingTool === "trend" ? "active drawing" : "drawing"} onClick={() => selectDrawingTool("trend")} type="button">趋势线</button>
+        <button disabled={manualDrawings.length === 0 && !pendingTrendAnchor} onClick={clearManualDrawings} type="button">清空画线</button>
+        <span>{drawingTool === "trend" && pendingTrendAnchor ? "选第二点" : manualDrawings.length ? `已画 ${manualDrawings.length}` : "未画线"}</span>
         <button className={paramsOpen ? "active" : ""} onClick={() => setParamsOpen((value) => !value)} type="button">参数</button>
         <button onClick={resetChartPrefs} type="button">重置</button>
       </div>
@@ -1748,9 +1844,9 @@ export function TradingSignalKlinePanel({
 
       <div className="trade-signal-stage">
         <svg
-          className={`price-history-chart trade-signal-chart ${chartPrefs.subCharts ? "split-indicators" : "compact-indicators"} ${dragStart.current ? "dragging" : ""} ${chartPrefs.measure ? "measuring" : ""}`}
+          className={`price-history-chart trade-signal-chart ${chartPrefs.subCharts ? "split-indicators" : "compact-indicators"} ${dragStart.current ? "dragging" : ""} ${chartPrefs.measure ? "measuring" : ""} ${drawingTool !== "none" ? "drawing" : ""}`}
           onMouseDown={(event) => {
-            if (chartPrefs.measure) return;
+            if (chartPrefs.measure || drawingTool !== "none") return;
             dragStart.current = { x: event.clientX, offset: rightOffset };
           }}
           onClick={handleChartClick}
@@ -1990,6 +2086,31 @@ export function TradingSignalKlinePanel({
               )}
             </g>
           ))}
+          {manualDrawingGeometry.map((drawing) => (
+            <g className={`manual-drawing-layer ${drawing.type}`} key={drawing.id}>
+              <line x1={drawing.x1} x2={drawing.x2} y1={drawing.y1} y2={drawing.y2} />
+              {drawing.type === "trend" && (
+                <>
+                  <circle cx={drawing.x1} cy={drawing.y1} r="3.8" />
+                  <circle cx={drawing.x2} cy={drawing.y2} r="3.8" />
+                </>
+              )}
+              <text x={drawing.labelX} y={drawing.labelY}>{drawing.label}</text>
+              <title>
+                {drawing.startLabel}→{drawing.endLabel} · {formatNumber(drawing.startPrice, 2)}→{formatNumber(drawing.endPrice, 2)}
+              </title>
+            </g>
+          ))}
+          {pendingDrawingMarker && (
+            <g className="manual-drawing-pending">
+              <circle cx={pendingDrawingMarker.x} cy={pendingDrawingMarker.y} r="5" />
+              <line x1={pendingDrawingMarker.x} x2={pendingDrawingMarker.x} y1={chart.priceTop} y2={chart.priceBottom} />
+              <text x={clampNumber(pendingDrawingMarker.x + 10, chart.plotLeft + 8, chart.plotRight - 112)} y={clampNumber(pendingDrawingMarker.y - 10, chart.priceTop + 14, chart.priceBottom - 6)}>
+                起点 {formatNumber(pendingDrawingMarker.price, 2)}
+              </text>
+              <title>{pendingDrawingMarker.label} 趋势线起点</title>
+            </g>
+          )}
           {chart.rangeExtrema && (
             <g className="price-extrema-layer">
               <g className="price-extrema-marker high">

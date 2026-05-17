@@ -201,6 +201,53 @@ export interface MeasuredRangeStats {
   totalAmount: number;
 }
 
+export type ManualDrawingType = "horizontal" | "trend";
+
+export interface ManualDrawingAnchor {
+  date: string;
+  label?: string | null;
+  price: number;
+}
+
+export interface ManualDrawing {
+  id: string;
+  type: ManualDrawingType;
+  start: ManualDrawingAnchor;
+  end?: ManualDrawingAnchor | null;
+}
+
+export interface ManualDrawingCandleLike {
+  date?: string | null;
+  periodLabel?: string | null;
+  period_label?: string | null;
+  x?: number | null;
+}
+
+export interface ManualDrawingChartBounds {
+  plotLeft: number;
+  plotRight: number;
+  priceTop: number;
+  priceBottom: number;
+  priceMin: number | null;
+  priceMax: number | null;
+}
+
+export interface ManualDrawingGeometry {
+  id: string;
+  type: ManualDrawingType;
+  x1: number;
+  x2: number;
+  y1: number;
+  y2: number;
+  labelX: number;
+  labelY: number;
+  label: string;
+  startLabel: string;
+  endLabel: string;
+  startPrice: number;
+  endPrice: number;
+}
+
 export type ChartPreferencePresetKey = "basic" | "trend" | "oscillator" | "volume" | "structure" | "full";
 export type ChartPreferenceName =
   | "ma"
@@ -821,6 +868,84 @@ export function matchChartParameterPreset(
   return CHART_PARAMETER_PRESETS.find((preset) =>
     (Object.keys(preset.values) as ChartParameterName[]).every((key) => current[key] === preset.values[key]),
   )?.key ?? null;
+}
+
+export function buildManualDrawingGeometry(
+  drawings: ManualDrawing[],
+  candles: ManualDrawingCandleLike[],
+  bounds: ManualDrawingChartBounds,
+): ManualDrawingGeometry[] {
+  const candleByDate = new Map(
+    candles
+      .filter((candle) => typeof candle.date === "string" && isFiniteNumber(candle.x))
+      .map((candle) => [String(candle.date), candle]),
+  );
+  const yOf = (price: number) => {
+    if (
+      !isFiniteNumber(price) ||
+      !isFiniteNumber(bounds.priceMin) ||
+      !isFiniteNumber(bounds.priceMax) ||
+      !isFiniteNumber(bounds.priceTop) ||
+      !isFiniteNumber(bounds.priceBottom) ||
+      bounds.priceMax <= bounds.priceMin ||
+      price < bounds.priceMin ||
+      price > bounds.priceMax
+    ) {
+      return null;
+    }
+    const span = bounds.priceMax - bounds.priceMin;
+    return bounds.priceBottom - ((price - bounds.priceMin) / span) * (bounds.priceBottom - bounds.priceTop);
+  };
+  const labelOf = (anchor: ManualDrawingAnchor, candle?: ManualDrawingCandleLike | null) =>
+    anchor.label || candle?.periodLabel || candle?.period_label || anchor.date;
+
+  return drawings.flatMap((drawing): ManualDrawingGeometry[] => {
+    if (!drawing?.id || !drawing.start || !isFiniteNumber(drawing.start.price)) return [];
+    const startY = yOf(drawing.start.price);
+    if (startY == null) return [];
+    const startCandle = candleByDate.get(drawing.start.date) || null;
+    const startLabel = labelOf(drawing.start, startCandle);
+
+    if (drawing.type === "horizontal") {
+      return [{
+        id: drawing.id,
+        type: drawing.type,
+        x1: bounds.plotLeft,
+        x2: bounds.plotRight,
+        y1: startY,
+        y2: startY,
+        labelX: clampNumber(bounds.plotRight - 88, bounds.plotLeft + 8, bounds.plotRight - 8),
+        labelY: clampNumber(startY - 8, bounds.priceTop + 14, bounds.priceBottom - 6),
+        label: `画线 ${drawing.start.price.toFixed(2)}`,
+        startLabel,
+        endLabel: startLabel,
+        startPrice: drawing.start.price,
+        endPrice: drawing.start.price,
+      }];
+    }
+
+    if (drawing.type !== "trend" || !drawing.end || !isFiniteNumber(drawing.end.price)) return [];
+    const endCandle = candleByDate.get(drawing.end.date);
+    if (!startCandle || !endCandle || !isFiniteNumber(startCandle.x) || !isFiniteNumber(endCandle.x)) return [];
+    const endY = yOf(drawing.end.price);
+    if (endY == null) return [];
+    const labelOnRight = endCandle.x > bounds.plotRight - 120;
+    return [{
+      id: drawing.id,
+      type: drawing.type,
+      x1: startCandle.x,
+      x2: endCandle.x,
+      y1: startY,
+      y2: endY,
+      labelX: clampNumber(endCandle.x + (labelOnRight ? -72 : 10), bounds.plotLeft + 8, bounds.plotRight - 60),
+      labelY: clampNumber(endY - 8, bounds.priceTop + 14, bounds.priceBottom - 6),
+      label: "趋势线",
+      startLabel,
+      endLabel: labelOf(drawing.end, endCandle),
+      startPrice: drawing.start.price,
+      endPrice: drawing.end.price,
+    }];
+  });
 }
 
 export function buildIndicatorPanelReadouts(
