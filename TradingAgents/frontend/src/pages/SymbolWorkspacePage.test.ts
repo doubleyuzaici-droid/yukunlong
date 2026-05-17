@@ -2,6 +2,7 @@ import {
   buildKlineEvidenceEvents,
   buildMarketAnalysisOverview,
   buildOverviewTechnicalCharts,
+  buildRelativeStrengthTrendModel,
   classifyIndicatorTone,
 } from "./SymbolWorkspacePage.helpers.js";
 
@@ -222,6 +223,26 @@ function testBuildsOverviewTechnicalCharts() {
   assertIncludes(missing[0]?.detail || "", "同步", "missing chart gives a data next step");
 }
 
+function testBuildsRelativeStrengthTrendModel() {
+  const rows = Array.from({ length: 36 }, (_, index) => ({
+    date: index < 30
+      ? `2026-04-${String(index + 1).padStart(2, "0")}`
+      : `2026-05-${String(index - 29).padStart(2, "0")}`,
+    symbol: "600519.SH",
+    rel_strength_index20: -0.05 + index * 0.004,
+    rel_strength_industry20: -0.02 + index * 0.003,
+  }));
+  const model = buildRelativeStrengthTrendModel(rows as any);
+  const missing = buildRelativeStrengthTrendModel([]);
+
+  assertEqual(model.points.length, 32, "relative strength chart keeps compact window");
+  assertOk(model.latestIndex != null && model.latestIndex > 0, "latest index relative strength is derived");
+  assertOk(model.latestIndustry != null && model.latestIndustry > 0, "latest industry relative strength is derived");
+  assertEqual(model.tone, "opportunity", "positive relative strength is opportunity");
+  assertIncludes(model.detail, "跑赢", "detail explains benchmark relationship");
+  assertEqual(missing.tone, "missing", "missing relative strength is explicit");
+}
+
 function testBuildsKlineEvidenceEvents() {
   const events = buildKlineEvidenceEvents({
     history: {
@@ -274,4 +295,5 @@ testClassifiesIndicatorTones();
 testBuildsBullishOverview();
 testMissingDataStaysVisible();
 testBuildsOverviewTechnicalCharts();
+testBuildsRelativeStrengthTrendModel();
 testBuildsKlineEvidenceEvents();

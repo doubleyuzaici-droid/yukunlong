@@ -9,12 +9,14 @@ import {
 import FundamentalsPage from "./FundamentalsPage";
 import NewsEvidencePage from "./NewsEvidencePage";
 import {
+  buildRelativeStrengthTrendModel,
   buildKlineEvidenceEvents,
   buildMarketAnalysisOverview as buildMarketAnalysisOverviewModel,
   type KlineEvidenceEvent,
   type MarketAnalysisItem as OverviewItem,
   type MarketAnalysisOverviewModel as OverviewModel,
   type MarketAnalysisTechnicalChart,
+  type RelativeStrengthTrendModel,
 } from "./SymbolWorkspacePage.helpers";
 import type { MarketContextPayload, MarketHistoryBar, MarketHistoryPayload, MarketQuote } from "../types/market";
 import {
@@ -892,6 +894,7 @@ function MarketAnalysisOverview({
   selectedSignal: SignalHistoryRow | null;
   strategyAnalysis: ResonanceV2Analysis | null;
 }) {
+  const relativeStrengthTrend = buildRelativeStrengthTrendModel(context?.factor_series || []);
   return (
     <div className="market-analysis-overview">
       <div className={`analysis-overview-hero ${overview.summary.tone}`}>
@@ -961,6 +964,10 @@ function MarketAnalysisOverview({
             <div className="overview-chart-card">
               <strong>20日收益因子</strong>
               <FactorSparkline rows={context?.factor_series || []} />
+            </div>
+            <div className="overview-chart-card">
+              <strong>相对强弱趋势</strong>
+              <RelativeStrengthTrendChart model={relativeStrengthTrend} />
             </div>
             <div className="overview-chart-card">
               <strong>资金流趋势</strong>
@@ -1641,6 +1648,46 @@ function FactorSparkline({ rows }: { rows: MarketContextPayload["factor_series"]
         );
       })}
       {latest.length === 0 && <span className="empty-state">暂无因子序列</span>}
+    </div>
+  );
+}
+
+function RelativeStrengthTrendChart({ model }: { model: RelativeStrengthTrendModel }) {
+  const points = model.points;
+  const values = points
+    .flatMap((point) => [point.indexValue, point.industryValue])
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const scaleMin = Math.min(-0.02, 0, ...values);
+  const scaleMax = Math.max(0.02, 0, ...values);
+  const spread = scaleMax === scaleMin ? 1 : scaleMax - scaleMin;
+  const xOf = (index: number) => 5 + (index / Math.max(points.length - 1, 1)) * 110;
+  const yOf = (value: number) => 57 - ((value - scaleMin) / spread) * 48;
+  const linePoints = (selector: (point: RelativeStrengthTrendModel["points"][number]) => number | null) => points
+    .flatMap((point, index) => {
+      const value = selector(point);
+      if (typeof value !== "number" || !Number.isFinite(value)) return [];
+      return [`${xOf(index).toFixed(1)},${yOf(value).toFixed(1)}`];
+    })
+    .join(" ");
+  const zeroY = yOf(0);
+
+  return (
+    <div className={`relative-strength-chart ${model.tone}`} aria-label="相对强弱趋势">
+      <div className="relative-strength-chart-head">
+        <span>指数 {formatSignedPercent(model.latestIndex)}</span>
+        <strong>行业 {formatSignedPercent(model.latestIndustry)}</strong>
+      </div>
+      <svg viewBox="0 0 120 64" preserveAspectRatio="none" aria-hidden="true">
+        <line className="baseline" x1="4" x2="116" y1={zeroY} y2={zeroY} />
+        <polyline className="index-line" points={linePoints((point) => point.indexValue)} />
+        <polyline className="industry-line" points={linePoints((point) => point.industryValue)} />
+      </svg>
+      {points.length === 0 && <span className="empty-state">暂无相对强弱序列</span>}
+      <div className="chart-legend">
+        <span><i className="legend-line ma20" />相对指数</span>
+        <span><i className="legend-line ma60" />相对行业</span>
+      </div>
+      <em>{model.detail}</em>
     </div>
   );
 }

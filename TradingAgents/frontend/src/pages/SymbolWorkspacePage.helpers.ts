@@ -22,6 +22,7 @@ type MarketBarLike = {
 };
 
 type FactorLike = {
+  date?: string | null;
   ma20?: number | null;
   ma60?: number | null;
   ma120?: number | null;
@@ -167,6 +168,20 @@ export interface MarketAnalysisTechnicalChart {
   points: MarketAnalysisSparkPoint[];
   scaleMin?: number;
   scaleMax?: number;
+}
+
+export interface RelativeStrengthTrendPoint {
+  date: string;
+  indexValue: number | null;
+  industryValue: number | null;
+}
+
+export interface RelativeStrengthTrendModel {
+  points: RelativeStrengthTrendPoint[];
+  latestIndex: number | null;
+  latestIndustry: number | null;
+  tone: MarketAnalysisTone;
+  detail: string;
 }
 
 export interface MarketAnalysisOverviewModel {
@@ -702,6 +717,33 @@ export function buildOverviewTechnicalCharts(bars: MarketBarLike[]): MarketAnaly
   ];
 }
 
+export function buildRelativeStrengthTrendModel(rows: FactorLike[]): RelativeStrengthTrendModel {
+  const points = [...(rows || [])]
+    .filter((row) => row.date)
+    .sort((left, right) => String(left.date).localeCompare(String(right.date)))
+    .flatMap((row) => {
+      const indexValue = finiteNumber(row.rel_strength_index20);
+      const industryValue = finiteNumber(row.rel_strength_industry20);
+      if (indexValue == null && industryValue == null) return [];
+      return [{
+        date: String(row.date),
+        indexValue,
+        industryValue,
+      }];
+    })
+    .slice(-32);
+  const latestIndex = latestFiniteValue(points.map((point) => point.indexValue));
+  const latestIndustry = latestFiniteValue(points.map((point) => point.industryValue));
+
+  return {
+    points,
+    latestIndex,
+    latestIndustry,
+    tone: latestIndex == null ? "missing" : classifyIndicatorTone(latestIndex, 0, "higher"),
+    detail: relativeStrengthTrendDetail(latestIndex, latestIndustry),
+  };
+}
+
 function missingTechnicalChart(key: string, label: string): MarketAnalysisTechnicalChart {
   return {
     key,
@@ -711,6 +753,26 @@ function missingTechnicalChart(key: string, label: string): MarketAnalysisTechni
     tone: "missing",
     points: [],
   };
+}
+
+function finiteNumber(value?: number | null) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function latestFiniteValue(values: (number | null | undefined)[]) {
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    const value = values[index];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function relativeStrengthTrendDetail(indexValue: number | null, industryValue: number | null) {
+  if (indexValue == null && industryValue == null) return "暂无相对强弱序列，等待因子计算。";
+  if ((indexValue ?? -Infinity) >= 0 && (industryValue ?? -Infinity) >= 0) return "同时跑赢指数和行业，优先观察强势延续。";
+  if ((indexValue ?? -Infinity) >= 0) return "跑赢指数但弱于行业，观察板块内排序。";
+  if ((industryValue ?? -Infinity) >= 0) return "弱于指数但跑赢行业，等待大盘相对强度修复。";
+  return "相对强弱偏弱，等待重新跑赢基准。";
 }
 
 function formatNumber(value?: number | null, digits = 2) {
