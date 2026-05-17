@@ -24,6 +24,7 @@ import {
   buildIchimokuIndicators,
   buildEnvelopeIndicators,
   buildPsychologicalLineIndicators,
+  buildOscillatorIndicators,
   buildFundFlowOverlayGeometry,
   buildLimitPriceLines,
   buildKlineHoverMetrics,
@@ -1132,6 +1133,8 @@ function testBuildsSplitIndicatorPanelReadouts() {
     bias: 3.6,
     dma: 0.24,
     trix: 0.42,
+    osc: -15.4,
+    oscEma: -8.2,
     atr: 1.52,
     obv: 1280000,
   }, { mode: "split" });
@@ -1141,7 +1144,7 @@ function testBuildsSplitIndicatorPanelReadouts() {
   assertEqual(readouts.find((group) => group.key === "volume")?.items.map((item) => item.label).join(","), "VOL,量比,VMA5,VMA10,VMA20", "volume readout keeps Futu-style moving-average volume values");
   assertEqual(readouts.find((group) => group.key === "oscillator")?.items.map((item) => item.label).join(","), "RSI,PSY,PSYMA,J", "oscillator readout includes PSY/PSYMA with RSI and KDJ values");
   assertEqual(readouts.find((group) => group.key === "advanced")?.items.map((item) => item.label).join(","), "CR,BR,EMV,MFI,VR", "advanced readout keeps energy and money-flow values");
-  assertEqual(readouts.find((group) => group.key === "momentum")?.items.map((item) => item.label).join(","), "+DI,-DI,ADX,CCI,WR,BIAS,DMA,TRIX", "momentum readout keeps directional and momentum values");
+  assertEqual(readouts.find((group) => group.key === "momentum")?.items.map((item) => item.label).join(","), "+DI,-DI,ADX,CCI,WR,BIAS,DMA,TRIX,OSC,OSCEMA", "momentum readout keeps directional and momentum values");
   assertEqual(readouts.find((group) => group.key === "volatility")?.items.map((item) => item.label).join(","), "ATR,OBV", "volatility readout keeps range and cumulative volume values");
 }
 
@@ -1155,12 +1158,13 @@ function testCompactIndicatorPanelReadoutsFoldExtraIndicators() {
     pdi: 23.4,
     bias: -1.6,
     trix: 0.18,
+    osc: 12.5,
   }, { mode: "compact" });
   const oscillator = readouts.find((group) => group.key === "oscillator");
 
   assertEqual(readouts.some((group) => group.key === "advanced"), false, "compact readouts do not point to hidden advanced panel");
   assertEqual(readouts.some((group) => group.key === "momentum"), false, "compact readouts do not point to hidden momentum panel");
-  assertEqual(oscillator?.items.map((item) => item.label).join(","), "RSI,PSY,PSYMA,J,CR,+DI,BIAS,TRIX", "compact oscillator folds extra indicator readings");
+  assertEqual(oscillator?.items.map((item) => item.label).join(","), "RSI,PSY,PSYMA,J,CR,+DI,BIAS,TRIX,OSC", "compact oscillator folds extra indicator readings");
 }
 
 function testSelectsCursorIndicatorReadoutSnapshot() {
@@ -1241,6 +1245,31 @@ function testPsychologicalLineIndicatorsNeedEnoughSamples() {
 
   assertOk(typeof latest?.psy === "number", "PSY is available once enough close-to-close comparisons exist");
   assertEqual(latest?.psyMa, null, "PSYMA is missing before enough PSY samples exist");
+}
+
+function testBuildsOscillatorIndicators() {
+  const indicators = buildOscillatorIndicators(trendOverlayBars, {
+    emaPeriod: 3,
+    period: 3,
+  });
+  const latest = indicators[indicators.length - 1];
+
+  assertEqual(indicators.length, trendOverlayBars.length, "OSC indicators preserve bar count");
+  assertOk(latest, "latest OSC indicator exists");
+  assertApprox(indicators[3]?.osc, 80, 0.001, "OSC compares close with the configured moving average");
+  assertApprox(latest?.osc, -110, 0.001, "OSC captures the latest close-to-average distance");
+  assertApprox(latest?.oscEma, -57.7083, 0.001, "OSCEMA smooths the OSC line");
+}
+
+function testOscillatorIndicatorsNeedEnoughSamples() {
+  const indicators = buildOscillatorIndicators(trendOverlayBars.slice(0, 2), {
+    emaPeriod: 3,
+    period: 3,
+  });
+  const latest = indicators[indicators.length - 1];
+
+  assertEqual(latest?.osc, null, "OSC is missing before enough moving average samples");
+  assertEqual(latest?.oscEma, null, "OSCEMA is missing before OSC starts");
 }
 
 function testTrendOverlayIndicatorsNeedEnoughSamples() {
@@ -1710,6 +1739,8 @@ testBuildsEnvelopeIndicators();
 testEnvelopeIndicatorsNeedEnoughSamples();
 testBuildsPsychologicalLineIndicators();
 testPsychologicalLineIndicatorsNeedEnoughSamples();
+testBuildsOscillatorIndicators();
+testOscillatorIndicatorsNeedEnoughSamples();
 testTrendOverlayIndicatorsNeedEnoughSamples();
 testBuildsVolumeMomentumIndicators();
 testVolumeMomentumIndicatorsNeedEnoughSamples();

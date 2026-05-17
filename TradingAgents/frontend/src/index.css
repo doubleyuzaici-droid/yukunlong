@@ -5565,6 +5565,15 @@ label {
   stroke-dasharray: 6 4;
 }
 
+.indicator-line.osc {
+  stroke: #c792ea;
+}
+
+.indicator-line.osc-ema {
+  stroke: rgba(238, 242, 247, 0.78);
+  stroke-dasharray: 3 5;
+}
+
 .indicator-line.atr {
   stroke: #f4d37e;
 }

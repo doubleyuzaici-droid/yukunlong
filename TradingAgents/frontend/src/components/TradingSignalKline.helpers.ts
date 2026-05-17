@@ -434,6 +434,8 @@ export type ChartParameterName =
   | "dmaSignal"
   | "volumeMomentumPeriod"
   | "rocPeriod"
+  | "oscPeriod"
+  | "oscEmaPeriod"
   | "trixPeriod"
   | "trixSignal"
   | "atrPeriod";
@@ -659,7 +661,7 @@ const CHART_LAYER_SUBCHARTS: ChartLayerSummaryOption[] = [
   ["advanced", "CR/ARBR/EMV"],
   ["momentum", "DMI/CCI/WR"],
   ["biasDma", "BIAS/DMA"],
-  ["volumeMomentum", "VR/MFI/TRIX"],
+  ["volumeMomentum", "VR/MFI/TRIX/OSC"],
   ["volatility", "ATR/OBV"],
 ];
 
@@ -705,6 +707,8 @@ const STANDARD_CHART_PARAMETER_VALUES: Record<ChartParameterName, number> = {
   dmaSignal: 10,
   volumeMomentumPeriod: 26,
   rocPeriod: 12,
+  oscPeriod: 10,
+  oscEmaPeriod: 6,
   trixPeriod: 12,
   trixSignal: 9,
   atrPeriod: 14,
@@ -746,6 +750,8 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       dmaSignal: 5,
       volumeMomentumPeriod: 13,
       rocPeriod: 6,
+      oscPeriod: 6,
+      oscEmaPeriod: 3,
       trixPeriod: 6,
       trixSignal: 5,
       atrPeriod: 10,
@@ -797,6 +803,8 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       dmaSignal: 20,
       volumeMomentumPeriod: 42,
       rocPeriod: 24,
+      oscPeriod: 20,
+      oscEmaPeriod: 10,
       trixPeriod: 18,
       trixSignal: 12,
       atrPeriod: 21,
@@ -1682,6 +1690,25 @@ export function buildPsychologicalLineIndicators(
   }));
 }
 
+export function buildOscillatorIndicators(
+  bars: VolumeProfileBarLike[],
+  options: { period?: number; emaPeriod?: number } = {},
+): OscillatorIndicatorSnapshot[] {
+  const period = clampInteger(options.period ?? 10, 2, 120);
+  const emaPeriod = clampInteger(options.emaPeriod ?? 6, 2, 80);
+  const closeValues = bars.map((bar) => normalizeOptionalNumber(bar.close));
+  const oscValues = closeValues.map((close, index) => {
+    const averageClose = movingAverageAt(closeValues, period, index);
+    return close != null && averageClose != null ? (close - averageClose) * 100 : null;
+  });
+  const oscEmaValues = emaNullableValues(oscValues, emaPeriod);
+
+  return oscValues.map((osc, index) => ({
+    osc,
+    oscEma: oscEmaValues[index] ?? null,
+  }));
+}
+
 function isTruthyFlag(value: boolean | number | string | null | undefined) {
   return value === true || value === 1 || value === "1" || String(value).toLowerCase() === "true";
 }
@@ -1740,6 +1767,11 @@ export interface PsychologicalLineIndicatorSnapshot {
   psyMa: number | null;
 }
 
+export interface OscillatorIndicatorSnapshot {
+  osc: number | null;
+  oscEma: number | null;
+}
+
 export interface VolumeMomentumIndicatorSnapshot {
   vr: number | null;
   mfi: number | null;
@@ -1793,6 +1825,8 @@ export interface IndicatorPanelReadoutSnapshot {
   bias?: number | null;
   dma?: number | null;
   trix?: number | null;
+  osc?: number | null;
+  oscEma?: number | null;
   atr?: number | null;
   obv?: number | null;
 }
@@ -1870,11 +1904,11 @@ export function buildIndicatorSectionLayout(mode: IndicatorSectionLayoutMode = "
   if (mode === "split") {
     sections.push(
       { key: "advanced", label: "CR / ARBR / EMV / VR / MFI", ...advanced },
-      { key: "momentum", label: "DMI / CCI / WR / BIAS / DMA / TRIX", ...momentum },
+      { key: "momentum", label: "DMI / CCI / WR / BIAS / DMA / TRIX / OSC", ...momentum },
       { key: "volatility", label: "ATR / OBV", ...volatility },
     );
   } else {
-    sections[3] = { key: "oscillator", label: "RSI / KDJ / CR / DMI / BIAS / TRIX / ATR", ...oscillator };
+    sections[3] = { key: "oscillator", label: "RSI / KDJ / CR / DMI / BIAS / TRIX / OSC / ATR", ...oscillator };
   }
 
   return {
@@ -2306,6 +2340,8 @@ export function buildIndicatorPanelReadouts(
     item("BIAS", snapshot.bias, 2, { signed: true }),
     item("DMA", snapshot.dma, 2, { signed: true }),
     item("TRIX", snapshot.trix, 2, { signed: true }),
+    item("OSC", snapshot.osc, 2, { signed: true }),
+    item("OSCEMA", snapshot.oscEma, 2, { signed: true }),
   ];
   const volatilityItems = [
     item("ATR", snapshot.atr, 2),
