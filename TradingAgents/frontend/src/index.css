@@ -4661,6 +4661,11 @@ label {
   stroke: rgba(219, 231, 255, 0.5);
 }
 
+.chart-crosshair .crosshair-readout-panel {
+  fill: rgba(11, 15, 20, 0.94);
+  stroke: rgba(94, 234, 212, 0.32);
+}
+
 .chart-crosshair text {
   fill: #dbeafe;
   font-size: 12px;
@@ -4677,6 +4682,42 @@ label {
 
 .chart-crosshair .crosshair-price-text {
   text-anchor: start;
+}
+
+.chart-crosshair .crosshair-readout-title {
+  fill: rgba(248, 250, 252, 0.96);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.chart-crosshair .crosshair-readout-status {
+  fill: rgba(226, 232, 240, 0.92);
+  font-size: 11px;
+  font-weight: 900;
+  text-anchor: start;
+}
+
+.chart-crosshair .crosshair-readout-status.limit-up {
+  fill: #ffb3ad;
+}
+
+.chart-crosshair .crosshair-readout-status.limit-down {
+  fill: #9cf2bc;
+}
+
+.chart-crosshair .crosshair-readout-status.suspended {
+  fill: rgba(203, 213, 225, 0.9);
+}
+
+.chart-crosshair .crosshair-readout-row {
+  fill: rgba(203, 213, 225, 0.88);
+  font-size: 10.8px;
+  font-weight: 740;
+}
+
+.chart-crosshair .crosshair-readout-row.emphasis {
+  fill: rgba(248, 250, 252, 0.95);
+  font-weight: 850;
 }
 
 .active-signal-guide {

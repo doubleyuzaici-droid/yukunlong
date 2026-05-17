@@ -9,6 +9,8 @@ import {
   buildIndicatorPanelReadouts,
   buildIndicatorAxisTicks,
   buildLimitPriceLines,
+  buildKlineHoverMetrics,
+  mapClientPointToChartViewBox,
   buildManualDrawingGeometry,
   buildPriceAxisScale,
   buildPriceAdjustedBars,
@@ -268,6 +270,35 @@ function testBuildsLimitPriceLinesFromFinitePrices() {
   assertApprox(lines.latestUp?.price, 12, 0.001, "latest valid limit-up price is exposed");
   assertApprox(lines.latestDown?.price, 9.2, 0.001, "latest valid limit-down price is exposed");
   assertEqual(lines.values.length, 4, "finite limit prices are available for price-domain expansion");
+}
+
+function testMapsClientPointToSplitChartViewBox() {
+  const point = mapClientPointToChartViewBox({
+    clientX: 550,
+    clientY: 620,
+    rect: { left: 50, top: 120, width: 1000, height: 1000 },
+    viewBoxWidth: 1000,
+    viewBoxHeight: 1012,
+  });
+
+  assertApprox(point.x, 500, 0.001, "x maps to the SVG viewBox width");
+  assertApprox(point.y, 506, 0.001, "y maps to the full split-indicator viewBox height");
+}
+
+function testBuildsKlineHoverMetrics() {
+  const metrics = buildKlineHoverMetrics({
+    close: 10,
+    volume: 200,
+    amount: 2_120,
+    limit_up: 11,
+    limit_down: 9,
+    is_limit_up: false,
+  });
+
+  assertApprox(metrics.averagePrice, 10.6, 0.001, "hover metrics expose average transaction price");
+  assertApprox(metrics.limitUpDistancePct, 0.1, 0.001, "limit-up distance is relative to close");
+  assertApprox(metrics.limitDownDistancePct, -0.1, 0.001, "limit-down distance is relative to close");
+  assertEqual(metrics.statusLabel, "普通", "ordinary candles get a neutral status label");
 }
 
 function testResolvesLimitCandleState() {
@@ -1086,6 +1117,8 @@ function testPriceGapAnnotationsRespectThreshold() {
 
 testBuildsVisibleVolumeDistribution();
 testBuildsLimitPriceLinesFromFinitePrices();
+testMapsClientPointToSplitChartViewBox();
+testBuildsKlineHoverMetrics();
 testResolvesLimitCandleState();
 testAppliesTrendChartPreferencePreset();
 testMatchesChartPreferencePresetFromValues();

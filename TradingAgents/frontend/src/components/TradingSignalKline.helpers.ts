@@ -726,15 +726,53 @@ export interface LimitPriceLines {
   values: number[];
 }
 
+export interface ChartClientPointMappingInput {
+  clientX: number;
+  clientY: number;
+  rect: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  };
+  viewBoxWidth: number;
+  viewBoxHeight: number;
+}
+
+export function mapClientPointToChartViewBox({
+  clientX,
+  clientY,
+  rect,
+  viewBoxWidth,
+  viewBoxHeight,
+}: ChartClientPointMappingInput) {
+  const width = isFiniteNumber(rect.width) && rect.width > 0 ? rect.width : 1;
+  const height = isFiniteNumber(rect.height) && rect.height > 0 ? rect.height : 1;
+  return {
+    x: ((clientX - rect.left) / width) * viewBoxWidth,
+    y: ((clientY - rect.top) / height) * viewBoxHeight,
+  };
+}
+
 export type LimitCandleState = "limit-up" | "limit-down" | "suspended";
 
 export interface LimitCandleStateBarLike {
   close?: number | null;
+  volume?: number | null;
+  amount?: number | null;
   limit_up?: number | null;
   limit_down?: number | null;
   is_suspended?: boolean | number | string | null;
   is_limit_up?: boolean | number | string | null;
   is_limit_down?: boolean | number | string | null;
+}
+
+export interface KlineHoverMetrics {
+  averagePrice: number | null;
+  limitUpDistancePct: number | null;
+  limitDownDistancePct: number | null;
+  status: LimitCandleState | null;
+  statusLabel: string;
 }
 
 export function buildLimitPriceLines(
@@ -773,6 +811,33 @@ export function resolveLimitCandleState(
     return "limit-down";
   }
   return null;
+}
+
+export function buildKlineHoverMetrics(bar: LimitCandleStateBarLike): KlineHoverMetrics {
+  const averagePrice = isFiniteNumber(bar.amount) && isFiniteNumber(bar.volume) && bar.volume > 0
+    ? bar.amount / bar.volume
+    : null;
+  const limitUpDistancePct = isFiniteNumber(bar.close) && bar.close > 0 && isFiniteNumber(bar.limit_up)
+    ? bar.limit_up / bar.close - 1
+    : null;
+  const limitDownDistancePct = isFiniteNumber(bar.close) && bar.close > 0 && isFiniteNumber(bar.limit_down)
+    ? bar.limit_down / bar.close - 1
+    : null;
+  const status = resolveLimitCandleState(bar);
+  const statusLabel = status === "limit-up"
+    ? "涨停"
+    : status === "limit-down"
+      ? "跌停"
+      : status === "suspended"
+        ? "停牌"
+        : "普通";
+  return {
+    averagePrice,
+    limitUpDistancePct,
+    limitDownDistancePct,
+    status,
+    statusLabel,
+  };
 }
 
 function isTruthyFlag(value: boolean | number | string | null | undefined) {

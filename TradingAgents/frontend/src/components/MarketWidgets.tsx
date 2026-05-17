@@ -19,6 +19,7 @@ import {
   buildIndicatorPanelReadouts,
   buildIndicatorAxisTicks,
   buildIndicatorSectionLayout,
+  buildKlineHoverMetrics,
   buildLimitPriceLines,
   buildManualDrawingGeometry,
   buildPriceAdjustedBars,
@@ -40,6 +41,7 @@ import {
   buildVolumeProfile,
   matchChartParameterPreset,
   matchChartPreferencePreset,
+  mapClientPointToChartViewBox,
   normalizeManualDrawings,
   normalizeKlineRenderMode,
   normalizePriceAdjustmentMode,
@@ -1574,8 +1576,13 @@ export function TradingSignalKlinePanel({
   const nearestChartPoint = (event: MouseEvent<SVGSVGElement>) => {
     if (chart.candles.length === 0) return;
     const rect = event.currentTarget.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * 1000;
-    const y = ((event.clientY - rect.top) / rect.height) * 720;
+    const { x, y } = mapClientPointToChartViewBox({
+      clientX: event.clientX,
+      clientY: event.clientY,
+      rect,
+      viewBoxHeight: chart.viewBoxHeight,
+      viewBoxWidth: 1000,
+    });
     if (x < chart.plotLeft || x > chart.plotRight || y < chart.sections[0].top || y > chart.signalLaneY) {
       return null;
     }
@@ -1606,7 +1613,11 @@ export function TradingSignalKlinePanel({
     setCrosshair({
       x: point.candle.x,
       y: point.y,
-      labelX: point.candle.x > chart.plotRight - 220 ? point.candle.x - 218 : point.candle.x + 14,
+      labelX: clampNumber(
+        point.candle.x + (point.candle.x > chart.plotRight - 330 ? -316 : 14),
+        chart.plotLeft + 6,
+        chart.plotRight - 314,
+      ),
       price: chartPriceFromY(chart, point.y),
       candle: point.candle,
     });
@@ -2530,17 +2541,46 @@ export function TradingSignalKlinePanel({
               <text className="crosshair-date-text" x={clampNumber(crosshair.x, chart.plotLeft + 38, chart.plotRight - 38)} y={chart.timeAxisY - 5}>
                 {shortDateLabel(crosshair.candle.periodLabel || crosshair.candle.date)}
               </text>
-              <rect x={crosshair.labelX} y="52" width="254" height="194" rx="4" />
-              <text x={crosshair.labelX + 12} y="76">{crosshair.candle.periodLabel || crosshair.candle.date}</text>
-              <text x={crosshair.labelX + 12} y="98">周期 {periodData.unit} · 信号 {crosshairSignalCount}</text>
-              <text x={crosshair.labelX + 12} y="120">O {formatNumber(crosshair.candle.open, 2)} H {formatNumber(crosshair.candle.high, 2)}</text>
-              <text x={crosshair.labelX + 12} y="142">L {formatNumber(crosshair.candle.low, 2)} C {formatNumber(crosshair.candle.close, 2)}</text>
-              <text x={crosshair.labelX + 12} y="164">
+              <rect className="crosshair-readout-panel" x={crosshair.labelX} y="52" width="304" height="244" rx="6" />
+              <text className="crosshair-readout-title" x={crosshair.labelX + 12} y="76">
+                {crosshair.candle.periodLabel || crosshair.candle.date}
+              </text>
+              <text className={`crosshair-readout-status ${crosshair.candle.hoverMetrics.status || "neutral"}`} x={crosshair.labelX + 226} y="76">
+                {crosshair.candle.hoverMetrics.statusLabel}
+              </text>
+              <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="100">
+                周期 {periodData.unit} · 信号 {crosshairSignalCount} · 振幅 {formatSignedPercent(crosshair.candle.indicators.amplitudePct)}
+              </text>
+              <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="124">
+                开 {formatNumber(crosshair.candle.open, 2)} · 高 {formatNumber(crosshair.candle.high, 2)}
+              </text>
+              <text className="crosshair-readout-row" x={crosshair.labelX + 162} y="124">
+                低 {formatNumber(crosshair.candle.low, 2)} · 收 {formatNumber(crosshair.candle.close, 2)}
+              </text>
+              <text className="crosshair-readout-row emphasis" x={crosshair.labelX + 12} y="148">
                 涨跌 {formatSignedNumber(crosshair.candle.indicators.change, 2)} / {formatSignedPercent(crosshair.candle.indicators.changePct)}
               </text>
-              <text x={crosshair.labelX + 12} y="186">量 {formatCompactNumber(crosshair.candle.volume)} · 额 {formatMoney(crosshair.candle.amount)}</text>
-              <text x={crosshair.labelX + 12} y="208">RSI {formatNumber(crosshair.candle.indicators.rsi14, 1)} · MACD {formatNumber(crosshair.candle.indicators.macd, 2)} · ATR {formatNumber(crosshair.candle.indicators.atr, 2)}</text>
-              <text x={crosshair.labelX + 12} y="230">MFI {formatNumber(crosshair.candle.indicators.mfi, 1)} · VR {formatNumber(crosshair.candle.indicators.vr, 1)} · ROC {formatSignedNumber(crosshair.candle.indicators.roc, 2)}</text>
+              <text className="crosshair-readout-row" x={crosshair.labelX + 162} y="148">
+                均价 {formatNumber(crosshair.candle.hoverMetrics.averagePrice, 2)}
+              </text>
+              <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="172">
+                量 {formatCompactNumber(crosshair.candle.volume)} · 额 {formatMoney(crosshair.candle.amount)}
+              </text>
+              <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="196">
+                涨停 {formatNumber(crosshair.candle.limitUp, 2)} ({formatSignedPercent(crosshair.candle.hoverMetrics.limitUpDistancePct)})
+              </text>
+              <text className="crosshair-readout-row" x={crosshair.labelX + 162} y="196">
+                跌停 {formatNumber(crosshair.candle.limitDown, 2)} ({formatSignedPercent(crosshair.candle.hoverMetrics.limitDownDistancePct)})
+              </text>
+              <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="220">
+                MA {formatNumber(crosshair.candle.ma5, 2)} / {formatNumber(crosshair.candle.ma20, 2)} / {formatNumber(crosshair.candle.ma60, 2)}
+              </text>
+              <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="244">
+                BOLL {formatNumber(crosshair.candle.indicators.bollMid, 2)} · RSI {formatNumber(crosshair.candle.indicators.rsi14, 1)} · MACD {formatNumber(crosshair.candle.indicators.macd, 2)}
+              </text>
+              <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="268">
+                MFI {formatNumber(crosshair.candle.indicators.mfi, 1)} · VR {formatNumber(crosshair.candle.indicators.vr, 1)} · ATR {formatNumber(crosshair.candle.indicators.atr, 2)}
+              </text>
             </g>
           )}
           {chart.candles.length === 0 && <text x="3" y="104">暂无历史行情</text>}
@@ -4268,6 +4308,7 @@ function buildTradingSignalGeometry(
     const closeY = yOf(close);
     const volumeHeight = Math.max(1, (Number(bar.volume || 0) / maxVolume) * (VOLUME_BOTTOM - VOLUME_TOP));
     const limitState = resolveLimitCandleState(bar);
+    const hoverMetrics = buildKlineHoverMetrics(bar);
     const limitLabel = limitState === "limit-up"
       ? "涨停"
       : limitState === "limit-down"
@@ -4302,6 +4343,9 @@ function buildTradingSignalGeometry(
       tone: close >= open ? "positive" : "negative",
       limitState,
       limitLabel,
+      hoverMetrics,
+      limitUp: bar.limit_up ?? null,
+      limitDown: bar.limit_down ?? null,
       limitLabelY: limitState === "limit-down"
         ? clampNumber(yOf(low) + 16, PRICE_TOP + 14, PRICE_BOTTOM - 8)
         : clampNumber(yOf(high) - 10, PRICE_TOP + 14, PRICE_BOTTOM - 8),
