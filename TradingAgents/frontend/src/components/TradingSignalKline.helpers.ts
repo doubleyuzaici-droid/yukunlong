@@ -47,6 +47,14 @@ export interface AdvancedIndicatorSnapshot {
   emvMa: number | null;
 }
 
+export interface MomentumIndicatorSnapshot {
+  pdi: number | null;
+  mdi: number | null;
+  adx: number | null;
+  cci: number | null;
+  wr: number | null;
+}
+
 export function buildAdvancedIndicators(
   bars: VolumeProfileBarLike[],
   options: { period?: number; emvPeriod?: number } = {},
@@ -103,6 +111,62 @@ export function buildAdvancedIndicators(
       br: ratioPercent(brUp, brDown),
       emv: emvValues[index],
       emvMa: emvWindow.length === emvPeriod ? averageNumbers(emvWindow) : null,
+    };
+  });
+}
+
+export function buildMomentumIndicators(
+  bars: VolumeProfileBarLike[],
+  options: { period?: number } = {},
+): MomentumIndicatorSnapshot[] {
+  const period = clampInteger(options.period ?? 14, 2, 80);
+  const normalized = bars.map(normalizeAdvancedBar);
+  const dmiDrafts = normalized.map((bar, index) => {
+    const windowStart = index - period + 1;
+    if (!bar || windowStart < 1) return { pdi: null, mdi: null, dx: null };
+
+    let trueRange = 0;
+    let plusMovement = 0;
+    let minusMovement = 0;
+    for (let cursor = windowStart; cursor <= index; cursor += 1) {
+      const current = normalized[cursor];
+      const previous = normalized[cursor - 1];
+      if (!current || !previous) continue;
+      trueRange += Math.max(
+        current.high - current.low,
+        Math.abs(current.high - previous.close),
+        Math.abs(current.low - previous.close),
+      );
+      const upwardMove = current.high - previous.high;
+      const downwardMove = previous.low - current.low;
+      plusMovement += upwardMove > downwardMove && upwardMove > 0 ? upwardMove : 0;
+      minusMovement += downwardMove > upwardMove && downwardMove > 0 ? downwardMove : 0;
+    }
+
+    const pdi = ratioPercent(plusMovement, trueRange);
+    const mdi = ratioPercent(minusMovement, trueRange);
+    const dx = pdi != null && mdi != null && pdi + mdi > 0
+      ? (Math.abs(pdi - mdi) / (pdi + mdi)) * 100
+      : null;
+    return { pdi, mdi, dx };
+  });
+
+  return normalized.map((bar, index) => {
+    const windowStart = index - period + 1;
+    const cciWr = bar && windowStart >= 0
+      ? buildCciWrSnapshot(normalized.slice(windowStart, index + 1), period)
+      : { cci: null, wr: null };
+    const dxWindow = dmiDrafts
+      .slice(Math.max(0, index - period + 1), index + 1)
+      .map((value) => value.dx)
+      .filter(isFiniteNumber);
+
+    return {
+      pdi: dmiDrafts[index]?.pdi ?? null,
+      mdi: dmiDrafts[index]?.mdi ?? null,
+      adx: dxWindow.length === period ? averageNumbers(dxWindow) : null,
+      cci: cciWr.cci,
+      wr: cciWr.wr,
     };
   });
 }
@@ -235,6 +299,28 @@ function normalizeAdvancedBar(bar: VolumeProfileBarLike) {
     low: Math.min(high, low, open, close),
     close,
     volume: Math.max(volume, 0),
+  };
+}
+
+function buildCciWrSnapshot(
+  bars: Array<ReturnType<typeof normalizeAdvancedBar>>,
+  period: number,
+) {
+  if (bars.length !== period || bars.some((bar) => !bar)) return { cci: null, wr: null };
+  const usableBars = bars.filter((bar): bar is NonNullable<typeof bar> => Boolean(bar));
+  const typicalPrices = usableBars.map((bar) => (bar.high + bar.low + bar.close) / 3);
+  const currentTypicalPrice = typicalPrices[typicalPrices.length - 1];
+  const typicalAverage = averageNumbers(typicalPrices);
+  const meanDeviation = typicalAverage == null
+    ? null
+    : averageNumbers(typicalPrices.map((value) => Math.abs(value - typicalAverage)));
+  const high = Math.max(...usableBars.map((bar) => bar.high));
+  const low = Math.min(...usableBars.map((bar) => bar.low));
+  return {
+    cci: typicalAverage != null && meanDeviation && meanDeviation > 0
+      ? (currentTypicalPrice - typicalAverage) / (0.015 * meanDeviation)
+      : null,
+    wr: high > low ? ((high - usableBars[usableBars.length - 1].close) / (high - low)) * -100 : null,
   };
 }
 

@@ -1,4 +1,4 @@
-import { buildAdvancedIndicators, buildVolumeProfile } from "./TradingSignalKline.helpers.js";
+import { buildAdvancedIndicators, buildMomentumIndicators, buildVolumeProfile } from "./TradingSignalKline.helpers.js";
 
 function assertEqual<T>(actual: T, expected: T, message: string) {
   if (actual !== expected) {
@@ -23,6 +23,13 @@ const bars = [
   { date: "2026-05-12", open: 10.8, high: 12, low: 10.6, close: 11.6, volume: 300, amount: 3_480 },
   { date: "2026-05-13", open: 11.6, high: 12.5, low: 11.2, close: 11.4, volume: 200, amount: 2_280 },
   { date: "2026-05-14", open: 11.4, high: 13, low: 11.3, close: 12.7, volume: 500, amount: 6_350 },
+];
+
+const mixedTrendBars = [
+  ...bars,
+  { date: "2026-05-15", open: 12.7, high: 13.2, low: 12.1, close: 12.3, volume: 450, amount: 5_535 },
+  { date: "2026-05-18", open: 12.3, high: 13.8, low: 12.2, close: 13.5, volume: 650, amount: 8_775 },
+  { date: "2026-05-19", open: 13.5, high: 13.6, low: 11.8, close: 12, volume: 700, amount: 8_400 },
 ];
 
 function testBuildsVisibleVolumeDistribution() {
@@ -71,7 +78,33 @@ function testAdvancedIndicatorsNeedEnoughSamples() {
   assertEqual(latest?.emvMa, null, "EMVMA is missing before smoothing period is ready");
 }
 
+function testBuildsMomentumIndicatorSet() {
+  const indicators = buildMomentumIndicators(mixedTrendBars, { period: 3 });
+  const latest = indicators[indicators.length - 1];
+
+  assertEqual(indicators.length, mixedTrendBars.length, "momentum indicators preserve bar count");
+  assertOk(latest, "latest momentum indicator exists");
+  assertApprox(latest?.pdi, 17.7778, 0.001, "DMI +DI follows directional movement over true range");
+  assertApprox(latest?.mdi, 8.8889, 0.001, "DMI -DI captures the latest downside range expansion");
+  assertApprox(latest?.adx, 77.7778, 0.001, "ADX smooths the recent directional index values");
+  assertApprox(latest?.cci, -57.5, 0.001, "CCI compares typical price with its mean deviation");
+  assertApprox(latest?.wr, -90, 0.001, "WR locates close near the recent low");
+}
+
+function testMomentumIndicatorsNeedEnoughSamples() {
+  const indicators = buildMomentumIndicators(mixedTrendBars.slice(0, 2), { period: 3 });
+  const latest = indicators[indicators.length - 1];
+
+  assertEqual(latest?.pdi, null, "PDI is missing before DMI period is ready");
+  assertEqual(latest?.mdi, null, "MDI is missing before DMI period is ready");
+  assertEqual(latest?.adx, null, "ADX is missing before enough DX samples are ready");
+  assertEqual(latest?.cci, null, "CCI is missing before period is ready");
+  assertEqual(latest?.wr, null, "WR is missing before period is ready");
+}
+
 testBuildsVisibleVolumeDistribution();
 testHandlesMissingBarsExplicitly();
 testBuildsFutuStyleAdvancedIndicators();
 testAdvancedIndicatorsNeedEnoughSamples();
+testBuildsMomentumIndicatorSet();
+testMomentumIndicatorsNeedEnoughSamples();

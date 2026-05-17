@@ -9,6 +9,7 @@ import type {
 } from "../types/market";
 import {
   buildAdvancedIndicators,
+  buildMomentumIndicators,
   buildVolumeProfile,
   type VolumeProfileModel,
 } from "./TradingSignalKline.helpers";
@@ -104,6 +105,11 @@ interface TradingIndicatorSnapshot {
   br?: number | null;
   emv?: number | null;
   emvMa?: number | null;
+  pdi?: number | null;
+  mdi?: number | null;
+  adx?: number | null;
+  cci?: number | null;
+  wr?: number | null;
   volumeRatio?: number | null;
   atr?: number | null;
   obv?: number | null;
@@ -150,6 +156,7 @@ interface TradingChartPreferences {
   rsi: boolean;
   kdj: boolean;
   advanced: boolean;
+  momentum: boolean;
   measure: boolean;
 }
 
@@ -166,6 +173,7 @@ interface TradingChartParameters {
   kdjPeriod: number;
   crPeriod: number;
   emvPeriod: number;
+  momentumPeriod: number;
   atrPeriod: number;
 }
 
@@ -307,6 +315,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   rsi: true,
   kdj: true,
   advanced: true,
+  momentum: true,
   measure: false,
 };
 
@@ -323,6 +332,7 @@ const DEFAULT_TRADING_CHART_PARAMS: TradingChartParameters = {
   kdjPeriod: 9,
   crPeriod: 26,
   emvPeriod: 14,
+  momentumPeriod: 14,
   atrPeriod: 14,
 };
 
@@ -351,6 +361,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     rsi: typeof next.rsi === "boolean" ? next.rsi : DEFAULT_TRADING_CHART_PREFS.rsi,
     kdj: typeof next.kdj === "boolean" ? next.kdj : DEFAULT_TRADING_CHART_PREFS.kdj,
     advanced: typeof next.advanced === "boolean" ? next.advanced : DEFAULT_TRADING_CHART_PREFS.advanced,
+    momentum: typeof next.momentum === "boolean" ? next.momentum : DEFAULT_TRADING_CHART_PREFS.momentum,
     measure: typeof next.measure === "boolean" ? next.measure : DEFAULT_TRADING_CHART_PREFS.measure,
   };
 }
@@ -371,6 +382,7 @@ function normalizeTradingChartParams(value: unknown): TradingChartParameters {
     kdjPeriod: boundedInteger(next.kdjPeriod, 5, 40, DEFAULT_TRADING_CHART_PARAMS.kdjPeriod),
     crPeriod: boundedInteger(next.crPeriod, 5, 80, DEFAULT_TRADING_CHART_PARAMS.crPeriod),
     emvPeriod: boundedInteger(next.emvPeriod, 5, 60, DEFAULT_TRADING_CHART_PARAMS.emvPeriod),
+    momentumPeriod: boundedInteger(next.momentumPeriod, 5, 60, DEFAULT_TRADING_CHART_PARAMS.momentumPeriod),
     atrPeriod: boundedInteger(next.atrPeriod, 5, 40, DEFAULT_TRADING_CHART_PARAMS.atrPeriod),
   };
 }
@@ -1363,6 +1375,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.rsi ? "active" : ""} onClick={() => toggleChartPref("rsi")} type="button">RSI</button>
         <button className={chartPrefs.kdj ? "active" : ""} onClick={() => toggleChartPref("kdj")} type="button">KDJ</button>
         <button className={chartPrefs.advanced ? "active" : ""} onClick={() => toggleChartPref("advanced")} type="button">CR/ARBR/EMV</button>
+        <button className={chartPrefs.momentum ? "active" : ""} onClick={() => toggleChartPref("momentum")} type="button">DMI/CCI/WR</button>
         <button className={chartPrefs.measure ? "active measure" : "measure"} onClick={() => toggleChartPref("measure")} type="button">测距</button>
         <button className={paramsOpen ? "active" : ""} onClick={() => setParamsOpen((value) => !value)} type="button">参数</button>
         <button onClick={resetChartPrefs} type="button">重置</button>
@@ -1382,6 +1395,7 @@ export function TradingSignalKlinePanel({
           <ChartParamInput label="KDJ" value={chartParams.kdjPeriod} onChange={updateChartParam("kdjPeriod")} />
           <ChartParamInput label="CR/ARBR" value={chartParams.crPeriod} onChange={updateChartParam("crPeriod")} />
           <ChartParamInput label="EMV均线" value={chartParams.emvPeriod} onChange={updateChartParam("emvPeriod")} />
+          <ChartParamInput label="DMI/CCI/WR" value={chartParams.momentumPeriod} onChange={updateChartParam("momentumPeriod")} />
           <ChartParamInput label="ATR" value={chartParams.atrPeriod} onChange={updateChartParam("atrPeriod")} />
         </div>
       )}
@@ -1446,6 +1460,18 @@ export function TradingSignalKlinePanel({
           value={formatNumber(readoutIndicators?.emv, 4)}
           sub={`EMVMA ${formatNumber(readoutIndicators?.emvMa, 4)}`}
           tone={quoteTone(readoutIndicators?.emv)}
+        />
+        <MarketReadoutStat
+          label={`DMI / ADX ${chartParams.momentumPeriod}`}
+          value={`${formatNumber(readoutIndicators?.pdi, 1)} / ${formatNumber(readoutIndicators?.mdi, 1)}`}
+          sub={`ADX ${formatNumber(readoutIndicators?.adx, 1)}`}
+          tone={quoteTone((readoutIndicators?.pdi || 0) - (readoutIndicators?.mdi || 0))}
+        />
+        <MarketReadoutStat
+          label={`CCI / WR ${chartParams.momentumPeriod}`}
+          value={formatNumber(readoutIndicators?.cci, 1)}
+          sub={`WR ${formatNumber(readoutIndicators?.wr, 1)}`}
+          tone={quoteTone(readoutIndicators?.cci)}
         />
         <MarketReadoutStat
           label={`ATR${chartParams.atrPeriod} / OBV`}
@@ -1586,6 +1612,12 @@ export function TradingSignalKlinePanel({
           {chartPrefs.advanced && chart.brLine && <polyline className="indicator-line br" points={chart.brLine} />}
           {chartPrefs.advanced && chart.emvLine && <polyline className="indicator-line emv" points={chart.emvLine} />}
           {chartPrefs.advanced && chart.emvMaLine && <polyline className="indicator-line emv-ma" points={chart.emvMaLine} />}
+          {chartPrefs.momentum && <line className="momentum-zero-line" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.momentumZeroY} y2={chart.momentumZeroY} />}
+          {chartPrefs.momentum && chart.pdiLine && <polyline className="indicator-line pdi" points={chart.pdiLine} />}
+          {chartPrefs.momentum && chart.mdiLine && <polyline className="indicator-line mdi" points={chart.mdiLine} />}
+          {chartPrefs.momentum && chart.adxLine && <polyline className="indicator-line adx" points={chart.adxLine} />}
+          {chartPrefs.momentum && chart.cciLine && <polyline className="indicator-line cci" points={chart.cciLine} />}
+          {chartPrefs.momentum && chart.wrLine && <polyline className="indicator-line wr" points={chart.wrLine} />}
           {chartPrefs.boll && chart.bollUpper && <polyline className="boll-line upper" points={chart.bollUpper} />}
           {chartPrefs.boll && chart.bollMid && <polyline className="boll-line mid" points={chart.bollMid} />}
           {chartPrefs.boll && chart.bollLower && <polyline className="boll-line lower" points={chart.bollLower} />}
@@ -1787,6 +1819,8 @@ export function TradingSignalKlinePanel({
                   <MiniChartStat label="量比" value={formatNumber(activeIndicators?.volumeRatio, 2)} />
                   <MiniChartStat label="BOLL中轨" value={formatNumber(activeIndicators?.bollMid, 2)} />
                   <MiniChartStat label="KDJ J" value={formatNumber(activeIndicators?.kdjJ, 1)} />
+                  <MiniChartStat label="DMI+/DMI-" value={`${formatNumber(activeIndicators?.pdi, 1)} / ${formatNumber(activeIndicators?.mdi, 1)}`} />
+                  <MiniChartStat label="CCI / WR" value={`${formatNumber(activeIndicators?.cci, 1)} / ${formatNumber(activeIndicators?.wr, 1)}`} />
                 </div>
               </div>
             </div>
@@ -1837,6 +1871,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line vwap" />VWAP/EMA</span>
         <span><i className="legend-line macd" />MACD/RSI</span>
         <span><i className="legend-line advanced" />CR/ARBR/EMV</span>
+        <span><i className="legend-line momentum" />DMI/CCI/WR</span>
         <span><i className="legend-line profile" />筹码分布</span>
         <span><i className="legend-marker" />信号日至入场日</span>
       </div>
@@ -2897,7 +2932,7 @@ function buildTradingSignalGeometry(
     { key: "price", label: "PRICE · MA5 / MA20 / MA60", top: PRICE_TOP, bottom: PRICE_BOTTOM },
     { key: "volume", label: "VOL", top: VOLUME_TOP, bottom: VOLUME_BOTTOM },
     { key: "macd", label: "MACD", top: MACD_TOP, bottom: MACD_BOTTOM },
-    { key: "rsi", label: "RSI / KDJ / CR / ARBR / EMV", top: RSI_TOP, bottom: RSI_BOTTOM },
+    { key: "rsi", label: "RSI / KDJ / CR / DMI / CCI / WR", top: RSI_TOP, bottom: RSI_BOTTOM },
   ];
   const visible = sliceVisibleBars(bars, range, rightOffset).filter((bar) => typeof bar.close === "number");
   if (visible.length === 0) {
@@ -2928,6 +2963,11 @@ function buildTradingSignalGeometry(
       brLine: "",
       emvLine: "",
       emvMaLine: "",
+      pdiLine: "",
+      mdiLine: "",
+      adxLine: "",
+      cciLine: "",
+      wrLine: "",
       relativeLine: "",
       relativeZeroY: (PRICE_TOP + PRICE_BOTTOM) / 2,
       relativeLatest: null as number | null,
@@ -2939,6 +2979,7 @@ function buildTradingSignalGeometry(
       macdZeroY: (MACD_TOP + MACD_BOTTOM) / 2,
       advanced100Y: RSI_BOTTOM - 0.5 * (RSI_BOTTOM - RSI_TOP),
       emvZeroY: RSI_BOTTOM - 0.5 * (RSI_BOTTOM - RSI_TOP),
+      momentumZeroY: RSI_BOTTOM - 0.5 * (RSI_BOTTOM - RSI_TOP),
       rsi70Y: RSI_BOTTOM - 0.7 * (RSI_BOTTOM - RSI_TOP),
       rsi30Y: RSI_BOTTOM - 0.3 * (RSI_BOTTOM - RSI_TOP),
       signalLaneY: SIGNAL_LANE_Y,
@@ -3011,6 +3052,9 @@ function buildTradingSignalGeometry(
     period: params.crPeriod,
     emvPeriod: params.emvPeriod,
   });
+  const momentumValues = buildMomentumIndicators(visible, {
+    period: params.momentumPeriod,
+  });
   const volumeMa20Values = volumes.map((_, index) => {
     const start = Math.max(0, index - 19);
     const slice = volumes.slice(start, index + 1);
@@ -3044,6 +3088,17 @@ function buildTradingSignalGeometry(
   const emvZeroY = (RSI_TOP + RSI_BOTTOM) / 2;
   const emvY = (value?: number | null) =>
     emvZeroY - (Number(value ?? 0) / maxEmvAbs) * ((RSI_BOTTOM - RSI_TOP) / 2 - 3);
+  const pdiValues = momentumValues.map((value) => value.pdi);
+  const mdiValues = momentumValues.map((value) => value.mdi);
+  const adxValues = momentumValues.map((value) => value.adx);
+  const cciValues = momentumValues.map((value) => value.cci);
+  const wrValues = momentumValues.map((value) => value.wr);
+  const momentumFiniteValues = [-200, 0, 200, ...cciValues, ...wrValues].filter(isFiniteNumber);
+  const momentumMin = Math.min(...momentumFiniteValues);
+  const momentumMax = Math.max(...momentumFiniteValues);
+  const momentumSpan = momentumMax - momentumMin || 1;
+  const momentumY = (value?: number | null) =>
+    RSI_BOTTOM - ((Number(value ?? 0) - momentumMin) / momentumSpan) * (RSI_BOTTOM - RSI_TOP);
   const relativeValues = closeValues.map((close) => (closeValues[0] ? close / closeValues[0] - 1 : 0));
   const maxRelativeAbs = Math.max(0.01, ...relativeValues.map(Math.abs));
   const relativeY = (value: number) =>
@@ -3072,6 +3127,7 @@ function buildTradingSignalGeometry(
     const averageVolume20 = averageNumberValues(volumes.slice(Math.max(0, index - 19), index + 1));
     const volumeRatio = averageVolume20 ? Number(bar.volume || 0) / averageVolume20 : null;
     const advanced = advancedValues[index];
+    const momentum = momentumValues[index];
     return {
       date: bar.date,
       periodLabel: bar.period_label,
@@ -3130,6 +3186,11 @@ function buildTradingSignalGeometry(
         br: advanced?.br ?? null,
         emv: advanced?.emv ?? null,
         emvMa: advanced?.emvMa ?? null,
+        pdi: momentum?.pdi ?? null,
+        mdi: momentum?.mdi ?? null,
+        adx: momentum?.adx ?? null,
+        cci: momentum?.cci ?? null,
+        wr: momentum?.wr ?? null,
         volumeRatio,
         atr: atrValues[index],
         obv: obvValues[index],
@@ -3246,6 +3307,11 @@ function buildTradingSignalGeometry(
     brLine: indicatorPoints(brValues, advancedY),
     emvLine: indicatorPoints(emvValues, emvY),
     emvMaLine: indicatorPoints(emvMaValues, emvY),
+    pdiLine: indicatorPoints(pdiValues, rsiY),
+    mdiLine: indicatorPoints(mdiValues, rsiY),
+    adxLine: indicatorPoints(adxValues, rsiY),
+    cciLine: indicatorPoints(cciValues, momentumY),
+    wrLine: indicatorPoints(wrValues, momentumY),
     relativeLine,
     relativeZeroY: relativeY(0),
     relativeLatest: relativeValues[relativeValues.length - 1] ?? null,
@@ -3259,6 +3325,7 @@ function buildTradingSignalGeometry(
     macdZeroY,
     advanced100Y: advancedY(100),
     emvZeroY,
+    momentumZeroY: momentumY(0),
     rsi70Y: rsiY(70),
     rsi30Y: rsiY(30),
     signalLaneY: SIGNAL_LANE_Y,

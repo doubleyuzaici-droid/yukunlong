@@ -4164,6 +4164,7 @@ label {
 .macd-zero-line,
 .advanced-indicator-baseline,
 .advanced-emv-zero-line,
+.momentum-zero-line,
 .rsi-threshold,
 .signal-lane {
   stroke: rgba(174, 183, 194, 0.24);
@@ -4177,6 +4178,10 @@ label {
 
 .advanced-emv-zero-line {
   stroke: rgba(94, 234, 212, 0.24);
+}
+
+.momentum-zero-line {
+  stroke: rgba(199, 146, 234, 0.24);
 }
 
 .macd-bar {
@@ -4243,6 +4248,27 @@ label {
 .indicator-line.emv-ma {
   stroke: rgba(238, 242, 247, 0.78);
   stroke-dasharray: 5 4;
+}
+
+.indicator-line.pdi {
+  stroke: #5eead4;
+}
+
+.indicator-line.mdi {
+  stroke: #ff8c84;
+}
+
+.indicator-line.adx {
+  stroke: #f4b000;
+}
+
+.indicator-line.cci {
+  stroke: #c792ea;
+}
+
+.indicator-line.wr {
+  stroke: #8fb3ff;
+  stroke-dasharray: 4 4;
 }
 
 .boll-line {
@@ -4672,6 +4698,10 @@ label {
 
 .legend-line.advanced {
   background: linear-gradient(90deg, #f4b000 0 24%, #ff8c84 24% 48%, #8fb3ff 48% 72%, #42d3c8 72% 100%);
+}
+
+.legend-line.momentum {
+  background: linear-gradient(90deg, #5eead4 0 20%, #ff8c84 20% 40%, #f4b000 40% 60%, #c792ea 60% 80%, #8fb3ff 80% 100%);
 }
 
 .legend-line.profile {
