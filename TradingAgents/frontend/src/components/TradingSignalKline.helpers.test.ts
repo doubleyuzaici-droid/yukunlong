@@ -11,6 +11,7 @@ import {
   buildTrendOverlayIndicators,
   buildVisiblePriceExtrema,
   buildVolumeProfileLevelAnnotations,
+  buildVolumeSignalAnnotations,
   buildVolumeMomentumIndicators,
   buildVolatilityVolumeIndicators,
   buildVolumeProfile,
@@ -93,6 +94,16 @@ const technicalSignalBars = [
   { date: "2026-05-05", open: 12.2, high: 12.3, low: 11, close: 11.2, maFast: 11.2, maSlow: 11, dif: 0.04, dea: 0.02, bollUpper: 12.5, bollLower: 9.8 },
   { date: "2026-05-06", open: 11.2, high: 11.3, low: 10.6, close: 10.8, maFast: 10.9, maSlow: 11.1, dif: 0.01, dea: 0.03, bollUpper: 12.2, bollLower: 9.6 },
   { date: "2026-05-07", open: 10.8, high: 10.9, low: 8.7, close: 8.8, maFast: 10.3, maSlow: 10.9, dif: -0.03, dea: 0.02, bollUpper: 11.8, bollLower: 9 },
+];
+
+const volumeSignalBars = [
+  { date: "2026-05-01", open: 10, high: 10.2, low: 9.8, close: 10, volume: 100, amount: 1_000 },
+  { date: "2026-05-02", open: 10, high: 10.3, low: 9.9, close: 10.1, volume: 110, amount: 1_111 },
+  { date: "2026-05-03", open: 10.1, high: 10.2, low: 9.9, close: 10, volume: 90, amount: 900 },
+  { date: "2026-05-04", open: 10, high: 10.7, low: 9.9, close: 10.5, volume: 240, amount: 2_520 },
+  { date: "2026-05-05", open: 10.5, high: 10.7, low: 10.3, close: 10.55, volume: 120, amount: 1_266 },
+  { date: "2026-05-06", open: 10.4, high: 10.6, low: 9.9, close: 10, volume: 310, amount: 3_100 },
+  { date: "2026-05-07", open: 10, high: 10.1, low: 9.95, close: 10.03, volume: 40, amount: 401.2 },
 ];
 
 function testBuildsVisibleVolumeDistribution() {
@@ -455,6 +466,31 @@ function testTechnicalIndicatorAnnotationsNeedComparableValues() {
   assertEqual(events.length, 0, "missing indicator values have no technical indicator events");
 }
 
+function testBuildsVolumeSignalAnnotations() {
+  const events = buildVolumeSignalAnnotations(volumeSignalBars, {
+    period: 3,
+    surgeRatio: 1.8,
+    dryUpRatio: 0.35,
+    minMovePct: 1,
+    quietMovePct: 0.8,
+  });
+
+  assertEqual(events.length, 3, "volume price events detect surge and dry-up conditions");
+  assertEqual(events.map((event) => event.type).join(","), "volume-surge-up,volume-surge-down,volume-dry-up", "volume events keep chronological order");
+  assertEqual(events.map((event) => event.label).join(","), "放量上涨,放量下跌,缩量整理", "volume events expose compact Chinese labels");
+  assertEqual(events.map((event) => event.index).join(","), "3,5,6", "volume events anchor to the signal candle");
+  assertEqual(events.map((event) => event.tone).join(","), "good,risk,neutral", "volume events carry chart tone");
+  assertApprox(events[0]?.volumeRatio, 2.4, 0.001, "surge up compares with previous volume average");
+  assertApprox(events[2]?.volumeRatio, 0.1791, 0.001, "dry-up compares with previous volume average");
+  assertApprox(events[1]?.price, 10.6, 0.001, "downside volume event anchors above the candle");
+}
+
+function testVolumeSignalAnnotationsNeedEnoughVolumeHistory() {
+  const events = buildVolumeSignalAnnotations(volumeSignalBars.slice(0, 3), { period: 3 });
+
+  assertEqual(events.length, 0, "volume events wait for enough previous samples");
+}
+
 function testBuildsPriceGapAnnotations() {
   const gaps = buildPriceGapAnnotations(gapBars, { minGapPct: 1 });
 
@@ -503,5 +539,7 @@ testBuildsCandlestickPatternAnnotations();
 testCandlestickPatternsNeedUsableBars();
 testBuildsTechnicalIndicatorAnnotations();
 testTechnicalIndicatorAnnotationsNeedComparableValues();
+testBuildsVolumeSignalAnnotations();
+testVolumeSignalAnnotationsNeedEnoughVolumeHistory();
 testBuildsPriceGapAnnotations();
 testPriceGapAnnotationsRespectThreshold();

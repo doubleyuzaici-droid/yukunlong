@@ -25,6 +25,8 @@ export type TechnicalIndicatorEventType =
   | "macd-death-cross"
   | "boll-breakout-up"
   | "boll-breakout-down";
+export type VolumeSignalTone = "good" | "risk" | "neutral";
+export type VolumeSignalType = "volume-surge-up" | "volume-surge-down" | "volume-dry-up";
 
 export interface TechnicalIndicatorBarLike extends PriceExtremaBarLike {
   maFast?: number | null;
@@ -69,6 +71,21 @@ export interface TechnicalIndicatorAnnotation {
   date: string;
   dateLabel: string;
   price: number;
+}
+
+export interface VolumeSignalAnnotation {
+  key: string;
+  type: VolumeSignalType;
+  label: string;
+  tone: VolumeSignalTone;
+  index: number;
+  date: string;
+  dateLabel: string;
+  price: number;
+  volume: number;
+  averageVolume: number;
+  volumeRatio: number;
+  changePct: number | null;
 }
 
 export interface VisiblePriceExtremaSnapshot {
@@ -800,6 +817,84 @@ export function buildTechnicalIndicatorAnnotations(
   });
 }
 
+export function buildVolumeSignalAnnotations(
+  bars: PriceExtremaBarLike[],
+  options: {
+    period?: number;
+    surgeRatio?: number;
+    dryUpRatio?: number;
+    minMovePct?: number;
+    quietMovePct?: number;
+  } = {},
+): VolumeSignalAnnotation[] {
+  const normalized = bars
+    .map(normalizeVolumeSignalBar)
+    .filter((bar): bar is NonNullable<ReturnType<typeof normalizeVolumeSignalBar>> => Boolean(bar));
+  const period = clampInteger(options.period ?? 20, 2, 80);
+  if (normalized.length <= period) return [];
+
+  const surgeRatio = clampNumber(Number(options.surgeRatio ?? 1.8), 1.05, 10);
+  const dryUpRatio = clampNumber(Number(options.dryUpRatio ?? 0.45), 0.05, 0.95);
+  const minMovePct = Math.max(0, Number(options.minMovePct ?? 1));
+  const quietMovePct = Math.max(0, Number(options.quietMovePct ?? 0.8));
+
+  return normalized.flatMap<VolumeSignalAnnotation>((bar, index) => {
+    if (index < period) return [];
+    const previous = normalized[index - 1];
+    if (!previous) return [];
+    const averageVolume = averageNumbers(
+      normalized.slice(index - period, index).map((item) => item.volume),
+    );
+    if (!averageVolume || averageVolume <= 0) return [];
+    const volumeRatio = bar.volume / averageVolume;
+    const changePct = previous.close > 0 ? ((bar.close - previous.close) / previous.close) * 100 : null;
+    const eventBase = {
+      index: bar.index,
+      date: bar.date,
+      dateLabel: bar.label,
+      volume: bar.volume,
+      averageVolume,
+      volumeRatio,
+      changePct,
+    };
+
+    if (changePct != null && volumeRatio >= surgeRatio && changePct >= minMovePct && bar.close >= bar.open) {
+      return [{
+        ...eventBase,
+        key: `volume-surge-up-${bar.index}`,
+        type: "volume-surge-up" as const,
+        label: "放量上涨",
+        tone: "good" as const,
+        price: bar.low,
+      }];
+    }
+
+    if (changePct != null && volumeRatio >= surgeRatio && changePct <= -minMovePct && bar.close <= bar.open) {
+      return [{
+        ...eventBase,
+        key: `volume-surge-down-${bar.index}`,
+        type: "volume-surge-down" as const,
+        label: "放量下跌",
+        tone: "risk" as const,
+        price: bar.high,
+      }];
+    }
+
+    if (changePct != null && volumeRatio <= dryUpRatio && Math.abs(changePct) <= quietMovePct) {
+      return [{
+        ...eventBase,
+        key: `volume-dry-up-${bar.index}`,
+        type: "volume-dry-up" as const,
+        label: "缩量整理",
+        tone: "neutral" as const,
+        price: bar.close,
+      }];
+    }
+
+    return [];
+  });
+}
+
 export function buildSupportResistanceLevels(
   bars: PriceExtremaBarLike[],
   options: {
@@ -1170,6 +1265,26 @@ function normalizeTechnicalIndicatorBar(bar: TechnicalIndicatorBarLike, index: n
     dea: normalizeOptionalNumber(bar.dea),
     bollUpper: normalizeOptionalNumber(bar.bollUpper),
     bollLower: normalizeOptionalNumber(bar.bollLower),
+  };
+}
+
+function normalizeVolumeSignalBar(bar: PriceExtremaBarLike, index: number) {
+  const close = Number(bar.close ?? bar.open ?? bar.high ?? bar.low);
+  const open = Number(bar.open ?? close);
+  const high = Number(bar.high ?? Math.max(open, close));
+  const low = Number(bar.low ?? Math.min(open, close));
+  const volume = Number(bar.volume ?? 0);
+  if (![open, high, low, close, volume].every(isFiniteNumber) || volume <= 0) return null;
+  const date = String(bar.date || index);
+  return {
+    index,
+    date,
+    label: String(bar.period_label || bar.date || index),
+    open,
+    high: Math.max(high, low, open, close),
+    low: Math.min(high, low, open, close),
+    close,
+    volume,
   };
 }
 

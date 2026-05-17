@@ -4140,6 +4140,68 @@ label {
   fill: #ffb3ad !important;
 }
 
+.volume-signal-event {
+  pointer-events: none;
+}
+
+.volume-signal-event line {
+  stroke-dasharray: 3 3;
+  stroke-width: 0.75;
+  vector-effect: non-scaling-stroke;
+}
+
+.volume-signal-event rect {
+  stroke: rgba(11, 15, 20, 0.78);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.volume-signal-event text {
+  font-size: 10.5px !important;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(11, 15, 20, 0.92);
+  stroke-width: 2px;
+}
+
+.volume-signal-event.good line {
+  stroke: rgba(126, 224, 163, 0.55);
+}
+
+.volume-signal-event.good rect {
+  fill: #7ee0a3;
+}
+
+.volume-signal-event.good text {
+  fill: #9cf2bc !important;
+}
+
+.volume-signal-event.risk line {
+  stroke: rgba(255, 140, 132, 0.58);
+}
+
+.volume-signal-event.risk rect {
+  fill: #ff8c84;
+}
+
+.volume-signal-event.risk text {
+  fill: #ffb3ad !important;
+}
+
+.volume-signal-event.neutral line {
+  stroke: rgba(143, 179, 255, 0.52);
+}
+
+.volume-signal-event.neutral rect {
+  fill: #8fb3ff;
+}
+
+.volume-signal-event.neutral text {
+  fill: #b9cdfd !important;
+}
+
 .fibonacci-level {
   pointer-events: none;
 }
@@ -5272,6 +5334,15 @@ label {
   height: 10px !important;
   clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
   background: linear-gradient(90deg, #5eead4 0 48%, #ff8c84 52% 100%);
+  box-shadow: 0 0 0 1px rgba(238, 242, 247, 0.24);
+}
+
+.legend-volume-signal {
+  display: inline-block;
+  width: 14px;
+  height: 10px !important;
+  border-radius: 2px !important;
+  background: linear-gradient(90deg, #7ee0a3 0 33%, #ff8c84 33% 66%, #8fb3ff 66% 100%);
   box-shadow: 0 0 0 1px rgba(238, 242, 247, 0.24);
 }
 
