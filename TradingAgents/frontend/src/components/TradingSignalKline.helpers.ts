@@ -39,6 +39,74 @@ export interface VolumeProfileModel {
   resistanceBin: VolumeProfileBin | null;
 }
 
+export interface AdvancedIndicatorSnapshot {
+  cr: number | null;
+  ar: number | null;
+  br: number | null;
+  emv: number | null;
+  emvMa: number | null;
+}
+
+export function buildAdvancedIndicators(
+  bars: VolumeProfileBarLike[],
+  options: { period?: number; emvPeriod?: number } = {},
+): AdvancedIndicatorSnapshot[] {
+  const period = clampInteger(options.period ?? 26, 2, 120);
+  const emvPeriod = clampInteger(options.emvPeriod ?? 14, 2, 80);
+  const normalized = bars.map(normalizeAdvancedBar);
+  const emvValues = normalized.map((bar, index) => {
+    if (!bar || index === 0) return null;
+    const previous = normalized[index - 1];
+    if (!previous) return null;
+    const midpointMove = (bar.high + bar.low) / 2 - (previous.high + previous.low) / 2;
+    const boxRatio = bar.volume > 0 ? bar.volume / Math.max(bar.high - bar.low, 0.000001) : null;
+    return boxRatio ? midpointMove / boxRatio : null;
+  });
+
+  return normalized.map((bar, index) => {
+    if (!bar) return { cr: null, ar: null, br: null, emv: emvValues[index], emvMa: null };
+    const windowStart = index - period + 1;
+    const isPeriodReady = windowStart >= 1;
+    const emvWindow = emvValues.slice(Math.max(0, index - emvPeriod + 1), index + 1).filter(isFiniteNumber);
+    if (!isPeriodReady) {
+      return {
+        cr: null,
+        ar: null,
+        br: null,
+        emv: emvValues[index],
+        emvMa: emvWindow.length === emvPeriod ? averageNumbers(emvWindow) : null,
+      };
+    }
+
+    let crUp = 0;
+    let crDown = 0;
+    let arUp = 0;
+    let arDown = 0;
+    let brUp = 0;
+    let brDown = 0;
+    for (let cursor = windowStart; cursor <= index; cursor += 1) {
+      const current = normalized[cursor];
+      const previous = normalized[cursor - 1];
+      if (!current || !previous) continue;
+      const previousMid = (previous.high + previous.low + previous.close) / 3;
+      crUp += Math.max(0, current.high - previousMid);
+      crDown += Math.max(0, previousMid - current.low);
+      arUp += Math.max(0, current.high - current.open);
+      arDown += Math.max(0, current.open - current.low);
+      brUp += Math.max(0, current.high - previous.close);
+      brDown += Math.max(0, previous.close - current.low);
+    }
+
+    return {
+      cr: ratioPercent(crUp, crDown),
+      ar: ratioPercent(arUp, arDown),
+      br: ratioPercent(brUp, brDown),
+      emv: emvValues[index],
+      emvMa: emvWindow.length === emvPeriod ? averageNumbers(emvWindow) : null,
+    };
+  });
+}
+
 export function buildVolumeProfile(
   bars: VolumeProfileBarLike[],
   options: { binCount?: number; currentPrice?: number | null } = {},
@@ -154,6 +222,22 @@ function normalizeVolumeProfileBar(bar: VolumeProfileBarLike) {
   };
 }
 
+function normalizeAdvancedBar(bar: VolumeProfileBarLike) {
+  const close = Number(bar.close ?? bar.open ?? bar.high ?? bar.low);
+  const open = Number(bar.open ?? close);
+  const high = Number(bar.high ?? Math.max(open, close));
+  const low = Number(bar.low ?? Math.min(open, close));
+  const volume = Number(bar.volume ?? 0);
+  if (![open, high, low, close, volume].every(isFiniteNumber)) return null;
+  return {
+    open,
+    high: Math.max(high, low, open, close),
+    low: Math.min(high, low, open, close),
+    close,
+    volume: Math.max(volume, 0),
+  };
+}
+
 function emptyVolumeProfile(currentPrice: number | null): VolumeProfileModel {
   return {
     bins: [],
@@ -169,6 +253,16 @@ function emptyVolumeProfile(currentPrice: number | null): VolumeProfileModel {
     supportBin: null,
     resistanceBin: null,
   };
+}
+
+function ratioPercent(numerator: number, denominator: number) {
+  if (!isFiniteNumber(numerator) || !isFiniteNumber(denominator) || denominator <= 0) return null;
+  return (numerator / denominator) * 100;
+}
+
+function averageNumbers(values: number[]) {
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 function clampInteger(value: number, min: number, max: number) {

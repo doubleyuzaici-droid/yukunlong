@@ -4162,11 +4162,21 @@ label {
 }
 
 .macd-zero-line,
+.advanced-indicator-baseline,
+.advanced-emv-zero-line,
 .rsi-threshold,
 .signal-lane {
   stroke: rgba(174, 183, 194, 0.24);
   stroke-dasharray: 3 4;
   stroke-width: 0.6;
+}
+
+.advanced-indicator-baseline {
+  stroke: rgba(244, 176, 0, 0.28);
+}
+
+.advanced-emv-zero-line {
+  stroke: rgba(94, 234, 212, 0.24);
 }
 
 .macd-bar {
@@ -4212,6 +4222,27 @@ label {
 
 .indicator-line.kdj-j {
   stroke: #ff8c84;
+}
+
+.indicator-line.cr {
+  stroke: #f4b000;
+}
+
+.indicator-line.ar {
+  stroke: #ff8c84;
+}
+
+.indicator-line.br {
+  stroke: #8fb3ff;
+}
+
+.indicator-line.emv {
+  stroke: #42d3c8;
+}
+
+.indicator-line.emv-ma {
+  stroke: rgba(238, 242, 247, 0.78);
+  stroke-dasharray: 5 4;
 }
 
 .boll-line {
@@ -4637,6 +4668,10 @@ label {
 
 .legend-line.macd {
   background: linear-gradient(90deg, #f4b000 0 48%, #8fb3ff 52% 100%);
+}
+
+.legend-line.advanced {
+  background: linear-gradient(90deg, #f4b000 0 24%, #ff8c84 24% 48%, #8fb3ff 48% 72%, #42d3c8 72% 100%);
 }
 
 .legend-line.profile {

@@ -1,4 +1,4 @@
-import { buildVolumeProfile } from "./TradingSignalKline.helpers.js";
+import { buildAdvancedIndicators, buildVolumeProfile } from "./TradingSignalKline.helpers.js";
 
 function assertEqual<T>(actual: T, expected: T, message: string) {
   if (actual !== expected) {
@@ -48,5 +48,30 @@ function testHandlesMissingBarsExplicitly() {
   assertEqual(profile.currentBin, null, "empty input has no current bin");
 }
 
+function testBuildsFutuStyleAdvancedIndicators() {
+  const indicators = buildAdvancedIndicators(bars, { period: 3, emvPeriod: 3 });
+  const latest = indicators[indicators.length - 1];
+
+  assertEqual(indicators.length, bars.length, "advanced indicators preserve bar count");
+  assertOk(latest, "latest advanced indicator exists");
+  assertApprox(latest?.cr, 644.4444, 0.001, "CR follows previous mid-price energy formula");
+  assertApprox(latest?.ar, 528.5714, 0.001, "AR follows open/high/low popularity formula");
+  assertApprox(latest?.br, 528.5714, 0.001, "BR follows previous close willingness formula");
+  assertOk((latest?.emv || 0) > 0, "EMV is positive in an easier upward move");
+  assertOk((latest?.emvMa || 0) > 0, "EMVMA is available after enough samples");
+}
+
+function testAdvancedIndicatorsNeedEnoughSamples() {
+  const indicators = buildAdvancedIndicators(bars.slice(0, 2), { period: 3, emvPeriod: 3 });
+  const latest = indicators[indicators.length - 1];
+
+  assertEqual(latest?.cr, null, "CR is missing before period is ready");
+  assertEqual(latest?.ar, null, "AR is missing before period is ready");
+  assertEqual(latest?.br, null, "BR is missing before period is ready");
+  assertEqual(latest?.emvMa, null, "EMVMA is missing before smoothing period is ready");
+}
+
 testBuildsVisibleVolumeDistribution();
 testHandlesMissingBarsExplicitly();
+testBuildsFutuStyleAdvancedIndicators();
+testAdvancedIndicatorsNeedEnoughSamples();
