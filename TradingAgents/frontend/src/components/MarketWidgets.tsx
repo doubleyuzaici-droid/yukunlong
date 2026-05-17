@@ -28,6 +28,7 @@ import {
   buildChartLayerSummary,
   buildIndicatorStateSummary,
   buildIchimokuIndicators,
+  buildEnvelopeIndicators,
   buildKlineEventDensity,
   buildKlineEventSummary,
   buildKlineRangeNavigator,
@@ -239,6 +240,7 @@ interface TradingChartPreferences {
   ma: boolean;
   ema: boolean;
   boll: boolean;
+  ene: boolean;
   vwap: boolean;
   levels: boolean;
   limitLines: boolean;
@@ -277,6 +279,8 @@ interface TradingChartParameters {
   maSlow: number;
   bollPeriod: number;
   bollMultiplier: number;
+  enePeriod: number;
+  enePercent: number;
   macdFast: number;
   macdSlow: number;
   macdSignal: number;
@@ -438,6 +442,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   ma: true,
   ema: false,
   boll: true,
+  ene: false,
   vwap: false,
   levels: true,
   limitLines: true,
@@ -476,6 +481,8 @@ const DEFAULT_TRADING_CHART_PARAMS: TradingChartParameters = {
   maSlow: 60,
   bollPeriod: 20,
   bollMultiplier: 2,
+  enePeriod: 25,
+  enePercent: 6,
   macdFast: 12,
   macdSlow: 26,
   macdSignal: 9,
@@ -510,6 +517,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     ma: typeof next.ma === "boolean" ? next.ma : DEFAULT_TRADING_CHART_PREFS.ma,
     ema: typeof next.ema === "boolean" ? next.ema : DEFAULT_TRADING_CHART_PREFS.ema,
     boll: typeof next.boll === "boolean" ? next.boll : DEFAULT_TRADING_CHART_PREFS.boll,
+    ene: typeof next.ene === "boolean" ? next.ene : DEFAULT_TRADING_CHART_PREFS.ene,
     vwap: typeof next.vwap === "boolean" ? next.vwap : DEFAULT_TRADING_CHART_PREFS.vwap,
     levels: typeof next.levels === "boolean" ? next.levels : DEFAULT_TRADING_CHART_PREFS.levels,
     limitLines: typeof next.limitLines === "boolean" ? next.limitLines : DEFAULT_TRADING_CHART_PREFS.limitLines,
@@ -552,6 +560,8 @@ function normalizeTradingChartParams(value: unknown): TradingChartParameters {
     maSlow: boundedInteger(next.maSlow, 20, 250, DEFAULT_TRADING_CHART_PARAMS.maSlow),
     bollPeriod: boundedInteger(next.bollPeriod, 10, 80, DEFAULT_TRADING_CHART_PARAMS.bollPeriod),
     bollMultiplier: boundedNumber(next.bollMultiplier, 1, 4, DEFAULT_TRADING_CHART_PARAMS.bollMultiplier),
+    enePeriod: boundedInteger(next.enePeriod, 5, 160, DEFAULT_TRADING_CHART_PARAMS.enePeriod),
+    enePercent: boundedNumber(next.enePercent, 0.5, 30, DEFAULT_TRADING_CHART_PARAMS.enePercent),
     macdFast: boundedInteger(next.macdFast, 5, 24, DEFAULT_TRADING_CHART_PARAMS.macdFast),
     macdSlow: boundedInteger(next.macdSlow, 18, 60, DEFAULT_TRADING_CHART_PARAMS.macdSlow),
     macdSignal: boundedInteger(next.macdSignal, 4, 20, DEFAULT_TRADING_CHART_PARAMS.macdSignal),
@@ -1464,6 +1474,7 @@ export function TradingSignalKlinePanel({
       if (label.group === "ma") return chartPrefs.ma;
       if (label.group === "ema") return chartPrefs.ema;
       if (label.group === "boll") return chartPrefs.boll;
+      if (label.group === "ene") return chartPrefs.ene;
       if (label.group === "vwap") return chartPrefs.vwap;
       if (label.group === "sar") return chartPrefs.sar;
       if (label.group === "bbi") return chartPrefs.bbi;
@@ -1881,6 +1892,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.ma ? "active" : ""} onClick={() => toggleChartPref("ma")} type="button">MA</button>
         <button className={chartPrefs.ema ? "active" : ""} onClick={() => toggleChartPref("ema")} type="button">EMA</button>
         <button className={chartPrefs.boll ? "active" : ""} onClick={() => toggleChartPref("boll")} type="button">BOLL</button>
+        <button className={chartPrefs.ene ? "active" : ""} onClick={() => toggleChartPref("ene")} type="button">ENE</button>
         <button className={chartPrefs.vwap ? "active" : ""} onClick={() => toggleChartPref("vwap")} type="button">VWAP</button>
         <button className={chartPrefs.levels ? "active" : ""} onClick={() => toggleChartPref("levels")} type="button">价位线</button>
         <button className={chartPrefs.limitLines ? "active" : ""} onClick={() => toggleChartPref("limitLines")} type="button">涨跌停</button>
@@ -1959,6 +1971,8 @@ export function TradingSignalKlinePanel({
           <ChartParamInput label="MA慢" value={chartParams.maSlow} onChange={updateChartParam("maSlow")} />
           <ChartParamInput label="BOLL周期" value={chartParams.bollPeriod} onChange={updateChartParam("bollPeriod")} />
           <ChartParamInput label="BOLL倍数" value={chartParams.bollMultiplier} step="0.1" onChange={updateChartParam("bollMultiplier")} />
+          <ChartParamInput label="ENE周期" value={chartParams.enePeriod} onChange={updateChartParam("enePeriod")} />
+          <ChartParamInput label="ENE幅度" value={chartParams.enePercent} step="0.1" onChange={updateChartParam("enePercent")} />
           <ChartParamInput label="MACD快" value={chartParams.macdFast} onChange={updateChartParam("macdFast")} />
           <ChartParamInput label="MACD慢" value={chartParams.macdSlow} onChange={updateChartParam("macdSlow")} />
           <ChartParamInput label="MACD信号" value={chartParams.macdSignal} onChange={updateChartParam("macdSignal")} />
@@ -2477,6 +2491,9 @@ export function TradingSignalKlinePanel({
           {chartPrefs.boll && chart.bollUpper && <polyline className="boll-line upper" points={chart.bollUpper} />}
           {chartPrefs.boll && chart.bollMid && <polyline className="boll-line mid" points={chart.bollMid} />}
           {chartPrefs.boll && chart.bollLower && <polyline className="boll-line lower" points={chart.bollLower} />}
+          {chartPrefs.ene && chart.eneUpper && <polyline className="ene-line upper" points={chart.eneUpper} />}
+          {chartPrefs.ene && chart.eneMid && <polyline className="ene-line mid" points={chart.eneMid} />}
+          {chartPrefs.ene && chart.eneLower && <polyline className="ene-line lower" points={chart.eneLower} />}
           {chartPrefs.vwap && chart.vwapLine && <polyline className="vwap-line" points={chart.vwapLine} />}
           {chartPrefs.ema && chart.emaFastLine && <polyline className="ema-line fast" points={chart.emaFastLine} />}
           {chartPrefs.ema && chart.emaSlowLine && <polyline className="ema-line slow" points={chart.emaSlowLine} />}
@@ -4162,6 +4179,9 @@ function buildTradingSignalGeometry(
       bollBandArea: "",
       maTrendRibbons: [],
       ichimokuCloudSegments: [],
+      eneUpper: "",
+      eneMid: "",
+      eneLower: "",
       ichimokuConversionLine: "",
       ichimokuBaseLine: "",
       ichimokuSpanALine: "",
@@ -4264,6 +4284,10 @@ function buildTradingSignalGeometry(
   const macdFast = Math.min(params.macdFast, params.macdSlow - 1);
   const macdSlow = Math.max(params.macdSlow, macdFast + 1);
   const bollValues = bollNumberValues(closeValues, params.bollPeriod, params.bollMultiplier);
+  const eneValues = buildEnvelopeIndicators(visible, {
+    percent: params.enePercent,
+    period: params.enePeriod,
+  });
   const emaFastValues = emaNumberValues(closeValues, macdFast);
   const emaSlowValues = emaNumberValues(closeValues, macdSlow);
   const vwapValues = vwapNumberValues(visible);
@@ -4303,6 +4327,9 @@ function buildTradingSignalGeometry(
   const bollDomainValues = bollValues.flatMap((value) =>
     value ? [value.upper, value.lower] : [],
   );
+  const eneDomainValues = eneValues.flatMap((value) =>
+    [value.upper, value.mid, value.lower].filter(isFiniteNumber),
+  );
   const levelDomainValues = levelPrices.filter(isFiniteNumber);
   const limitDomainValues = visible.flatMap((bar) => [bar.limit_up, bar.limit_down]).filter(isFiniteNumber);
   const rawPriceStructureTrendLines = buildPriceStructureTrendLines(visible, {
@@ -4319,6 +4346,7 @@ function buildTradingSignalGeometry(
   ]);
   const overlayDomainValues = [
     ...bollDomainValues,
+    ...eneDomainValues,
     ...emaFastValues,
     ...emaSlowValues,
     ...vwapValues.filter(isFiniteNumber),
@@ -4991,6 +5019,9 @@ function buildTradingSignalGeometry(
         bollUpper: bollValues[index]?.upper ?? null,
         bollMid: bollValues[index]?.mid ?? null,
         bollLower: bollValues[index]?.lower ?? null,
+        eneUpper: eneValues[index]?.upper ?? null,
+        eneMid: eneValues[index]?.mid ?? null,
+        eneLower: eneValues[index]?.lower ?? null,
         sar: trendOverlay?.sar ?? null,
         bbi: trendOverlay?.bbi ?? null,
         ichimokuConversion: ichimokuValues[index]?.conversion ?? null,
@@ -5159,6 +5190,8 @@ function buildTradingSignalGeometry(
   const closeLine = indicatorPoints(closeValues, yOf);
   const bollLine = (key: "upper" | "mid" | "lower") =>
     indicatorPoints(bollValues.map((value) => value?.[key] ?? null), yOf);
+  const eneLine = (key: "upper" | "mid" | "lower") =>
+    indicatorPoints(eneValues.map((value) => value?.[key] ?? null), yOf);
   const kdjLine = (key: "k" | "d" | "j") =>
     indicatorPoints(kdjValues.map((value) => value?.[key] ?? null), rsiY);
   const relativeLine = indicatorPoints(relativeValues, relativeY);
@@ -5218,6 +5251,9 @@ function buildTradingSignalGeometry(
     overlayPriceLabel("boll-upper", "boll", "BUP", latestIndicator?.bollUpper, "good", 20),
     overlayPriceLabel("boll-mid", "boll", "BMID", latestIndicator?.bollMid, "good", 21),
     overlayPriceLabel("boll-lower", "boll", "BDN", latestIndicator?.bollLower, "good", 22),
+    overlayPriceLabel("ene-upper", "ene", "EUP", latestIndicator?.eneUpper, "neutral", 24),
+    overlayPriceLabel("ene-mid", "ene", "ENE", latestIndicator?.eneMid, "neutral", 25),
+    overlayPriceLabel("ene-lower", "ene", "EDN", latestIndicator?.eneLower, "neutral", 26),
     overlayPriceLabel("vwap", "vwap", "VWAP", latestIndicator?.vwap, "neutral", 30),
     overlayPriceLabel("ema-fast", "ema", `E${macdFast}`, latestIndicator?.emaFast, "info", 40),
     overlayPriceLabel("ema-slow", "ema", `E${macdSlow}`, latestIndicator?.emaSlow, "info", 41),
@@ -5427,6 +5463,9 @@ function buildTradingSignalGeometry(
     bollUpper: bollLine("upper"),
     bollMid: bollLine("mid"),
     bollLower: bollLine("lower"),
+    eneUpper: eneLine("upper"),
+    eneMid: eneLine("mid"),
+    eneLower: eneLine("lower"),
     volumeMa5Line,
     volumeMa10Line,
     volumeMa20Line,

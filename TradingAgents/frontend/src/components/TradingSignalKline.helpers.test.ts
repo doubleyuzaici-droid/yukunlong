@@ -22,6 +22,7 @@ import {
   rightOffsetFromKlineNavigatorX,
   buildTrendRibbonAreaSegments,
   buildIchimokuIndicators,
+  buildEnvelopeIndicators,
   buildFundFlowOverlayGeometry,
   buildLimitPriceLines,
   buildKlineHoverMetrics,
@@ -381,11 +382,12 @@ function testResolvesLimitCandleState() {
 }
 
 function testAppliesTrendChartPreferencePreset() {
-  const prefs = applyChartPreferencePreset(baseChartPrefs, "trend");
+  const prefs = applyChartPreferencePreset({ ...baseChartPrefs, ene: false }, "trend");
 
   assertEqual(prefs.ma, true, "trend preset keeps moving averages");
   assertEqual(prefs.ema, true, "trend preset enables EMA");
   assertEqual(prefs.boll, true, "trend preset keeps BOLL");
+  assertEqual(prefs.ene, true, "trend preset enables ENE envelope");
   assertEqual(prefs.limitLines, true, "trend preset keeps A-share limit price lines");
   assertEqual(prefs.trendRegime, true, "trend preset enables trend background");
   assertEqual(prefs.trendLines, true, "trend preset enables structure trend lines");
@@ -414,7 +416,8 @@ function testBuildsChartLayerSummary() {
 
   assertEqual(summary.length, 5, "layer summary exposes preset plus layer groups");
   assertEqual(preset?.value, "趋势", "layer summary names matched preset");
-  assertEqual(overlays?.value, "6项", "layer summary counts active main overlays");
+  assertEqual(overlays?.value, "7项", "layer summary counts active main overlays");
+  assertOk(overlays?.detail.includes("ENE"), "trend overlay summary includes ENE");
   assertOk(overlays?.detail.includes("一目"), "trend overlay summary includes Ichimoku");
   assertOk((subcharts?.enabledCount || 0) > 0, "layer summary counts active subcharts");
   assertOk(annotations?.detail.includes("趋势带"), "layer summary exposes annotation layers");
@@ -1182,6 +1185,32 @@ function testBuildsTrendOverlayIndicators() {
   assertApprox(latest?.ama, 0.0667, 0.001, "AMA smooths DMA over the signal period");
 }
 
+function testBuildsEnvelopeIndicators() {
+  const indicators = buildEnvelopeIndicators(trendOverlayBars, {
+    period: 3,
+    percent: 6,
+  });
+  const latest = indicators[indicators.length - 1];
+
+  assertEqual(indicators.length, trendOverlayBars.length, "ENE overlays preserve bar count");
+  assertOk(latest, "latest ENE overlay exists");
+  assertApprox(latest?.mid, 12.2, 0.001, "ENE middle line uses the configured moving average");
+  assertApprox(latest?.upper, 12.932, 0.001, "ENE upper line applies the configured envelope percent");
+  assertApprox(latest?.lower, 11.468, 0.001, "ENE lower line applies the configured envelope percent");
+}
+
+function testEnvelopeIndicatorsNeedEnoughSamples() {
+  const indicators = buildEnvelopeIndicators(trendOverlayBars.slice(0, 2), {
+    period: 3,
+    percent: 6,
+  });
+  const latest = indicators[indicators.length - 1];
+
+  assertEqual(latest?.mid, null, "ENE mid is missing before enough moving average samples");
+  assertEqual(latest?.upper, null, "ENE upper is missing before enough moving average samples");
+  assertEqual(latest?.lower, null, "ENE lower is missing before enough moving average samples");
+}
+
 function testTrendOverlayIndicatorsNeedEnoughSamples() {
   const indicators = buildTrendOverlayIndicators(trendOverlayBars.slice(0, 2), {
     bbiPeriods: [2, 3, 4, 5],
@@ -1645,6 +1674,8 @@ testBuildsSplitIndicatorPanelReadouts();
 testCompactIndicatorPanelReadoutsFoldExtraIndicators();
 testSelectsCursorIndicatorReadoutSnapshot();
 testBuildsTrendOverlayIndicators();
+testBuildsEnvelopeIndicators();
+testEnvelopeIndicatorsNeedEnoughSamples();
 testTrendOverlayIndicatorsNeedEnoughSamples();
 testBuildsVolumeMomentumIndicators();
 testVolumeMomentumIndicatorsNeedEnoughSamples();

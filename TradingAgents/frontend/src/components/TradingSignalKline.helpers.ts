@@ -360,6 +360,7 @@ export type ChartPreferenceName =
   | "ma"
   | "ema"
   | "boll"
+  | "ene"
   | "vwap"
   | "levels"
   | "limitLines"
@@ -415,6 +416,8 @@ export type ChartParameterName =
   | "maSlow"
   | "bollPeriod"
   | "bollMultiplier"
+  | "enePeriod"
+  | "enePercent"
   | "macdFast"
   | "macdSlow"
   | "macdSignal"
@@ -444,6 +447,7 @@ const BASE_CHART_PRESET_VALUES: Record<ChartPreferenceName, boolean> = {
   ma: true,
   ema: false,
   boll: true,
+  ene: false,
   vwap: false,
   levels: true,
   limitLines: true,
@@ -484,6 +488,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
     values: {
       ...BASE_CHART_PRESET_VALUES,
       ema: false,
+      ene: false,
       vwap: false,
       relative: false,
       profile: false,
@@ -514,6 +519,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
     values: {
       ...BASE_CHART_PRESET_VALUES,
       ema: true,
+      ene: true,
       ichimoku: true,
       vwap: false,
       relative: false,
@@ -539,6 +545,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
     values: {
       ...BASE_CHART_PRESET_VALUES,
       ema: false,
+      ene: false,
       vwap: false,
       relative: false,
       profile: false,
@@ -563,6 +570,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
     values: {
       ...BASE_CHART_PRESET_VALUES,
       ema: false,
+      ene: false,
       vwap: true,
       relative: false,
       fibonacci: false,
@@ -589,6 +597,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
     values: {
       ...BASE_CHART_PRESET_VALUES,
       ema: false,
+      ene: false,
       vwap: false,
       relative: false,
       fibonacci: true,
@@ -617,6 +626,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
     values: {
       ...BASE_CHART_PRESET_VALUES,
       ema: true,
+      ene: true,
       ichimoku: true,
       vwap: true,
       relative: true,
@@ -632,6 +642,7 @@ const CHART_LAYER_MAIN_OVERLAYS: ChartLayerSummaryOption[] = [
   ["ma", "MA"],
   ["ema", "EMA"],
   ["boll", "BOLL"],
+  ["ene", "ENE"],
   ["vwap", "VWAP"],
   ["sar", "SAR"],
   ["bbi", "BBI"],
@@ -674,6 +685,8 @@ const STANDARD_CHART_PARAMETER_VALUES: Record<ChartParameterName, number> = {
   maSlow: 60,
   bollPeriod: 20,
   bollMultiplier: 2,
+  enePeriod: 25,
+  enePercent: 6,
   macdFast: 12,
   macdSlow: 26,
   macdSignal: 9,
@@ -712,6 +725,8 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       maMid: 10,
       maSlow: 30,
       bollPeriod: 14,
+      enePeriod: 10,
+      enePercent: 5,
       macdFast: 6,
       macdSlow: 13,
       macdSignal: 5,
@@ -740,6 +755,8 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       maMid: 30,
       maSlow: 120,
       bollMultiplier: 2.2,
+      enePeriod: 30,
+      enePercent: 8,
       kdjPeriod: 14,
       momentumPeriod: 20,
       biasPeriod: 10,
@@ -755,6 +772,8 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       maMid: 60,
       maSlow: 120,
       bollPeriod: 30,
+      enePeriod: 55,
+      enePercent: 10,
       macdFast: 19,
       macdSlow: 39,
       rsiPeriod: 21,
@@ -1609,6 +1628,24 @@ export function buildIchimokuIndicators(
   });
 }
 
+export function buildEnvelopeIndicators(
+  bars: VolumeProfileBarLike[],
+  options: { period?: number; percent?: number } = {},
+): EnvelopeIndicatorSnapshot[] {
+  const period = clampInteger(options.period ?? 25, 2, 160);
+  const percent = clampNumber(options.percent ?? 6, 0.5, 30) / 100;
+  const closeValues = bars.map((bar) => normalizeOptionalNumber(bar.close));
+
+  return closeValues.map((_, index) => {
+    const mid = movingAverageAt(closeValues, period, index);
+    return {
+      upper: mid == null ? null : mid * (1 + percent),
+      mid,
+      lower: mid == null ? null : mid * (1 - percent),
+    };
+  });
+}
+
 function isTruthyFlag(value: boolean | number | string | null | undefined) {
   return value === true || value === 1 || value === "1" || String(value).toLowerCase() === "true";
 }
@@ -1656,6 +1693,12 @@ export interface TrendOverlayIndicatorSnapshot {
   ama: number | null;
 }
 
+export interface EnvelopeIndicatorSnapshot {
+  upper: number | null;
+  mid: number | null;
+  lower: number | null;
+}
+
 export interface VolumeMomentumIndicatorSnapshot {
   vr: number | null;
   mfi: number | null;
@@ -1675,6 +1718,9 @@ export interface IndicatorPanelReadoutSnapshot {
   close?: number | null;
   bollUpper?: number | null;
   bollLower?: number | null;
+  eneUpper?: number | null;
+  eneMid?: number | null;
+  eneLower?: number | null;
   ma20?: number | null;
   ma60?: number | null;
   bollMid?: number | null;

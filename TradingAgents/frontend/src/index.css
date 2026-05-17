@@ -5579,6 +5579,14 @@ label {
   vector-effect: non-scaling-stroke;
 }
 
+.ene-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
 .boll-band-area {
   fill: rgba(126, 224, 163, 0.08);
   pointer-events: none;
@@ -5595,6 +5603,16 @@ label {
 
 .boll-line.mid {
   stroke: rgba(126, 224, 163, 0.72);
+}
+
+.ene-line.upper,
+.ene-line.lower {
+  stroke: rgba(143, 179, 255, 0.58);
+  stroke-dasharray: 4 4;
+}
+
+.ene-line.mid {
+  stroke: rgba(143, 179, 255, 0.78);
 }
 
 .ma-trend-ribbon {
