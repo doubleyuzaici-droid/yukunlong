@@ -4191,6 +4191,25 @@ label {
   letter-spacing: 0;
 }
 
+.indicator-section-readout {
+  fill: rgba(238, 242, 247, 0.66) !important;
+  font-size: 11px !important;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(5, 10, 16, 0.74);
+  stroke-width: 1.8px;
+}
+
+.indicator-section-readout .positive {
+  fill: var(--price-up) !important;
+}
+
+.indicator-section-readout .negative {
+  fill: var(--price-down) !important;
+}
+
 .axis-price-label {
   fill: rgba(248, 250, 252, 0.94) !important;
   font-size: 13px !important;

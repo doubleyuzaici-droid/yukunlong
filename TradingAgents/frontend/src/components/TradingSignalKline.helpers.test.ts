@@ -1,6 +1,7 @@
 import {
   buildAdvancedIndicators,
   buildIndicatorSectionLayout,
+  buildIndicatorPanelReadouts,
   buildMomentumIndicators,
   buildTrendOverlayIndicators,
   buildVisiblePriceExtrema,
@@ -147,6 +148,55 @@ function testSplitIndicatorLayoutCreatesSeparateSubCharts() {
   assertOk(layout.signalLaneY > layout.momentum.bottom, "signal lane remains below all sub charts");
 }
 
+function testBuildsSplitIndicatorPanelReadouts() {
+  const readouts = buildIndicatorPanelReadouts({
+    close: 13.5,
+    ma20: 12.3,
+    bollMid: 12.8,
+    volume: 650,
+    volumeRatio: 1.4,
+    dif: 0.32,
+    dea: 0.18,
+    macd: 0.28,
+    rsi14: 62.4,
+    kdjJ: 78.2,
+    cr: 145,
+    br: 136,
+    emv: 0.0042,
+    mfi: 58.6,
+    vr: 112.4,
+    pdi: 24.5,
+    mdi: 16.2,
+    adx: 31.8,
+    cci: 84.3,
+    wr: -21.4,
+    bias: 3.6,
+    dma: 0.24,
+    trix: 0.42,
+  }, { mode: "split" });
+
+  assertEqual(readouts.length, 6, "split readouts cover every visible chart section");
+  assertEqual(readouts.find((group) => group.key === "price")?.items.map((item) => item.label).join(","), "C,MA20,BOLL", "price readout keeps core price overlays");
+  assertEqual(readouts.find((group) => group.key === "advanced")?.items.map((item) => item.label).join(","), "CR,BR,EMV,MFI,VR", "advanced readout keeps energy and money-flow values");
+  assertEqual(readouts.find((group) => group.key === "momentum")?.items.map((item) => item.label).join(","), "+DI,-DI,ADX,CCI,WR,BIAS,DMA,TRIX", "momentum readout keeps directional and momentum values");
+}
+
+function testCompactIndicatorPanelReadoutsFoldExtraIndicators() {
+  const readouts = buildIndicatorPanelReadouts({
+    rsi14: 54.2,
+    kdjJ: 61.8,
+    cr: 118,
+    pdi: 23.4,
+    bias: -1.6,
+    trix: 0.18,
+  }, { mode: "compact" });
+  const oscillator = readouts.find((group) => group.key === "oscillator");
+
+  assertEqual(readouts.some((group) => group.key === "advanced"), false, "compact readouts do not point to hidden advanced panel");
+  assertEqual(readouts.some((group) => group.key === "momentum"), false, "compact readouts do not point to hidden momentum panel");
+  assertEqual(oscillator?.items.map((item) => item.label).join(","), "RSI,J,CR,+DI,BIAS,TRIX", "compact oscillator folds extra indicator readings");
+}
+
 function testBuildsTrendOverlayIndicators() {
   const indicators = buildTrendOverlayIndicators(trendOverlayBars, {
     bbiPeriods: [2, 3, 4, 5],
@@ -245,6 +295,8 @@ testBuildsMomentumIndicatorSet();
 testMomentumIndicatorsNeedEnoughSamples();
 testCompactIndicatorLayoutKeepsLegacyBands();
 testSplitIndicatorLayoutCreatesSeparateSubCharts();
+testBuildsSplitIndicatorPanelReadouts();
+testCompactIndicatorPanelReadoutsFoldExtraIndicators();
 testBuildsTrendOverlayIndicators();
 testTrendOverlayIndicatorsNeedEnoughSamples();
 testBuildsVolumeMomentumIndicators();

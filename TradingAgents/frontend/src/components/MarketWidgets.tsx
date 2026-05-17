@@ -9,6 +9,7 @@ import type {
 } from "../types/market";
 import {
   buildAdvancedIndicators,
+  buildIndicatorPanelReadouts,
   buildIndicatorSectionLayout,
   buildMomentumIndicators,
   buildTrendOverlayIndicators,
@@ -16,6 +17,7 @@ import {
   buildVolumeProfileLevelAnnotations,
   buildVolumeMomentumIndicators,
   buildVolumeProfile,
+  type IndicatorPanelReadoutItem,
   type VolumeProfileModel,
 } from "./TradingSignalKline.helpers";
 import {
@@ -1227,6 +1229,14 @@ export function TradingSignalKlinePanel({
     () => buildChartDiagnostics(strategyAnalysis, strategyControls?.backtest),
     [strategyAnalysis, strategyControls?.backtest],
   );
+  const indicatorPanelReadouts = useMemo(
+    () => buildIndicatorPanelReadouts(chart.latestIndicators, { mode: chartPrefs.subCharts ? "split" : "compact" }),
+    [chart.latestIndicators, chartPrefs.subCharts],
+  );
+  const indicatorPanelReadoutMap = useMemo(
+    () => new Map(indicatorPanelReadouts.map((group) => [group.key, group])),
+    [indicatorPanelReadouts],
+  );
   const hoveredMarker =
     chartMarkers.find((marker) => marker.signal.signal_id === hoveredSignalId) ||
     null;
@@ -1667,6 +1677,15 @@ export function TradingSignalKlinePanel({
             <g key={section.key}>
               <line className="indicator-section-line" x1={chart.plotLeft} x2={chart.plotRight} y1={section.bottom} y2={section.bottom} />
               <text className="indicator-label" x={chart.plotLeft} y={section.top + 16}>{section.label}</text>
+              {indicatorPanelReadoutMap.get(section.key) && (
+                <text className="indicator-section-readout" x={chart.plotLeft + 170} y={section.top + 16}>
+                  {indicatorPanelReadoutMap.get(section.key)?.items.slice(0, chartPrefs.subCharts ? 8 : 10).map((item, index) => (
+                    <tspan className={item.signed ? quoteTone(item.value) : ""} dx={index === 0 ? 0 : 10} key={item.label}>
+                      {item.label} {formatIndicatorPanelReadout(item)}
+                    </tspan>
+                  ))}
+                </text>
+              )}
             </g>
           ))}
           <rect
@@ -3873,6 +3892,13 @@ function chartPriceFromY(chart: Record<string, any>, y: number) {
   const boundedY = clampNumber(y, chart.priceTop, chart.priceBottom);
   const span = chart.priceMax - chart.priceMin || 1;
   return chart.priceMin + ((chart.priceBottom - boundedY) / (chart.priceBottom - chart.priceTop)) * span;
+}
+
+function formatIndicatorPanelReadout(item: IndicatorPanelReadoutItem) {
+  if (item.compact) return formatCompactNumber(item.value);
+  return item.signed
+    ? formatSignedNumber(item.value, item.precision)
+    : formatNumber(item.value, item.precision);
 }
 
 function buildTradePlanLevels(analysis: StrategyKlineAnalysis | null | undefined, chart: Record<string, any>) {

@@ -103,6 +103,49 @@ export interface VolumeMomentumIndicatorSnapshot {
 
 export type IndicatorSectionLayoutMode = "compact" | "split";
 
+export interface IndicatorPanelReadoutSnapshot {
+  close?: number | null;
+  ma20?: number | null;
+  ma60?: number | null;
+  bollMid?: number | null;
+  vwap?: number | null;
+  volume?: number | null;
+  volumeRatio?: number | null;
+  dif?: number | null;
+  dea?: number | null;
+  macd?: number | null;
+  rsi14?: number | null;
+  kdjK?: number | null;
+  kdjD?: number | null;
+  kdjJ?: number | null;
+  cr?: number | null;
+  br?: number | null;
+  emv?: number | null;
+  mfi?: number | null;
+  vr?: number | null;
+  pdi?: number | null;
+  mdi?: number | null;
+  adx?: number | null;
+  cci?: number | null;
+  wr?: number | null;
+  bias?: number | null;
+  dma?: number | null;
+  trix?: number | null;
+}
+
+export interface IndicatorPanelReadoutItem {
+  label: string;
+  value: number;
+  precision: number;
+  signed?: boolean;
+  compact?: boolean;
+}
+
+export interface IndicatorPanelReadoutGroup {
+  key: string;
+  items: IndicatorPanelReadoutItem[];
+}
+
 export interface IndicatorChartBand {
   top: number;
   bottom: number;
@@ -162,6 +205,81 @@ export function buildIndicatorSectionLayout(mode: IndicatorSectionLayoutMode = "
     momentum,
     sections,
   };
+}
+
+export function buildIndicatorPanelReadouts(
+  snapshot?: IndicatorPanelReadoutSnapshot | null,
+  options: { mode?: IndicatorSectionLayoutMode } = {},
+): IndicatorPanelReadoutGroup[] {
+  if (!snapshot) return [];
+  const mode = options.mode ?? "split";
+  const item = (
+    label: string,
+    value: number | null | undefined,
+    precision = 2,
+    extra: Pick<IndicatorPanelReadoutItem, "signed" | "compact"> = {},
+  ): IndicatorPanelReadoutItem | null =>
+    isFiniteNumber(value)
+      ? { label, value: Number(value), precision, ...extra }
+      : null;
+  const group = (key: string, items: Array<IndicatorPanelReadoutItem | null>): IndicatorPanelReadoutGroup | null => {
+    const visibleItems = items.filter((value): value is IndicatorPanelReadoutItem => Boolean(value));
+    return visibleItems.length > 0 ? { key, items: visibleItems } : null;
+  };
+
+  const oscillatorItems = [
+    item("RSI", snapshot.rsi14, 1),
+    item("K", snapshot.kdjK, 1),
+    item("D", snapshot.kdjD, 1),
+    item("J", snapshot.kdjJ, 1),
+  ];
+  const advancedItems = [
+    item("CR", snapshot.cr, 1),
+    item("BR", snapshot.br, 1),
+    item("EMV", snapshot.emv, 4, { signed: true }),
+    item("MFI", snapshot.mfi, 1),
+    item("VR", snapshot.vr, 1),
+  ];
+  const momentumItems = [
+    item("+DI", snapshot.pdi, 1),
+    item("-DI", snapshot.mdi, 1),
+    item("ADX", snapshot.adx, 1),
+    item("CCI", snapshot.cci, 1, { signed: true }),
+    item("WR", snapshot.wr, 1, { signed: true }),
+    item("BIAS", snapshot.bias, 2, { signed: true }),
+    item("DMA", snapshot.dma, 2, { signed: true }),
+    item("TRIX", snapshot.trix, 2, { signed: true }),
+  ];
+
+  const groups = [
+    group("price", [
+      item("C", snapshot.close, 2),
+      item("MA20", snapshot.ma20, 2),
+      item("MA60", snapshot.ma60, 2),
+      item("BOLL", snapshot.bollMid, 2),
+      item("VWAP", snapshot.vwap, 2),
+    ]),
+    group("volume", [
+      item("VOL", snapshot.volume, 0, { compact: true }),
+      item("量比", snapshot.volumeRatio, 2),
+    ]),
+    group("macd", [
+      item("DIF", snapshot.dif, 2, { signed: true }),
+      item("DEA", snapshot.dea, 2, { signed: true }),
+      item("MACD", snapshot.macd, 2, { signed: true }),
+    ]),
+    group("oscillator", mode === "split"
+      ? oscillatorItems
+      : [...oscillatorItems, ...advancedItems, ...momentumItems]),
+    ...(mode === "split"
+      ? [
+          group("advanced", advancedItems),
+          group("momentum", momentumItems),
+        ]
+      : []),
+  ];
+
+  return groups.filter((value): value is IndicatorPanelReadoutGroup => Boolean(value));
 }
 
 export function buildAdvancedIndicators(
