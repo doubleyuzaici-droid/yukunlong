@@ -4658,6 +4658,28 @@ function buildTradingSignalGeometry(
       bottom: MOMENTUM_BOTTOM,
       tone: "good",
     },
+    {
+      key: "wr--20",
+      section: "momentum",
+      label: "WR -20",
+      value: -20,
+      min: momentumMin,
+      max: momentumMax,
+      top: MOMENTUM_TOP,
+      bottom: MOMENTUM_BOTTOM,
+      tone: "risk",
+    },
+    {
+      key: "wr--80",
+      section: "momentum",
+      label: "WR -80",
+      value: -80,
+      min: momentumMin,
+      max: momentumMax,
+      top: MOMENTUM_TOP,
+      bottom: MOMENTUM_BOTTOM,
+      tone: "good",
+    },
   ]);
   const indicatorThresholdZones = buildIndicatorThresholdZones([
     {
@@ -5114,6 +5136,7 @@ function buildTradingSignalGeometry(
     indicatorValueLabel("mdi", extraIndicatorSection("momentum"), "momentum", "-DI", latestIndicator?.mdi, latestIndicator ? dmiY(latestIndicator.mdi) : null, "risk", 61, { precision: 1 }),
     indicatorValueLabel("adx", extraIndicatorSection("momentum"), "momentum", "ADX", latestIndicator?.adx, latestIndicator ? dmiY(latestIndicator.adx) : null, "info", 62, { precision: 1 }),
     indicatorValueLabel("cci", extraIndicatorSection("momentum"), "momentum", "CCI", latestIndicator?.cci, latestIndicator ? momentumY(latestIndicator.cci) : null, (latestIndicator?.cci ?? 0) >= 100 ? "risk" : (latestIndicator?.cci ?? 0) <= -100 ? "good" : "neutral", 63, { precision: 1, signed: true }),
+    indicatorValueLabel("wr", extraIndicatorSection("momentum"), "momentum", "WR", latestIndicator?.wr, latestIndicator ? momentumY(latestIndicator.wr) : null, (latestIndicator?.wr ?? -50) >= -20 ? "risk" : (latestIndicator?.wr ?? -50) <= -80 ? "good" : "neutral", 64, { precision: 1, signed: true }),
     indicatorValueLabel("bias", extraIndicatorSection("momentum"), "biasDma", "BIAS", latestIndicator?.bias, latestIndicator ? biasY(latestIndicator.bias) : null, "neutral", 70, { precision: 2, signed: true }),
     indicatorValueLabel("dma", extraIndicatorSection("momentum"), "biasDma", "DMA", latestIndicator?.dma, latestIndicator ? dmaY(latestIndicator.dma) : null, "info", 71, { precision: 2, signed: true }),
     indicatorValueLabel("roc", extraIndicatorSection("momentum"), "volumeMomentum", "ROC", latestIndicator?.roc, latestIndicator ? rocY(latestIndicator.roc) : null, (latestIndicator?.roc ?? 0) >= 0 ? "good" : "risk", 80, { precision: 2, signed: true }),
