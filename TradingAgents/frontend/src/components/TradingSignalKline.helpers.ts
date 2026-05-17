@@ -14,6 +14,10 @@ export interface PriceExtremaBarLike extends VolumeProfileBarLike {
   period_label?: string | null;
 }
 
+export interface MeasuredRangeBarLike extends PriceExtremaBarLike {
+  index?: number | null;
+}
+
 export type PriceGapDirection = "up" | "down";
 export type CandlestickPatternTone = "good" | "risk" | "neutral";
 export type CandlestickPatternType = "doji" | "hammer" | "bullish-engulfing" | "bearish-engulfing";
@@ -170,6 +174,31 @@ export interface VisiblePriceExtremaSnapshot {
   lowLabel: string;
   lowIndex: number;
   rangePct: number | null;
+}
+
+export interface MeasuredRangeStats {
+  startIndex: number;
+  endIndex: number;
+  startLabel: string;
+  endLabel: string;
+  startClose: number;
+  endClose: number;
+  bars: number;
+  barCount: number;
+  change: number;
+  changePct: number | null;
+  high: number;
+  highIndex: number;
+  highLabel: string;
+  low: number;
+  lowIndex: number;
+  lowLabel: string;
+  amplitudePct: number | null;
+  maxDrawdownPct: number | null;
+  maxRunupPct: number | null;
+  totalVolume: number;
+  averageVolume: number;
+  totalAmount: number;
 }
 
 export interface FibonacciRetracementLevel {
@@ -709,6 +738,59 @@ export function buildVisiblePriceExtrema(bars: PriceExtremaBarLike[]): VisiblePr
     lowLabel: lowBar.label,
     lowIndex: lowBar.index,
     rangePct: lowBar.low > 0 ? ((highBar.high - lowBar.low) / lowBar.low) * 100 : null,
+  };
+}
+
+export function buildMeasuredRangeStats(
+  bars: MeasuredRangeBarLike[],
+  startIndex: number | null,
+  endIndex: number | null,
+): MeasuredRangeStats | null {
+  if (startIndex == null || endIndex == null) return null;
+  const usableBars = bars
+    .map(normalizeMeasuredRangeBar)
+    .filter((bar): bar is NonNullable<ReturnType<typeof normalizeMeasuredRangeBar>> => Boolean(bar));
+  const start = usableBars.find((bar) => bar.index === startIndex);
+  const end = usableBars.find((bar) => bar.index === endIndex);
+  if (!start || !end) return null;
+
+  const rangeStart = Math.min(start.index, end.index);
+  const rangeEnd = Math.max(start.index, end.index);
+  const rangeBars = usableBars
+    .filter((bar) => bar.index >= rangeStart && bar.index <= rangeEnd)
+    .sort((left, right) => left.index - right.index);
+  if (rangeBars.length === 0) return null;
+
+  const highBar = rangeBars.reduce((winner, bar) => (bar.high > winner.high ? bar : winner), rangeBars[0]);
+  const lowBar = rangeBars.reduce((winner, bar) => (bar.low < winner.low ? bar : winner), rangeBars[0]);
+  const drawdownPct = calculateRangeDrawdownPct(rangeBars);
+  const runupPct = calculateRangeRunupPct(rangeBars);
+  const totalVolume = rangeBars.reduce((sum, bar) => sum + bar.volume, 0);
+  const totalAmount = rangeBars.reduce((sum, bar) => sum + bar.amount, 0);
+  const change = end.close - start.close;
+  return {
+    startIndex: start.index,
+    endIndex: end.index,
+    startLabel: start.label,
+    endLabel: end.label,
+    startClose: start.close,
+    endClose: end.close,
+    bars: Math.abs(end.index - start.index),
+    barCount: rangeBars.length,
+    change,
+    changePct: start.close ? end.close / start.close - 1 : null,
+    high: highBar.high,
+    highIndex: highBar.index,
+    highLabel: highBar.label,
+    low: lowBar.low,
+    lowIndex: lowBar.index,
+    lowLabel: lowBar.label,
+    amplitudePct: start.close ? (highBar.high - lowBar.low) / start.close : null,
+    maxDrawdownPct: drawdownPct,
+    maxRunupPct: runupPct,
+    totalVolume,
+    averageVolume: totalVolume / rangeBars.length,
+    totalAmount,
   };
 }
 
@@ -1415,6 +1497,34 @@ function normalizePriceExtremaBar(bar: PriceExtremaBarLike, index: number) {
   };
 }
 
+function normalizeMeasuredRangeBar(bar: MeasuredRangeBarLike, fallbackIndex: number) {
+  const close = Number(bar.close ?? bar.open ?? bar.high ?? bar.low);
+  const open = Number(bar.open ?? close);
+  const high = Number(bar.high ?? Math.max(open, close));
+  const low = Number(bar.low ?? Math.min(open, close));
+  const volume = Number(bar.volume ?? 0);
+  if (![open, high, low, close, volume].every(isFiniteNumber)) return null;
+  const normalizedHigh = Math.max(high, low, open, close);
+  const normalizedLow = Math.min(high, low, open, close);
+  const amount = isFiniteNumber(bar.amount) && Number(bar.amount) > 0
+    ? Number(bar.amount)
+    : ((normalizedHigh + normalizedLow + close) / 3) * Math.max(volume, 0);
+  const rawIndex = Number(bar.index ?? fallbackIndex);
+  const index = isFiniteNumber(rawIndex) ? rawIndex : fallbackIndex;
+  const date = String(bar.date || index);
+  return {
+    index,
+    date,
+    label: String(bar.period_label || bar.date || index),
+    open,
+    high: normalizedHigh,
+    low: normalizedLow,
+    close,
+    volume: Math.max(volume, 0),
+    amount,
+  };
+}
+
 function normalizePriceGapBar(bar: PriceExtremaBarLike, index: number) {
   const close = Number(bar.close ?? bar.open ?? bar.high ?? bar.low);
   const open = Number(bar.open ?? close);
@@ -1691,6 +1801,34 @@ function technicalDivergenceIndicatorRank(indicator: TechnicalDivergenceIndicato
 function technicalDivergenceLabel(indicator: TechnicalDivergenceIndicator, direction: "bullish" | "bearish") {
   const prefix = indicator === "rsi" ? "RSI" : "MACD";
   return `${prefix}${direction === "bullish" ? "底背离" : "顶背离"}`;
+}
+
+function calculateRangeDrawdownPct(
+  bars: Array<NonNullable<ReturnType<typeof normalizeMeasuredRangeBar>>>,
+) {
+  let peak: number | null = null;
+  let drawdown = 0;
+  bars.forEach((bar) => {
+    if (peak && peak > 0) {
+      drawdown = Math.min(drawdown, bar.low / peak - 1);
+    }
+    if (peak == null || bar.high > peak) peak = bar.high;
+  });
+  return drawdown;
+}
+
+function calculateRangeRunupPct(
+  bars: Array<NonNullable<ReturnType<typeof normalizeMeasuredRangeBar>>>,
+) {
+  let trough: number | null = null;
+  let runup = 0;
+  bars.forEach((bar) => {
+    if (trough && trough > 0) {
+      runup = Math.max(runup, bar.high / trough - 1);
+    }
+    if (trough == null || bar.low < trough) trough = bar.low;
+  });
+  return runup;
 }
 
 function classifyTrendRegime(bar: NonNullable<ReturnType<typeof normalizeTrendRegimeBar>>): TrendRegimeType {

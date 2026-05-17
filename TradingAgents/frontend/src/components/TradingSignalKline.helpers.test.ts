@@ -4,6 +4,7 @@ import {
   buildFibonacciRetracementLevels,
   buildIndicatorSectionLayout,
   buildIndicatorPanelReadouts,
+  buildMeasuredRangeStats,
   buildMomentumIndicators,
   buildPriceGapAnnotations,
   buildPriceStructureTrendLines,
@@ -159,6 +160,38 @@ function testBuildsVisibleVolumeDistribution() {
   assertOk(profile.supportBin, "profile locates nearest support chip area");
   assertOk(profile.resistanceBin, "profile locates nearest resistance chip area");
   assertEqual(profile.bins.some((bin) => bin.widthPercent === 100), true, "largest bin is normalized to 100 width");
+}
+
+function testBuildsMeasuredRangeStats() {
+  const stats = buildMeasuredRangeStats(bars, 0, 3);
+
+  assertOk(stats, "range stats exist for selected endpoints");
+  assertEqual(stats?.startIndex, 0, "range stats keep selected start index");
+  assertEqual(stats?.endIndex, 3, "range stats keep selected end index");
+  assertEqual(stats?.bars, 3, "range stats count interval distance");
+  assertEqual(stats?.barCount, 4, "range stats count inclusive candles");
+  assertApprox(stats?.change, 1.9, 0.001, "range stats expose price change");
+  assertApprox(stats?.changePct, 0.1759, 0.001, "range stats expose selected close return");
+  assertApprox(stats?.high, 13, 0.001, "range stats expose interval high");
+  assertEqual(stats?.highLabel, "2026-05-14", "range stats keep high date label");
+  assertApprox(stats?.low, 9.8, 0.001, "range stats expose interval low");
+  assertEqual(stats?.lowLabel, "2026-05-11", "range stats keep low date label");
+  assertApprox(stats?.amplitudePct, 0.2963, 0.001, "range stats expose interval amplitude from start close");
+  assertApprox(stats?.maxDrawdownPct, -0.096, 0.001, "range stats expose peak-to-trough drawdown");
+  assertApprox(stats?.maxRunupPct, 0.3265, 0.001, "range stats expose trough-to-peak runup");
+  assertApprox(stats?.totalVolume, 1100, 0.001, "range stats sum selected volume");
+  assertApprox(stats?.totalAmount, 13190, 0.001, "range stats sum selected amount");
+  assertApprox(stats?.averageVolume, 275, 0.001, "range stats average selected volume");
+}
+
+function testMeasuredRangeStatsKeepSelectionDirection() {
+  const stats = buildMeasuredRangeStats(bars, 3, 0);
+
+  assertOk(stats, "reverse range stats exist for selected endpoints");
+  assertEqual(stats?.startIndex, 3, "reverse range keeps selected start");
+  assertEqual(stats?.endIndex, 0, "reverse range keeps selected end");
+  assertApprox(stats?.changePct, -0.1496, 0.001, "reverse range return follows selected direction");
+  assertEqual(stats?.barCount, 4, "reverse range uses the same inclusive candle set");
 }
 
 function testHandlesMissingBarsExplicitly() {
@@ -633,6 +666,8 @@ function testPriceGapAnnotationsRespectThreshold() {
 }
 
 testBuildsVisibleVolumeDistribution();
+testBuildsMeasuredRangeStats();
+testMeasuredRangeStatsKeepSelectionDirection();
 testHandlesMissingBarsExplicitly();
 testBuildsVolumeProfileLevelAnnotations();
 testBuildsFutuStyleAdvancedIndicators();

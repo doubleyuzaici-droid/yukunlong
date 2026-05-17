@@ -13,6 +13,7 @@ import {
   buildFibonacciRetracementLevels,
   buildIndicatorPanelReadouts,
   buildIndicatorSectionLayout,
+  buildMeasuredRangeStats,
   buildMomentumIndicators,
   buildPriceGapAnnotations,
   buildPriceStructureTrendLines,
@@ -2145,13 +2146,25 @@ export function TradingSignalKlinePanel({
               <line x1={measuredRange.end.x} x2={measuredRange.end.x} y1={chart.sections[0].top} y2={chart.signalLaneY} />
               <circle cx={measuredRange.start.x} cy={measuredRange.start.closeY} r="4" />
               <circle cx={measuredRange.end.x} cy={measuredRange.end.closeY} r="4" />
-              <rect x={measuredRange.labelX} y={measuredRange.labelY - 28} width="184" height="48" rx="6" />
-              <text x={measuredRange.labelX + 10} y={measuredRange.labelY - 9}>
-                {measuredRange.bars}根 · {formatSignedPercent(measuredRange.changePct)}
+              <rect x={measuredRange.labelX} y={measuredRange.labelY} width={measuredRange.labelWidth} height={measuredRange.labelHeight} rx="6" />
+              <text x={measuredRange.labelX + 10} y={measuredRange.labelY + 18}>
+                {measuredRange.bars}根/{measuredRange.barCount}K · {formatSignedPercent(measuredRange.changePct)} · {formatSignedNumber(measuredRange.change, 2)}
               </text>
-              <text x={measuredRange.labelX + 10} y={measuredRange.labelY + 10}>
+              <text x={measuredRange.labelX + 10} y={measuredRange.labelY + 38}>
                 {formatNumber(measuredRange.start.close, 2)} → {formatNumber(measuredRange.end.close, 2)}
               </text>
+              <text x={measuredRange.labelX + 10} y={measuredRange.labelY + 58}>
+                高 {formatNumber(measuredRange.high, 2)} / 低 {formatNumber(measuredRange.low, 2)} · 振幅 {formatSignedPercent(measuredRange.amplitudePct)}
+              </text>
+              <text x={measuredRange.labelX + 10} y={measuredRange.labelY + 78}>
+                回撤 {formatSignedPercent(measuredRange.maxDrawdownPct)} · 上行 {formatSignedPercent(measuredRange.maxRunupPct)}
+              </text>
+              <text x={measuredRange.labelX + 10} y={measuredRange.labelY + 98}>
+                量 {formatCompactNumber(measuredRange.totalVolume)} / 额 {formatMoney(measuredRange.totalAmount)}
+              </text>
+              <title>
+                {measuredRange.startLabel}→{measuredRange.endLabel} · 最高 {measuredRange.highLabel} · 最低 {measuredRange.lowLabel}
+              </title>
             </g>
           )}
           {crosshair && !hoverSignalTooltip && !tradePlanTooltip && !evidenceEventTooltip && (
@@ -3118,25 +3131,50 @@ function buildTimeTicks(points: { x: number; label?: string }[]) {
 }
 
 function buildMeasureRange(
-  candles: { index: number; x: number; close: number; closeY: number }[],
+  candles: {
+    index: number;
+    date?: string;
+    periodLabel?: string;
+    x: number;
+    open?: number;
+    high?: number;
+    low?: number;
+    close: number;
+    closeY: number;
+    volume?: number;
+    amount?: number;
+  }[],
   startIndex: number | null,
   endIndex: number | null,
 ) {
   if (startIndex == null || endIndex == null) return null;
   const start = candles.find((candle) => candle.index === startIndex);
   const end = candles.find((candle) => candle.index === endIndex);
-  if (!start || !end) return null;
-  const changePct = start.close ? end.close / start.close - 1 : null;
-  const labelX = clampNumber((start.x + end.x) / 2 + 12, 56, 728);
-  const labelY = clampNumber(Math.min(start.closeY, end.closeY) - 12, 82, 332);
+  const stats = buildMeasuredRangeStats(candles.map((candle) => ({
+    index: candle.index,
+    date: candle.date,
+    period_label: candle.periodLabel,
+    open: candle.open,
+    high: candle.high,
+    low: candle.low,
+    close: candle.close,
+    volume: candle.volume,
+    amount: candle.amount,
+  })), startIndex, endIndex);
+  if (!start || !end || !stats) return null;
+  const labelWidth = 266;
+  const labelHeight = 108;
+  const labelX = clampNumber((start.x + end.x) / 2 + 12, 56, 930 - labelWidth);
+  const labelY = clampNumber(Math.min(start.closeY, end.closeY) - labelHeight - 12, 58, 344);
   return {
+    ...stats,
     start,
     end,
-    bars: Math.abs(end.index - start.index),
-    changePct,
     labelX,
     labelY,
-    tone: (changePct || 0) >= 0 ? "positive" : "negative",
+    labelWidth,
+    labelHeight,
+    tone: (stats.changePct || 0) >= 0 ? "positive" : "negative",
   };
 }
 
