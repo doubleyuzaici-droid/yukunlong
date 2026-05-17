@@ -21,6 +21,7 @@ import {
   buildIndicatorPanelReadouts,
   buildIndicatorAxisTicks,
   buildIndicatorSectionLayout,
+  buildIndicatorThresholdGuides,
   buildKlineHoverMetrics,
   buildLimitPriceLines,
   buildManualDrawingGeometry,
@@ -1411,6 +1412,13 @@ export function TradingSignalKlinePanel({
   const activeIndicators = activeMarker?.indicators || chart.latestIndicators;
   const readoutIndicators = indicatorReadoutSnapshot;
   const readoutFundFlow = crosshair?.candle?.fundFlow || chart.fundFlowOverlay.latest;
+  const visibleIndicatorThresholdGuides = chart.indicatorThresholdGuides.filter((guide) => {
+    if (!chartPrefs.subCharts && guide.section !== "oscillator") return false;
+    if (guide.section === "oscillator") return chartPrefs.rsi || chartPrefs.kdj;
+    if (guide.section === "advanced") return chartPrefs.advanced || chartPrefs.volumeMomentum;
+    if (guide.section === "momentum") return chartPrefs.momentum || chartPrefs.biasDma || chartPrefs.volumeMomentum;
+    return true;
+  });
   const measuredRange = useMemo(
     () => buildMeasureRange(
       chart.candles,
@@ -2072,8 +2080,12 @@ export function TradingSignalKlinePanel({
               </text>
             </g>
           ))}
-          <line className="rsi-threshold" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.rsi70Y} y2={chart.rsi70Y} />
-          <line className="rsi-threshold" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.rsi30Y} y2={chart.rsi30Y} />
+          {visibleIndicatorThresholdGuides.map((guide) => (
+            <g className={`indicator-threshold-guide ${guide.section} ${guide.tone}`} key={guide.key}>
+              <line x1={chart.plotLeft} x2={chart.plotRight} y1={guide.y} y2={guide.y} />
+              <text x={chart.plotRight - 58} y={guide.labelY}>{guide.label}</text>
+            </g>
+          ))}
           <line className="macd-zero-line" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.macdZeroY} y2={chart.macdZeroY} />
           <line className="signal-lane" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.signalLaneY} y2={chart.signalLaneY} />
           {chartPrefs.levels && chart.prevCloseY != null && (
@@ -3901,6 +3913,7 @@ function buildTradingSignalGeometry(
       technicalDivergenceEvents: [],
       volumeSignalEvents: [],
       fundFlowOverlay: buildFundFlowOverlayGeometry([], [], { top: VOLUME_TOP, bottom: VOLUME_BOTTOM }),
+      indicatorThresholdGuides: [],
       trendRegimeBands: [],
       fibonacciLevels: [],
       supportResistanceLevels: [],
@@ -4363,6 +4376,74 @@ function buildTradingSignalGeometry(
       top: VOLATILITY_TOP,
     }),
   };
+  const indicatorThresholdGuides = buildIndicatorThresholdGuides([
+    {
+      key: "rsi-70",
+      section: "oscillator",
+      label: "RSI 70",
+      value: 70,
+      min: 0,
+      max: 100,
+      top: RSI_TOP,
+      bottom: RSI_BOTTOM,
+      tone: "risk",
+    },
+    {
+      key: "rsi-30",
+      section: "oscillator",
+      label: "RSI 30",
+      value: 30,
+      min: 0,
+      max: 100,
+      top: RSI_TOP,
+      bottom: RSI_BOTTOM,
+      tone: "good",
+    },
+    {
+      key: "mfi-80",
+      section: "advanced",
+      label: "MFI 80",
+      value: 80,
+      min: moneyFlowMin,
+      max: moneyFlowMax,
+      top: ADVANCED_TOP,
+      bottom: ADVANCED_BOTTOM,
+      tone: "risk",
+    },
+    {
+      key: "mfi-20",
+      section: "advanced",
+      label: "MFI 20",
+      value: 20,
+      min: moneyFlowMin,
+      max: moneyFlowMax,
+      top: ADVANCED_TOP,
+      bottom: ADVANCED_BOTTOM,
+      tone: "good",
+    },
+    {
+      key: "cci-100",
+      section: "momentum",
+      label: "CCI +100",
+      value: 100,
+      min: momentumMin,
+      max: momentumMax,
+      top: MOMENTUM_TOP,
+      bottom: MOMENTUM_BOTTOM,
+      tone: "risk",
+    },
+    {
+      key: "cci--100",
+      section: "momentum",
+      label: "CCI -100",
+      value: -100,
+      min: momentumMin,
+      max: momentumMax,
+      top: MOMENTUM_TOP,
+      bottom: MOMENTUM_BOTTOM,
+      tone: "good",
+    },
+  ]);
 
   const candles = visible.map((bar, index) => {
     const open = Number(bar.open ?? bar.close ?? 0);
@@ -4772,6 +4853,7 @@ function buildTradingSignalGeometry(
     rangeExtrema,
     priceTicks,
     indicatorAxisTicks,
+    indicatorThresholdGuides,
     timeTicks,
     latestIndicators: candles[candles.length - 1]?.indicators || null,
     prevCloseY: isFiniteNumber(candles[candles.length - 1]?.prevClose)

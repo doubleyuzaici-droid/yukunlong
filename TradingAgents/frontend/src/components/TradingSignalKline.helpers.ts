@@ -810,6 +810,30 @@ export interface FundFlowOverlayGeometry {
   latest: FundFlowOverlayRowLike | null;
 }
 
+export type IndicatorThresholdGuideTone = "good" | "risk" | "neutral";
+
+export interface IndicatorThresholdGuideDefinition {
+  key: string;
+  section: string;
+  label: string;
+  value?: number | null;
+  min: number;
+  max: number;
+  top: number;
+  bottom: number;
+  tone?: IndicatorThresholdGuideTone;
+}
+
+export interface IndicatorThresholdGuide {
+  key: string;
+  section: string;
+  label: string;
+  value: number;
+  y: number;
+  labelY: number;
+  tone: IndicatorThresholdGuideTone;
+}
+
 export function buildLimitPriceLines(
   bars: LimitPriceBarLike[],
   yOf: (price: number) => number | null | undefined,
@@ -926,6 +950,39 @@ export function buildFundFlowOverlayGeometry(
     zeroY,
     latest: matched.length ? matched[matched.length - 1].row : null,
   };
+}
+
+export function buildIndicatorThresholdGuides(
+  definitions: IndicatorThresholdGuideDefinition[],
+): IndicatorThresholdGuide[] {
+  return definitions.flatMap((definition) => {
+    if (
+      !isFiniteNumber(definition.value) ||
+      !isFiniteNumber(definition.min) ||
+      !isFiniteNumber(definition.max) ||
+      !isFiniteNumber(definition.top) ||
+      !isFiniteNumber(definition.bottom) ||
+      definition.max === definition.min ||
+      definition.value < definition.min ||
+      definition.value > definition.max
+    ) {
+      return [];
+    }
+    const y = definition.bottom -
+      ((definition.value - definition.min) / (definition.max - definition.min)) *
+      (definition.bottom - definition.top);
+    const top = Math.min(definition.top, definition.bottom);
+    const bottom = Math.max(definition.top, definition.bottom);
+    return [{
+      key: definition.key,
+      section: definition.section,
+      label: definition.label,
+      value: definition.value,
+      y: clampNumber(y, top, bottom),
+      labelY: clampNumber(y - 4, top + 12, bottom - 4),
+      tone: definition.tone ?? "neutral",
+    }];
+  });
 }
 
 function isTruthyFlag(value: boolean | number | string | null | undefined) {

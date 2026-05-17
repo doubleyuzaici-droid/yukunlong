@@ -8,6 +8,7 @@ import {
   buildIndicatorSectionLayout,
   buildIndicatorPanelReadouts,
   buildIndicatorAxisTicks,
+  buildIndicatorThresholdGuides,
   buildFundFlowOverlayGeometry,
   buildLimitPriceLines,
   buildKlineHoverMetrics,
@@ -757,6 +758,49 @@ function testBuildsCompactIndicatorAxisTickLabels() {
   assertEqual(ticks[1]?.label, "1M", "mid compact axis values use compact suffix");
 }
 
+function testBuildsIndicatorThresholdGuides() {
+  const guides = buildIndicatorThresholdGuides([
+    {
+      key: "rsi-70",
+      label: "RSI 70",
+      section: "oscillator",
+      value: 70,
+      min: 0,
+      max: 100,
+      top: 100,
+      bottom: 200,
+      tone: "risk",
+    },
+    {
+      key: "cci-100",
+      label: "CCI +100",
+      section: "momentum",
+      value: 100,
+      min: -200,
+      max: 200,
+      top: 300,
+      bottom: 420,
+      tone: "risk",
+    },
+    {
+      key: "hidden",
+      label: "hidden",
+      section: "momentum",
+      value: 999,
+      min: -200,
+      max: 200,
+      top: 300,
+      bottom: 420,
+    },
+  ]);
+
+  assertEqual(guides.length, 2, "threshold guides omit values outside the visible indicator domain");
+  assertApprox(guides[0]?.y, 130, 0.001, "oscillator threshold maps by indicator scale");
+  assertApprox(guides[1]?.y, 330, 0.001, "momentum threshold maps by centered indicator scale");
+  assertEqual(guides[1]?.labelY, 326, "threshold labels sit above their guide line");
+  assertEqual(guides[0]?.tone, "risk", "threshold guide preserves tone for styling");
+}
+
 function testBuildsSplitIndicatorPanelReadouts() {
   const readouts = buildIndicatorPanelReadouts({
     close: 13.5,
@@ -1189,6 +1233,7 @@ testCompactIndicatorLayoutKeepsLegacyBands();
 testSplitIndicatorLayoutCreatesSeparateSubCharts();
 testBuildsIndicatorAxisTicks();
 testBuildsCompactIndicatorAxisTickLabels();
+testBuildsIndicatorThresholdGuides();
 testBuildsSplitIndicatorPanelReadouts();
 testCompactIndicatorPanelReadoutsFoldExtraIndicators();
 testSelectsCursorIndicatorReadoutSnapshot();
