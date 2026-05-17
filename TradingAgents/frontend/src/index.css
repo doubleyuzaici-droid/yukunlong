@@ -5046,11 +5046,23 @@ label {
 
 .volume-ma-line {
   fill: none;
-  stroke: rgba(244, 211, 126, 0.76);
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.1;
   vector-effect: non-scaling-stroke;
+}
+
+.volume-ma-line.ma5 {
+  stroke: rgba(244, 211, 126, 0.82);
+}
+
+.volume-ma-line.ma10 {
+  stroke: rgba(94, 234, 212, 0.76);
+}
+
+.volume-ma-line.ma20 {
+  stroke: rgba(143, 179, 255, 0.78);
+  stroke-dasharray: 6 4;
 }
 
 .ema-line,

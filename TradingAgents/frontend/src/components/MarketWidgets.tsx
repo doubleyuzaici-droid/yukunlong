@@ -36,6 +36,7 @@ import {
   buildVisiblePriceExtrema,
   buildVolumeProfileLevelAnnotations,
   buildVolumeSignalAnnotations,
+  buildVolumeMovingAverageValues,
   buildVolumeMomentumIndicators,
   buildVolatilityVolumeIndicators,
   buildVolumeProfile,
@@ -1873,9 +1874,14 @@ export function TradingSignalKlinePanel({
           }
         />
         <MarketReadoutStat
-          label="成交量 / 额"
+          label="成交量 / 均量"
           value={formatCompactNumber(readoutIndicators?.volume)}
-          sub={formatMoney(readoutIndicators?.amount)}
+          sub={[
+            `额 ${formatMoney(readoutIndicators?.amount)}`,
+            `MA5 ${formatCompactNumber(readoutIndicators?.volumeMa5)}`,
+            `MA10 ${formatCompactNumber(readoutIndicators?.volumeMa10)}`,
+            `MA20 ${formatCompactNumber(readoutIndicators?.volumeMa20)}`,
+          ].join(" · ")}
         />
         <MarketReadoutStat
           label={`均线 ${chartParams.maFast}/${chartParams.maMid}`}
@@ -2382,7 +2388,9 @@ export function TradingSignalKlinePanel({
               </title>
             </g>
           ))}
-          {chartPrefs.volume && chart.volumeMa20Line && <polyline className="volume-ma-line" points={chart.volumeMa20Line} />}
+          {chartPrefs.volume && chart.volumeMa5Line && <polyline className="volume-ma-line ma5" points={chart.volumeMa5Line} />}
+          {chartPrefs.volume && chart.volumeMa10Line && <polyline className="volume-ma-line ma10" points={chart.volumeMa10Line} />}
+          {chartPrefs.volume && chart.volumeMa20Line && <polyline className="volume-ma-line ma20" points={chart.volumeMa20Line} />}
           {chartPrefs.signals && chart.entryLinks.map((link) => (
             <g className="signal-entry-link" key={link.id}>
               <line x1={link.signalX} x2={link.entryX} y1={link.signalY} y2={link.entryY} />
@@ -2565,6 +2573,9 @@ export function TradingSignalKlinePanel({
               </text>
               <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="172">
                 量 {formatCompactNumber(crosshair.candle.volume)} · 额 {formatMoney(crosshair.candle.amount)}
+              </text>
+              <text className="crosshair-readout-row" x={crosshair.labelX + 162} y="172">
+                VMA {formatCompactNumber(crosshair.candle.indicators.volumeMa5)} / {formatCompactNumber(crosshair.candle.indicators.volumeMa10)} / {formatCompactNumber(crosshair.candle.indicators.volumeMa20)}
               </text>
               <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="196">
                 涨停 {formatNumber(crosshair.candle.limitUp, 2)} ({formatSignedPercent(crosshair.candle.hoverMetrics.limitUpDistancePct)})
@@ -3868,6 +3879,8 @@ function buildTradingSignalGeometry(
       bollUpper: "",
       bollMid: "",
       bollLower: "",
+      volumeMa5Line: "",
+      volumeMa10Line: "",
       volumeMa20Line: "",
       macdBars: [],
       difLine: "",
@@ -4162,12 +4175,9 @@ function buildTradingSignalGeometry(
   const momentumValues = buildMomentumIndicators(visible, {
     period: params.momentumPeriod,
   });
-  const volumeMa20Values = volumes.map((_, index) => {
-    const start = Math.max(0, index - 19);
-    const slice = volumes.slice(start, index + 1);
-    if (slice.length < 5) return null;
-    return averageNumberValues(slice);
-  });
+  const volumeMa5Values = buildVolumeMovingAverageValues(volumes, 5);
+  const volumeMa10Values = buildVolumeMovingAverageValues(volumes, 10);
+  const volumeMa20Values = buildVolumeMovingAverageValues(volumes, 20);
   const maxMacdAbs = Math.max(
     0.01,
     ...difValues.map(Math.abs),
@@ -4375,6 +4385,9 @@ function buildTradingSignalGeometry(
         ma20,
         ma60,
         ma120,
+        volumeMa5: volumeMa5Values[index],
+        volumeMa10: volumeMa10Values[index],
+        volumeMa20: volumeMa20Values[index],
         emaFast: emaFastValues[index],
         emaSlow: emaSlowValues[index],
         vwap: vwapValues[index],
@@ -4542,6 +4555,8 @@ function buildTradingSignalGeometry(
   const kdjLine = (key: "k" | "d" | "j") =>
     indicatorPoints(kdjValues.map((value) => value?.[key] ?? null), rsiY);
   const relativeLine = indicatorPoints(relativeValues, relativeY);
+  const volumeMa5Line = indicatorPoints(volumeMa5Values, volumeY);
+  const volumeMa10Line = indicatorPoints(volumeMa10Values, volumeY);
   const volumeMa20Line = indicatorPoints(volumeMa20Values, volumeY);
   const macdBars = macdValues.map((value, index) => {
     const y = macdY(value);
@@ -4654,6 +4669,8 @@ function buildTradingSignalGeometry(
     bollUpper: bollLine("upper"),
     bollMid: bollLine("mid"),
     bollLower: bollLine("lower"),
+    volumeMa5Line,
+    volumeMa10Line,
     volumeMa20Line,
     macdBars,
     difLine: indicatorPoints(difValues, macdY),

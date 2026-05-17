@@ -10,6 +10,7 @@ import {
   buildIndicatorAxisTicks,
   buildLimitPriceLines,
   buildKlineHoverMetrics,
+  buildVolumeMovingAverageValues,
   mapClientPointToChartViewBox,
   buildManualDrawingGeometry,
   buildPriceAxisScale,
@@ -299,6 +300,15 @@ function testBuildsKlineHoverMetrics() {
   assertApprox(metrics.limitUpDistancePct, 0.1, 0.001, "limit-up distance is relative to close");
   assertApprox(metrics.limitDownDistancePct, -0.1, 0.001, "limit-down distance is relative to close");
   assertEqual(metrics.statusLabel, "普通", "ordinary candles get a neutral status label");
+}
+
+function testBuildsVolumeMovingAverageValues() {
+  const values = buildVolumeMovingAverageValues([100, 200, 300, 400, 500, 600], 3);
+
+  assertEqual(values[0], null, "moving average waits for a full volume window");
+  assertEqual(values[1], null, "moving average keeps early samples empty");
+  assertApprox(values[2], 200, 0.001, "third sample averages the first 3 volumes");
+  assertApprox(values[5], 500, 0.001, "latest sample averages the latest 3 volumes");
 }
 
 function testResolvesLimitCandleState() {
@@ -730,6 +740,9 @@ function testBuildsSplitIndicatorPanelReadouts() {
     bollMid: 12.8,
     volume: 650,
     volumeRatio: 1.4,
+    volumeMa5: 620,
+    volumeMa10: 580,
+    volumeMa20: 520,
     dif: 0.32,
     dea: 0.18,
     macd: 0.28,
@@ -754,6 +767,7 @@ function testBuildsSplitIndicatorPanelReadouts() {
 
   assertEqual(readouts.length, 7, "split readouts cover every visible chart section");
   assertEqual(readouts.find((group) => group.key === "price")?.items.map((item) => item.label).join(","), "C,MA20,BOLL", "price readout keeps core price overlays");
+  assertEqual(readouts.find((group) => group.key === "volume")?.items.map((item) => item.label).join(","), "VOL,量比,VMA5,VMA10,VMA20", "volume readout keeps Futu-style moving-average volume values");
   assertEqual(readouts.find((group) => group.key === "advanced")?.items.map((item) => item.label).join(","), "CR,BR,EMV,MFI,VR", "advanced readout keeps energy and money-flow values");
   assertEqual(readouts.find((group) => group.key === "momentum")?.items.map((item) => item.label).join(","), "+DI,-DI,ADX,CCI,WR,BIAS,DMA,TRIX", "momentum readout keeps directional and momentum values");
   assertEqual(readouts.find((group) => group.key === "volatility")?.items.map((item) => item.label).join(","), "ATR,OBV", "volatility readout keeps range and cumulative volume values");
@@ -1119,6 +1133,7 @@ testBuildsVisibleVolumeDistribution();
 testBuildsLimitPriceLinesFromFinitePrices();
 testMapsClientPointToSplitChartViewBox();
 testBuildsKlineHoverMetrics();
+testBuildsVolumeMovingAverageValues();
 testResolvesLimitCandleState();
 testAppliesTrendChartPreferencePreset();
 testMatchesChartPreferencePresetFromValues();

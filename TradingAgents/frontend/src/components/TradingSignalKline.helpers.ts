@@ -840,6 +840,18 @@ export function buildKlineHoverMetrics(bar: LimitCandleStateBarLike): KlineHover
   };
 }
 
+export function buildVolumeMovingAverageValues(
+  values: Array<number | null | undefined>,
+  period: number,
+): Array<number | null> {
+  return values.map((_, index) => {
+    const start = index - period + 1;
+    if (start < 0) return null;
+    const window = values.slice(start, index + 1).filter(isFiniteNumber);
+    return window.length === period ? averageNumbers(window) : null;
+  });
+}
+
 function isTruthyFlag(value: boolean | number | string | null | undefined) {
   return value === true || value === 1 || value === "1" || String(value).toLowerCase() === "true";
 }
@@ -910,6 +922,9 @@ export interface IndicatorPanelReadoutSnapshot {
   vwap?: number | null;
   volume?: number | null;
   volumeRatio?: number | null;
+  volumeMa5?: number | null;
+  volumeMa10?: number | null;
+  volumeMa20?: number | null;
   dif?: number | null;
   dea?: number | null;
   macd?: number | null;
@@ -1389,6 +1404,9 @@ export function buildIndicatorPanelReadouts(
     group("volume", [
       item("VOL", snapshot.volume, 0, { compact: true }),
       item("量比", snapshot.volumeRatio, 2),
+      item("VMA5", snapshot.volumeMa5, 0, { compact: true }),
+      item("VMA10", snapshot.volumeMa10, 0, { compact: true }),
+      item("VMA20", snapshot.volumeMa20, 0, { compact: true }),
     ]),
     group("macd", [
       item("DIF", snapshot.dif, 2, { signed: true }),
