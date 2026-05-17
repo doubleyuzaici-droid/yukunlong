@@ -1,5 +1,6 @@
 import { type ChangeEvent, type KeyboardEvent, type MouseEvent, type WheelEvent, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  FundFlowSnapshot,
   IntradayPayload,
   IntradayPoint,
   MarketHistoryBar,
@@ -16,6 +17,7 @@ import {
   buildAdvancedIndicators,
   buildCandlestickPatternAnnotations,
   buildFibonacciRetracementLevels,
+  buildFundFlowOverlayGeometry,
   buildIndicatorPanelReadouts,
   buildIndicatorAxisTicks,
   buildIndicatorSectionLayout,
@@ -227,6 +229,7 @@ interface TradingChartPreferences {
   events: boolean;
   relative: boolean;
   profile: boolean;
+  fundFlow: boolean;
   fibonacci: boolean;
   supportResistance: boolean;
   trendLines: boolean;
@@ -424,6 +427,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   events: true,
   relative: false,
   profile: true,
+  fundFlow: true,
   fibonacci: false,
   supportResistance: true,
   trendLines: true,
@@ -494,6 +498,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     events: typeof next.events === "boolean" ? next.events : DEFAULT_TRADING_CHART_PREFS.events,
     relative: typeof next.relative === "boolean" ? next.relative : DEFAULT_TRADING_CHART_PREFS.relative,
     profile: typeof next.profile === "boolean" ? next.profile : DEFAULT_TRADING_CHART_PREFS.profile,
+    fundFlow: typeof next.fundFlow === "boolean" ? next.fundFlow : DEFAULT_TRADING_CHART_PREFS.fundFlow,
     fibonacci: typeof next.fibonacci === "boolean" ? next.fibonacci : DEFAULT_TRADING_CHART_PREFS.fibonacci,
     supportResistance: typeof next.supportResistance === "boolean" ? next.supportResistance : DEFAULT_TRADING_CHART_PREFS.supportResistance,
     trendLines: typeof next.trendLines === "boolean" ? next.trendLines : DEFAULT_TRADING_CHART_PREFS.trendLines,
@@ -1230,6 +1235,7 @@ export function TradingSignalKlinePanel({
   bars,
   signals = [],
   evidenceEvents = [],
+  fundFlowRows = [],
   strategyAnalysis,
   strategyControls,
   selectedSignalId,
@@ -1239,6 +1245,7 @@ export function TradingSignalKlinePanel({
   bars: MarketHistoryBar[];
   signals?: ChartSignalMarker[];
   evidenceEvents?: ChartEvidenceEvent[];
+  fundFlowRows?: FundFlowSnapshot[];
   strategyAnalysis?: StrategyKlineAnalysis | null;
   strategyControls?: StrategyKlineControls;
   selectedSignalId?: string | null;
@@ -1338,9 +1345,10 @@ export function TradingSignalKlinePanel({
       strategyLevelPrices,
       chartPrefs.subCharts,
       periodData.events,
+      fundFlowRows,
       priceAxisMode,
     ),
-    [chartParams, chartPrefs.subCharts, periodData, priceAxisMode, range, rightOffset, strategyLevelPrices],
+    [chartParams, chartPrefs.subCharts, fundFlowRows, periodData, priceAxisMode, range, rightOffset, strategyLevelPrices],
   );
   const chartMarkers = chart.markers || [];
   const evidenceEventMarkers = chart.eventMarkers || [];
@@ -1402,6 +1410,7 @@ export function TradingSignalKlinePanel({
     null;
   const activeIndicators = activeMarker?.indicators || chart.latestIndicators;
   const readoutIndicators = indicatorReadoutSnapshot;
+  const readoutFundFlow = crosshair?.candle?.fundFlow || chart.fundFlowOverlay.latest;
   const measuredRange = useMemo(
     () => buildMeasureRange(
       chart.candles,
@@ -1764,6 +1773,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.relative ? "active" : ""} onClick={() => toggleChartPref("relative")} type="button">相对</button>
         <button className={chartPrefs.trendRegime ? "active" : ""} onClick={() => toggleChartPref("trendRegime")} type="button">趋势带</button>
         <button className={chartPrefs.profile ? "active" : ""} onClick={() => toggleChartPref("profile")} type="button">筹码</button>
+        <button className={chartPrefs.fundFlow ? "active" : ""} onClick={() => toggleChartPref("fundFlow")} type="button">资金流</button>
         <button className={chartPrefs.fibonacci ? "active" : ""} onClick={() => toggleChartPref("fibonacci")} type="button">斐波</button>
         <button className={chartPrefs.supportResistance ? "active" : ""} onClick={() => toggleChartPref("supportResistance")} type="button">支阻</button>
         <button className={chartPrefs.trendLines ? "active" : ""} onClick={() => toggleChartPref("trendLines")} type="button">趋势线</button>
@@ -1882,6 +1892,12 @@ export function TradingSignalKlinePanel({
             `MA10 ${formatCompactNumber(readoutIndicators?.volumeMa10)}`,
             `MA20 ${formatCompactNumber(readoutIndicators?.volumeMa20)}`,
           ].join(" · ")}
+        />
+        <MarketReadoutStat
+          label="资金净流"
+          value={formatCompactNumber(readoutFundFlow?.main_net_inflow)}
+          sub={`大单 ${formatCompactNumber(readoutFundFlow?.large_net_inflow)} · 北向 ${formatCompactNumber(readoutFundFlow?.northbound_net_inflow)}`}
+          tone={quoteTone(readoutFundFlow?.main_net_inflow)}
         />
         <MarketReadoutStat
           label={`均线 ${chartParams.maFast}/${chartParams.maMid}`}
@@ -2388,6 +2404,22 @@ export function TradingSignalKlinePanel({
               </title>
             </g>
           ))}
+          {chartPrefs.volume && chartPrefs.fundFlow && chart.fundFlowOverlay.bars.length > 0 && (
+            <g className="fund-flow-overlay">
+              <line x1={chart.plotLeft} x2={chart.plotRight} y1={chart.fundFlowOverlay.zeroY} y2={chart.fundFlowOverlay.zeroY} />
+              {chart.fundFlowOverlay.bars.map((bar) => (
+                <rect
+                  className={`fund-flow-bar ${bar.type} ${bar.tone}`}
+                  height={bar.height}
+                  key={bar.key}
+                  rx="0.4"
+                  width={bar.width}
+                  x={bar.x - bar.width / 2}
+                  y={bar.y}
+                />
+              ))}
+            </g>
+          )}
           {chartPrefs.volume && chart.volumeMa5Line && <polyline className="volume-ma-line ma5" points={chart.volumeMa5Line} />}
           {chartPrefs.volume && chart.volumeMa10Line && <polyline className="volume-ma-line ma10" points={chart.volumeMa10Line} />}
           {chartPrefs.volume && chart.volumeMa20Line && <polyline className="volume-ma-line ma20" points={chart.volumeMa20Line} />}
@@ -2549,7 +2581,7 @@ export function TradingSignalKlinePanel({
               <text className="crosshair-date-text" x={clampNumber(crosshair.x, chart.plotLeft + 38, chart.plotRight - 38)} y={chart.timeAxisY - 5}>
                 {shortDateLabel(crosshair.candle.periodLabel || crosshair.candle.date)}
               </text>
-              <rect className="crosshair-readout-panel" x={crosshair.labelX} y="52" width="304" height="244" rx="6" />
+              <rect className="crosshair-readout-panel" x={crosshair.labelX} y="52" width="304" height="268" rx="6" />
               <text className="crosshair-readout-title" x={crosshair.labelX + 12} y="76">
                 {crosshair.candle.periodLabel || crosshair.candle.date}
               </text>
@@ -2592,6 +2624,11 @@ export function TradingSignalKlinePanel({
               <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="268">
                 MFI {formatNumber(crosshair.candle.indicators.mfi, 1)} · VR {formatNumber(crosshair.candle.indicators.vr, 1)} · ATR {formatNumber(crosshair.candle.indicators.atr, 2)}
               </text>
+              {chartPrefs.fundFlow && crosshair.candle.fundFlow && (
+                <text className="crosshair-readout-row fund-flow" x={crosshair.labelX + 12} y="292">
+                  资金 主力 {formatCompactNumber(crosshair.candle.fundFlow.main_net_inflow)} · 大单 {formatCompactNumber(crosshair.candle.fundFlow.large_net_inflow)} · 北向 {formatCompactNumber(crosshair.candle.fundFlow.northbound_net_inflow)}
+                </text>
+              )}
             </g>
           )}
           {chart.candles.length === 0 && <text x="3" y="104">暂无历史行情</text>}
@@ -2706,6 +2743,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line volatility" />ATR/OBV</span>
         <span><i className="legend-line profile" />筹码分布</span>
         <span><i className="legend-line profile-level" />筹码价位</span>
+        <span><i className="legend-fund-flow" />资金流</span>
         <span><i className="legend-line fibonacci" />斐波回撤</span>
         <span><i className="legend-limit-price" />涨跌停</span>
         <span><i className="legend-support-resistance" />自动支阻</span>
@@ -3827,6 +3865,7 @@ function buildTradingSignalGeometry(
   levelPrices: number[] = [],
   splitSubCharts = DEFAULT_TRADING_CHART_PREFS.subCharts,
   evidenceEvents: ChartEvidenceEvent[] = [],
+  fundFlowRows: FundFlowSnapshot[] = [],
   priceAxisMode: PriceAxisMode = "price",
 ) {
   const PLOT_LEFT = 48;
@@ -3861,6 +3900,7 @@ function buildTradingSignalGeometry(
       technicalIndicatorEvents: [],
       technicalDivergenceEvents: [],
       volumeSignalEvents: [],
+      fundFlowOverlay: buildFundFlowOverlayGeometry([], [], { top: VOLUME_TOP, bottom: VOLUME_BOTTOM }),
       trendRegimeBands: [],
       fibonacciLevels: [],
       supportResistanceLevels: [],
@@ -4029,6 +4069,25 @@ function buildTradingSignalGeometry(
     VOLUME_BOTTOM - ((Number(value || 0) / maxVolume) * (VOLUME_BOTTOM - VOLUME_TOP));
   const candleWidth = Math.max(3.2, Math.min(9.5, 620 / visible.length));
   const dateIndex = new Map(visible.map((bar, index) => [bar.date, index]));
+  const fundFlowByDate = new Map(fundFlowRows.map((row) => [row.date, row]));
+  const fundFlowForBar = (bar: PeriodMarketBar): FundFlowSnapshot | null => {
+    if (!bar.period_start || !bar.period_end || bar.period_start === bar.period_end) {
+      return fundFlowByDate.get(bar.date) ?? null;
+    }
+    const periodRows = fundFlowRows.filter((row) => row.date >= bar.period_start! && row.date <= bar.period_end!);
+    if (periodRows.length === 0) return fundFlowByDate.get(bar.date) ?? null;
+    const sumKey = (key: "main_net_inflow" | "large_net_inflow" | "northbound_net_inflow") => {
+      const values = periodRows.map((row) => row[key]).filter(isFiniteNumber);
+      return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
+    };
+    return {
+      date: bar.date,
+      symbol: periodRows[periodRows.length - 1]?.symbol || "",
+      main_net_inflow: sumKey("main_net_inflow"),
+      large_net_inflow: sumKey("large_net_inflow"),
+      northbound_net_inflow: sumKey("northbound_net_inflow"),
+    };
+  };
   const xOf = (index: number) => PLOT_LEFT + (index / Math.max(visible.length - 1, 1)) * (PLOT_RIGHT - PLOT_LEFT);
   const yOf = (price?: number | null) =>
     priceAxisYOf(priceAxisScale, price) ?? PRICE_BOTTOM;
@@ -4366,6 +4425,7 @@ function buildTradingSignalGeometry(
       prevClose,
       volume: Number(bar.volume || 0),
       amount: Number(bar.amount || 0),
+      fundFlow: fundFlowForBar(bar),
       ma5,
       ma20,
       ma60,
@@ -4519,6 +4579,11 @@ function buildTradingSignalGeometry(
       labelY: clampNumber(markerY - 7, VOLUME_TOP + 10, VOLUME_BOTTOM - 6),
     };
   });
+  const visibleFundFlowRows = candles.flatMap((candle) => candle.fundFlow ? [{ ...candle.fundFlow, date: candle.date }] : []);
+  const fundFlowOverlay = buildFundFlowOverlayGeometry(candles, visibleFundFlowRows, {
+    top: VOLUME_TOP,
+    bottom: VOLUME_BOTTOM,
+  });
   const trendRegimeBands = buildTrendRegimeBands(candles.map((candle) => ({
     date: candle.date,
     period_label: candle.periodLabel,
@@ -4651,6 +4716,7 @@ function buildTradingSignalGeometry(
     technicalIndicatorEvents,
     technicalDivergenceEvents,
     volumeSignalEvents,
+    fundFlowOverlay,
     trendRegimeBands,
     fibonacciLevels,
     supportResistanceLevels,

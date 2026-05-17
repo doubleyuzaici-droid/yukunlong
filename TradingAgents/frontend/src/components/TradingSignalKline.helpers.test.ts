@@ -8,6 +8,7 @@ import {
   buildIndicatorSectionLayout,
   buildIndicatorPanelReadouts,
   buildIndicatorAxisTicks,
+  buildFundFlowOverlayGeometry,
   buildLimitPriceLines,
   buildKlineHoverMetrics,
   buildVolumeMovingAverageValues,
@@ -80,6 +81,7 @@ const baseChartPrefs = {
   events: true,
   relative: true,
   profile: true,
+  fundFlow: true,
   fibonacci: true,
   supportResistance: true,
   trendLines: true,
@@ -309,6 +311,28 @@ function testBuildsVolumeMovingAverageValues() {
   assertEqual(values[1], null, "moving average keeps early samples empty");
   assertApprox(values[2], 200, 0.001, "third sample averages the first 3 volumes");
   assertApprox(values[5], 500, 0.001, "latest sample averages the latest 3 volumes");
+}
+
+function testBuildsFundFlowOverlayGeometry() {
+  const geometry = buildFundFlowOverlayGeometry(
+    [
+      { date: "2026-05-01", x: 48, width: 9 },
+      { date: "2026-05-02", x: 96, width: 9 },
+    ],
+    [
+      { date: "2026-05-01", main_net_inflow: 100, large_net_inflow: -50, northbound_net_inflow: 0 },
+      { date: "2026-05-02", main_net_inflow: -200, large_net_inflow: 50, northbound_net_inflow: 100 },
+    ],
+    { top: 100, bottom: 160 },
+  );
+
+  assertEqual(geometry.bars.length, 6, "fund-flow overlay emits three series bars per matched candle");
+  assertApprox(geometry.zeroY, 130, 0.001, "fund-flow overlay uses the middle of the volume band as zero");
+  assertEqual(geometry.bars[0]?.tone, "positive", "positive main flow is marked positive");
+  assertApprox(geometry.bars[0]?.height, 14, 0.001, "positive bar height scales by max absolute flow");
+  assertEqual(geometry.bars[3]?.tone, "negative", "negative main flow is marked negative");
+  assertApprox(geometry.bars[3]?.y, 130, 0.001, "negative bars start at the zero baseline");
+  assertApprox(geometry.latest?.main_net_inflow, -200, 0.001, "latest matched fund-flow row is exposed for readouts");
 }
 
 function testResolvesLimitCandleState() {
@@ -1134,6 +1158,7 @@ testBuildsLimitPriceLinesFromFinitePrices();
 testMapsClientPointToSplitChartViewBox();
 testBuildsKlineHoverMetrics();
 testBuildsVolumeMovingAverageValues();
+testBuildsFundFlowOverlayGeometry();
 testResolvesLimitCandleState();
 testAppliesTrendChartPreferencePreset();
 testMatchesChartPreferencePresetFromValues();

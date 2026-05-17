@@ -300,6 +300,7 @@ export type ChartPreferenceName =
   | "events"
   | "relative"
   | "profile"
+  | "fundFlow"
   | "fibonacci"
   | "supportResistance"
   | "trendLines"
@@ -372,6 +373,7 @@ const BASE_CHART_PRESET_VALUES: Record<ChartPreferenceName, boolean> = {
   events: true,
   relative: false,
   profile: true,
+  fundFlow: true,
   fibonacci: false,
   supportResistance: true,
   trendLines: true,
@@ -477,7 +479,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
   {
     key: "volume",
     label: "量价",
-    description: "突出成交量、量价异动、筹码分布、VWAP、VR/MFI/TRIX与OBV。",
+    description: "突出成交量、资金流、量价异动、筹码分布、VWAP、VR/MFI/TRIX与OBV。",
     values: {
       ...BASE_CHART_PRESET_VALUES,
       ema: false,
@@ -775,6 +777,39 @@ export interface KlineHoverMetrics {
   statusLabel: string;
 }
 
+export type FundFlowOverlaySeriesKey = "main_net_inflow" | "large_net_inflow" | "northbound_net_inflow";
+
+export interface FundFlowOverlayRowLike {
+  date: string;
+  main_net_inflow?: number | null;
+  large_net_inflow?: number | null;
+  northbound_net_inflow?: number | null;
+}
+
+export interface FundFlowOverlayCandleLike {
+  date: string;
+  x: number;
+  width?: number | null;
+}
+
+export interface FundFlowOverlayBar {
+  key: string;
+  date: string;
+  type: FundFlowOverlaySeriesKey;
+  value: number;
+  tone: "positive" | "negative";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface FundFlowOverlayGeometry {
+  bars: FundFlowOverlayBar[];
+  zeroY: number;
+  latest: FundFlowOverlayRowLike | null;
+}
+
 export function buildLimitPriceLines(
   bars: LimitPriceBarLike[],
   yOf: (price: number) => number | null | undefined,
@@ -850,6 +885,47 @@ export function buildVolumeMovingAverageValues(
     const window = values.slice(start, index + 1).filter(isFiniteNumber);
     return window.length === period ? averageNumbers(window) : null;
   });
+}
+
+export function buildFundFlowOverlayGeometry(
+  candles: FundFlowOverlayCandleLike[],
+  rows: FundFlowOverlayRowLike[],
+  options: { top: number; bottom: number },
+): FundFlowOverlayGeometry {
+  const flowByDate = new Map(rows.map((row) => [row.date, row]));
+  const matched = candles.flatMap((candle) => {
+    const row = flowByDate.get(candle.date);
+    return row ? [{ candle, row }] : [];
+  });
+  const seriesKeys: FundFlowOverlaySeriesKey[] = ["main_net_inflow", "large_net_inflow", "northbound_net_inflow"];
+  const values = matched.flatMap(({ row }) => seriesKeys.map((key) => row[key]).filter(isFiniteNumber));
+  const maxAbs = Math.max(1, ...values.map((value) => Math.abs(value)));
+  const zeroY = (options.top + options.bottom) / 2;
+  const maxHeight = Math.max(1, (options.bottom - options.top) / 2 - 2);
+  const bars = matched.flatMap(({ candle, row }) => {
+    const width = Math.max(1, Math.min(3.2, Number(candle.width || 6) / 3));
+    return seriesKeys.map((key, offsetIndex): FundFlowOverlayBar => {
+      const value = isFiniteNumber(row[key]) ? Number(row[key]) : 0;
+      const height = Math.max(1, Math.abs(value) / maxAbs * maxHeight);
+      return {
+        key: `${candle.date}-${key}`,
+        date: candle.date,
+        type: key,
+        value,
+        tone: value >= 0 ? "positive" : "negative",
+        x: candle.x + (offsetIndex - 1) * (width + 0.4),
+        y: value >= 0 ? zeroY - height : zeroY,
+        width,
+        height,
+      };
+    });
+  });
+
+  return {
+    bars,
+    zeroY,
+    latest: matched.length ? matched[matched.length - 1].row : null,
+  };
 }
 
 function isTruthyFlag(value: boolean | number | string | null | undefined) {
