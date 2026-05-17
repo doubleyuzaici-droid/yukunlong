@@ -14,6 +14,7 @@ import {
   buildIndicatorSectionLayout,
   buildMomentumIndicators,
   buildPriceGapAnnotations,
+  buildSupportResistanceLevels,
   buildTrendOverlayIndicators,
   buildVisiblePriceExtrema,
   buildVolumeProfileLevelAnnotations,
@@ -185,6 +186,7 @@ interface TradingChartPreferences {
   relative: boolean;
   profile: boolean;
   fibonacci: boolean;
+  supportResistance: boolean;
   sar: boolean;
   bbi: boolean;
   volume: boolean;
@@ -360,6 +362,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   relative: false,
   profile: true,
   fibonacci: false,
+  supportResistance: true,
   sar: true,
   bbi: true,
   volume: true,
@@ -422,6 +425,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     relative: typeof next.relative === "boolean" ? next.relative : DEFAULT_TRADING_CHART_PREFS.relative,
     profile: typeof next.profile === "boolean" ? next.profile : DEFAULT_TRADING_CHART_PREFS.profile,
     fibonacci: typeof next.fibonacci === "boolean" ? next.fibonacci : DEFAULT_TRADING_CHART_PREFS.fibonacci,
+    supportResistance: typeof next.supportResistance === "boolean" ? next.supportResistance : DEFAULT_TRADING_CHART_PREFS.supportResistance,
     sar: typeof next.sar === "boolean" ? next.sar : DEFAULT_TRADING_CHART_PREFS.sar,
     bbi: typeof next.bbi === "boolean" ? next.bbi : DEFAULT_TRADING_CHART_PREFS.bbi,
     volume: typeof next.volume === "boolean" ? next.volume : DEFAULT_TRADING_CHART_PREFS.volume,
@@ -1490,6 +1494,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.relative ? "active" : ""} onClick={() => toggleChartPref("relative")} type="button">相对</button>
         <button className={chartPrefs.profile ? "active" : ""} onClick={() => toggleChartPref("profile")} type="button">筹码</button>
         <button className={chartPrefs.fibonacci ? "active" : ""} onClick={() => toggleChartPref("fibonacci")} type="button">斐波</button>
+        <button className={chartPrefs.supportResistance ? "active" : ""} onClick={() => toggleChartPref("supportResistance")} type="button">支阻</button>
         <button className={chartPrefs.sar ? "active" : ""} onClick={() => toggleChartPref("sar")} type="button">SAR</button>
         <button className={chartPrefs.bbi ? "active" : ""} onClick={() => toggleChartPref("bbi")} type="button">BBI</button>
         <span>指标·副图</span>
@@ -1765,6 +1770,18 @@ export function TradingSignalKlinePanel({
                 {level.label} {formatNumber(level.price, 2)}
               </text>
               <title>斐波回撤 {level.label} {formatNumber(level.price, 2)}</title>
+            </g>
+          ))}
+          {chartPrefs.supportResistance && chart.supportResistanceLevels.map((level) => (
+            <g className={`support-resistance-level ${level.type}`} key={level.key}>
+              <line x1={chart.plotLeft} x2={chart.plotRight} y1={level.y} y2={level.y} />
+              <circle cx={level.type === "support" ? chart.plotLeft + 4 : chart.plotRight - 4} cy={level.y} r="3" />
+              <text x={level.labelX} y={level.labelY}>
+                {level.type === "support" ? "支撑" : "压力"} {formatNumber(level.price, 2)} · {level.touches}触
+              </text>
+              <title>
+                {level.label} {formatNumber(level.price, 2)} · 最近触达 {level.lastLabel} · 距现价 {formatSignedNumber(level.distancePct, 2)}%
+              </title>
             </g>
           ))}
           {chart.priceGaps.map((gap) => (
@@ -2179,6 +2196,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line profile" />筹码分布</span>
         <span><i className="legend-line profile-level" />筹码价位</span>
         <span><i className="legend-line fibonacci" />斐波回撤</span>
+        <span><i className="legend-support-resistance" />自动支阻</span>
         <span><i className="legend-extrema" />窗口高低</span>
         <span><i className="legend-gap" />跳空缺口</span>
         <span><i className="legend-marker" />信号日至入场日</span>
@@ -3286,6 +3304,7 @@ function buildTradingSignalGeometry(
       entryLinks: [],
       priceGaps: [],
       fibonacciLevels: [],
+      supportResistanceLevels: [],
       ma5: "",
       ma20: "",
       ma60: "",
@@ -3452,6 +3471,20 @@ function buildTradingSignalGeometry(
       y,
       labelX: PLOT_RIGHT - 76,
       labelY: clampNumber(y - 5, PRICE_TOP + 22 + index * 2, PRICE_BOTTOM - 8),
+    };
+  });
+  const supportResistanceLevels = buildSupportResistanceLevels(visible, {
+    currentPrice: closeValues[closeValues.length - 1],
+    maxPerSide: 3,
+    minDistancePct: 1.4,
+    swingWindow: 2,
+  }).map((level, index) => {
+    const y = yOf(level.price);
+    return {
+      ...level,
+      y,
+      labelX: level.type === "support" ? PLOT_LEFT + 8 : PLOT_RIGHT - 128,
+      labelY: clampNumber(y - 6, PRICE_TOP + 22 + index * 2, PRICE_BOTTOM - 8),
     };
   });
   const priceGaps = buildPriceGapAnnotations(visible, { minGapPct: 0.5 }).map((gap) => {
@@ -3788,6 +3821,7 @@ function buildTradingSignalGeometry(
     entryLinks,
     priceGaps,
     fibonacciLevels,
+    supportResistanceLevels,
     ma5: maPoints("ma5"),
     ma20: maPoints("ma20"),
     ma60: maPoints("ma60"),

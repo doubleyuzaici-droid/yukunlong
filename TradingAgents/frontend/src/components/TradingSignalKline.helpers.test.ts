@@ -5,6 +5,7 @@ import {
   buildIndicatorPanelReadouts,
   buildMomentumIndicators,
   buildPriceGapAnnotations,
+  buildSupportResistanceLevels,
   buildTrendOverlayIndicators,
   buildVisiblePriceExtrema,
   buildVolumeProfileLevelAnnotations,
@@ -55,6 +56,21 @@ const gapBars = [
   { date: "2026-05-12", open: 11.4, high: 12, low: 11.2, close: 11.8, volume: 320, amount: 3_776 },
   { date: "2026-05-13", open: 11.7, high: 11.9, low: 11, close: 11.2, volume: 280, amount: 3_136 },
   { date: "2026-05-14", open: 10, high: 10.4, low: 9.7, close: 10, volume: 460, amount: 4_600 },
+];
+
+const structureBars = [
+  { date: "2026-05-01", open: 10, high: 10.5, low: 9.8, close: 10.2, volume: 100, amount: 1_020 },
+  { date: "2026-05-02", open: 10.2, high: 11.4, low: 10.1, close: 11, volume: 180, amount: 1_980 },
+  { date: "2026-05-03", open: 11, high: 12.2, low: 10.8, close: 11.8, volume: 220, amount: 2_596 },
+  { date: "2026-05-04", open: 11.8, high: 11.6, low: 10.7, close: 10.9, volume: 210, amount: 2_289 },
+  { date: "2026-05-05", open: 10.9, high: 10.9, low: 9.9, close: 10.2, volume: 190, amount: 1_938 },
+  { date: "2026-05-06", open: 10.2, high: 10.8, low: 9.4, close: 9.8, volume: 260, amount: 2_548 },
+  { date: "2026-05-07", open: 9.8, high: 11.2, low: 9.7, close: 10.9, volume: 300, amount: 3_270 },
+  { date: "2026-05-08", open: 10.9, high: 12.1, low: 10.6, close: 11.7, volume: 320, amount: 3_744 },
+  { date: "2026-05-09", open: 11.7, high: 11.9, low: 10.8, close: 11.1, volume: 250, amount: 2_775 },
+  { date: "2026-05-10", open: 11.1, high: 11.3, low: 9.6, close: 10, volume: 280, amount: 2_800 },
+  { date: "2026-05-11", open: 10, high: 10.7, low: 9.7, close: 10.4, volume: 240, amount: 2_496 },
+  { date: "2026-05-12", open: 10.4, high: 11.8, low: 10.2, close: 11.5, volume: 300, amount: 3_450 },
 ];
 
 function testBuildsVisibleVolumeDistribution() {
@@ -341,6 +357,35 @@ function testFibonacciRetracementNeedsExtrema() {
   assertEqual(levels.length, 0, "missing extrema has no fibonacci levels");
 }
 
+function testBuildsSupportResistanceLevelsFromSwingPivots() {
+  const levels = buildSupportResistanceLevels(structureBars, {
+    currentPrice: 11.5,
+    maxPerSide: 2,
+    minDistancePct: 2,
+    swingWindow: 1,
+  });
+  const support = levels.find((level) => level.type === "support");
+  const resistance = levels.find((level) => level.type === "resistance");
+
+  assertEqual(levels.length, 2, "swing pivots produce nearest support and resistance");
+  assertOk(support, "support level exists");
+  assertOk(resistance, "resistance level exists");
+  assertApprox(support?.price, 9.5, 0.001, "nearby swing lows are clustered into one support level");
+  assertEqual(support?.touches, 2, "support reports repeated touches");
+  assertEqual(support?.lastLabel, "2026-05-10", "support keeps latest touch label");
+  assertApprox(support?.distancePct, -17.3913, 0.001, "support distance is measured from current price");
+  assertApprox(resistance?.price, 12.15, 0.001, "nearby swing highs are clustered into one resistance level");
+  assertEqual(resistance?.touches, 2, "resistance reports repeated touches");
+  assertEqual(resistance?.lastLabel, "2026-05-08", "resistance keeps latest touch label");
+  assertApprox(resistance?.distancePct, 5.6522, 0.001, "resistance distance is measured from current price");
+}
+
+function testSupportResistanceNeedsUsableBars() {
+  const levels = buildSupportResistanceLevels([], { currentPrice: 10 });
+
+  assertEqual(levels.length, 0, "empty input has no automatic support or resistance");
+}
+
 function testBuildsPriceGapAnnotations() {
   const gaps = buildPriceGapAnnotations(gapBars, { minGapPct: 1 });
 
@@ -383,5 +428,7 @@ testBuildsVisiblePriceExtrema();
 testVisiblePriceExtremaNeedUsableBars();
 testBuildsFibonacciRetracementLevels();
 testFibonacciRetracementNeedsExtrema();
+testBuildsSupportResistanceLevelsFromSwingPivots();
+testSupportResistanceNeedsUsableBars();
 testBuildsPriceGapAnnotations();
 testPriceGapAnnotationsRespectThreshold();

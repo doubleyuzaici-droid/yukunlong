@@ -51,6 +51,23 @@ export interface FibonacciRetracementLevel {
   low: number;
 }
 
+export type SupportResistanceLevelType = "support" | "resistance";
+
+export interface SupportResistanceLevel {
+  key: string;
+  type: SupportResistanceLevelType;
+  label: string;
+  price: number;
+  touches: number;
+  strength: number;
+  startIndex: number;
+  lastIndex: number;
+  startLabel: string;
+  lastLabel: string;
+  distancePct: number | null;
+  volume: number;
+}
+
 export interface VolumeProfileBin {
   index: number;
   low: number;
@@ -586,6 +603,129 @@ export function buildFibonacciRetracementLevels(
     }));
 }
 
+export function buildSupportResistanceLevels(
+  bars: PriceExtremaBarLike[],
+  options: {
+    currentPrice?: number | null;
+    maxPerSide?: number;
+    minDistancePct?: number;
+    swingWindow?: number;
+  } = {},
+): SupportResistanceLevel[] {
+  const normalized = bars
+    .map(normalizeSupportResistanceBar)
+    .filter((bar): bar is NonNullable<ReturnType<typeof normalizeSupportResistanceBar>> => Boolean(bar));
+  if (normalized.length === 0) return [];
+
+  const swingWindow = clampInteger(options.swingWindow ?? 2, 1, 8);
+  if (normalized.length < swingWindow * 2 + 1) return [];
+
+  const minDistancePct = Math.max(0.1, Number(options.minDistancePct ?? 1.2));
+  const maxPerSide = clampInteger(options.maxPerSide ?? 3, 1, 6);
+  const currentPrice = isFiniteNumber(options.currentPrice)
+    ? Number(options.currentPrice)
+    : normalized[normalized.length - 1]?.close ?? null;
+  const pivots: Array<{
+    pivotType: "high" | "low";
+    price: number;
+    index: number;
+    label: string;
+    volume: number;
+  }> = [];
+
+  normalized.forEach((bar, index) => {
+    if (index < swingWindow || index > normalized.length - swingWindow - 1) return;
+    const left = normalized.slice(index - swingWindow, index);
+    const right = normalized.slice(index + 1, index + swingWindow + 1);
+    const neighbours = [...left, ...right];
+    if (neighbours.length !== swingWindow * 2) return;
+    const isSwingHigh = neighbours.every((item) => bar.high > item.high);
+    const isSwingLow = neighbours.every((item) => bar.low < item.low);
+    if (isSwingHigh) {
+      pivots.push({ pivotType: "high", price: bar.high, index: bar.index, label: bar.label, volume: bar.volume });
+    }
+    if (isSwingLow) {
+      pivots.push({ pivotType: "low", price: bar.low, index: bar.index, label: bar.label, volume: bar.volume });
+    }
+  });
+
+  if (pivots.length === 0) return [];
+
+  const clusters = pivots
+    .sort((left, right) => left.price - right.price)
+    .reduce<Array<{
+      price: number;
+      priceSum: number;
+      touches: number;
+      startIndex: number;
+      lastIndex: number;
+      startLabel: string;
+      lastLabel: string;
+      volume: number;
+    }>>((acc, pivot) => {
+      const existing = acc.find((cluster) =>
+        Math.abs(pivot.price - cluster.price) / Math.max(currentPrice ?? cluster.price, 0.000001) * 100 <= minDistancePct,
+      );
+      if (!existing) {
+        acc.push({
+          price: pivot.price,
+          priceSum: pivot.price,
+          touches: 1,
+          startIndex: pivot.index,
+          lastIndex: pivot.index,
+          startLabel: pivot.label,
+          lastLabel: pivot.label,
+          volume: pivot.volume,
+        });
+        return acc;
+      }
+
+      existing.priceSum += pivot.price;
+      existing.touches += 1;
+      existing.price = existing.priceSum / existing.touches;
+      existing.volume += pivot.volume;
+      if (pivot.index < existing.startIndex) {
+        existing.startIndex = pivot.index;
+        existing.startLabel = pivot.label;
+      }
+      if (pivot.index > existing.lastIndex) {
+        existing.lastIndex = pivot.index;
+        existing.lastLabel = pivot.label;
+      }
+      return acc;
+    }, []);
+
+  const levels = clusters.map((cluster): SupportResistanceLevel => {
+    const distancePct = currentPrice && currentPrice > 0 ? ((cluster.price - currentPrice) / currentPrice) * 100 : null;
+    const type: SupportResistanceLevelType = currentPrice == null || cluster.price <= currentPrice ? "support" : "resistance";
+    return {
+      key: `${type}-${cluster.price.toFixed(4)}-${cluster.startIndex}-${cluster.lastIndex}`,
+      type,
+      label: type === "support" ? "自动支撑" : "自动压力",
+      price: cluster.price,
+      touches: cluster.touches,
+      strength: cluster.touches * 100 + cluster.volume / 1000 + cluster.lastIndex / normalized.length,
+      startIndex: cluster.startIndex,
+      lastIndex: cluster.lastIndex,
+      startLabel: cluster.startLabel,
+      lastLabel: cluster.lastLabel,
+      distancePct,
+      volume: cluster.volume,
+    };
+  });
+
+  const supports = levels
+    .filter((level) => level.type === "support")
+    .sort((left, right) => right.price - left.price || right.strength - left.strength)
+    .slice(0, maxPerSide);
+  const resistances = levels
+    .filter((level) => level.type === "resistance")
+    .sort((left, right) => left.price - right.price || right.strength - left.strength)
+    .slice(0, maxPerSide);
+
+  return [...supports, ...resistances];
+}
+
 export function buildVolumeProfileLevelAnnotations(profile: VolumeProfileModel): VolumeProfileLevelAnnotation[] {
   const candidates: Array<{ key: VolumeProfileLevelKey; label: string; bin: VolumeProfileBin | null }> = [
     { key: "poc", label: "峰值筹码", bin: profile.pointOfControl },
@@ -791,6 +931,25 @@ function normalizePriceGapBar(bar: PriceExtremaBarLike, index: number) {
     high: Math.max(high, low, open, close),
     low: Math.min(high, low, open, close),
     close,
+  };
+}
+
+function normalizeSupportResistanceBar(bar: PriceExtremaBarLike, index: number) {
+  const close = Number(bar.close ?? bar.open ?? bar.high ?? bar.low);
+  const open = Number(bar.open ?? close);
+  const high = Number(bar.high ?? Math.max(open, close));
+  const low = Number(bar.low ?? Math.min(open, close));
+  const volume = Number(bar.volume ?? 0);
+  if (![open, high, low, close, volume].every(isFiniteNumber)) return null;
+  const date = String(bar.date || index);
+  return {
+    index,
+    date,
+    label: String(bar.period_label || bar.date || index),
+    high: Math.max(high, low, open, close),
+    low: Math.min(high, low, open, close),
+    close,
+    volume: Math.max(volume, 0),
   };
 }
 
