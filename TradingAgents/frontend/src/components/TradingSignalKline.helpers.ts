@@ -423,6 +423,7 @@ export type ChartParameterName =
   | "macdSignal"
   | "rsiPeriod"
   | "psyPeriod"
+  | "psyMaPeriod"
   | "kdjPeriod"
   | "crPeriod"
   | "emvPeriod"
@@ -693,6 +694,7 @@ const STANDARD_CHART_PARAMETER_VALUES: Record<ChartParameterName, number> = {
   macdSignal: 9,
   rsiPeriod: 14,
   psyPeriod: 12,
+  psyMaPeriod: 6,
   kdjPeriod: 9,
   crPeriod: 26,
   emvPeriod: 14,
@@ -734,6 +736,7 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       macdSignal: 5,
       rsiPeriod: 7,
       psyPeriod: 6,
+      psyMaPeriod: 3,
       crPeriod: 13,
       emvPeriod: 7,
       momentumPeriod: 10,
@@ -761,6 +764,7 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       enePeriod: 30,
       enePercent: 8,
       psyPeriod: 24,
+      psyMaPeriod: 6,
       kdjPeriod: 14,
       momentumPeriod: 20,
       biasPeriod: 10,
@@ -782,6 +786,7 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       macdSlow: 39,
       rsiPeriod: 21,
       psyPeriod: 24,
+      psyMaPeriod: 12,
       kdjPeriod: 14,
       crPeriod: 42,
       emvPeriod: 21,
@@ -1653,12 +1658,12 @@ export function buildEnvelopeIndicators(
 
 export function buildPsychologicalLineIndicators(
   bars: VolumeProfileBarLike[],
-  options: { period?: number } = {},
+  options: { period?: number; maPeriod?: number } = {},
 ): PsychologicalLineIndicatorSnapshot[] {
   const period = clampInteger(options.period ?? 12, 2, 120);
+  const maPeriod = clampInteger(options.maPeriod ?? 6, 2, 80);
   const closeValues = bars.map((bar) => normalizeOptionalNumber(bar.close));
-
-  return closeValues.map((_, index) => {
+  const psyValues = closeValues.map((_, index) => {
     if (index < period) return { psy: null };
     let risingCount = 0;
     for (let cursor = index - period + 1; cursor <= index; cursor += 1) {
@@ -1669,6 +1674,12 @@ export function buildPsychologicalLineIndicators(
     }
     return { psy: (risingCount / period) * 100 };
   });
+  const psyLine = psyValues.map((value) => value.psy);
+
+  return psyValues.map((value, index) => ({
+    psy: value.psy,
+    psyMa: movingAverageAt(psyLine, maPeriod, index),
+  }));
 }
 
 function isTruthyFlag(value: boolean | number | string | null | undefined) {
@@ -1726,6 +1737,7 @@ export interface EnvelopeIndicatorSnapshot {
 
 export interface PsychologicalLineIndicatorSnapshot {
   psy: number | null;
+  psyMa: number | null;
 }
 
 export interface VolumeMomentumIndicatorSnapshot {
@@ -1764,6 +1776,7 @@ export interface IndicatorPanelReadoutSnapshot {
   macd?: number | null;
   rsi14?: number | null;
   psy?: number | null;
+  psyMa?: number | null;
   kdjK?: number | null;
   kdjD?: number | null;
   kdjJ?: number | null;
@@ -2272,6 +2285,7 @@ export function buildIndicatorPanelReadouts(
   const oscillatorItems = [
     item("RSI", snapshot.rsi14, 1),
     item("PSY", snapshot.psy, 1),
+    item("PSYMA", snapshot.psyMa, 1),
     item("K", snapshot.kdjK, 1),
     item("D", snapshot.kdjD, 1),
     item("J", snapshot.kdjJ, 1),

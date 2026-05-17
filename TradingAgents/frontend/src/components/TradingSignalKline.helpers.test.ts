@@ -1117,6 +1117,7 @@ function testBuildsSplitIndicatorPanelReadouts() {
     macd: 0.28,
     rsi14: 62.4,
     psy: 66.7,
+    psyMa: 60.2,
     kdjJ: 78.2,
     cr: 145,
     br: 136,
@@ -1138,7 +1139,7 @@ function testBuildsSplitIndicatorPanelReadouts() {
   assertEqual(readouts.length, 7, "split readouts cover every visible chart section");
   assertEqual(readouts.find((group) => group.key === "price")?.items.map((item) => item.label).join(","), "C,MA20,BOLL", "price readout keeps core price overlays");
   assertEqual(readouts.find((group) => group.key === "volume")?.items.map((item) => item.label).join(","), "VOL,量比,VMA5,VMA10,VMA20", "volume readout keeps Futu-style moving-average volume values");
-  assertEqual(readouts.find((group) => group.key === "oscillator")?.items.map((item) => item.label).join(","), "RSI,PSY,J", "oscillator readout includes PSY with RSI and KDJ values");
+  assertEqual(readouts.find((group) => group.key === "oscillator")?.items.map((item) => item.label).join(","), "RSI,PSY,PSYMA,J", "oscillator readout includes PSY/PSYMA with RSI and KDJ values");
   assertEqual(readouts.find((group) => group.key === "advanced")?.items.map((item) => item.label).join(","), "CR,BR,EMV,MFI,VR", "advanced readout keeps energy and money-flow values");
   assertEqual(readouts.find((group) => group.key === "momentum")?.items.map((item) => item.label).join(","), "+DI,-DI,ADX,CCI,WR,BIAS,DMA,TRIX", "momentum readout keeps directional and momentum values");
   assertEqual(readouts.find((group) => group.key === "volatility")?.items.map((item) => item.label).join(","), "ATR,OBV", "volatility readout keeps range and cumulative volume values");
@@ -1148,6 +1149,7 @@ function testCompactIndicatorPanelReadoutsFoldExtraIndicators() {
   const readouts = buildIndicatorPanelReadouts({
     rsi14: 54.2,
     psy: 58.3,
+    psyMa: 51.6,
     kdjJ: 61.8,
     cr: 118,
     pdi: 23.4,
@@ -1158,7 +1160,7 @@ function testCompactIndicatorPanelReadoutsFoldExtraIndicators() {
 
   assertEqual(readouts.some((group) => group.key === "advanced"), false, "compact readouts do not point to hidden advanced panel");
   assertEqual(readouts.some((group) => group.key === "momentum"), false, "compact readouts do not point to hidden momentum panel");
-  assertEqual(oscillator?.items.map((item) => item.label).join(","), "RSI,PSY,J,CR,+DI,BIAS,TRIX", "compact oscillator folds extra indicator readings");
+  assertEqual(oscillator?.items.map((item) => item.label).join(","), "RSI,PSY,PSYMA,J,CR,+DI,BIAS,TRIX", "compact oscillator folds extra indicator readings");
 }
 
 function testSelectsCursorIndicatorReadoutSnapshot() {
@@ -1217,6 +1219,7 @@ function testEnvelopeIndicatorsNeedEnoughSamples() {
 
 function testBuildsPsychologicalLineIndicators() {
   const indicators = buildPsychologicalLineIndicators(trendOverlayBars, {
+    maPeriod: 3,
     period: 3,
   });
   const latest = indicators[indicators.length - 1];
@@ -1225,15 +1228,19 @@ function testBuildsPsychologicalLineIndicators() {
   assertOk(latest, "latest PSY indicator exists");
   assertApprox(indicators[3]?.psy, 66.6667, 0.001, "PSY counts rising closes over the configured window");
   assertApprox(latest?.psy, 33.3333, 0.001, "PSY updates with the latest rising-close ratio");
+  assertApprox(indicators[5]?.psyMa, 55.5556, 0.001, "PSYMA averages configured PSY samples");
+  assertApprox(latest?.psyMa, 44.4444, 0.001, "PSYMA follows the latest psychological line average");
 }
 
 function testPsychologicalLineIndicatorsNeedEnoughSamples() {
-  const indicators = buildPsychologicalLineIndicators(trendOverlayBars.slice(0, 3), {
+  const indicators = buildPsychologicalLineIndicators(trendOverlayBars.slice(0, 5), {
+    maPeriod: 3,
     period: 3,
   });
   const latest = indicators[indicators.length - 1];
 
-  assertEqual(latest?.psy, null, "PSY is missing before enough close-to-close comparisons");
+  assertOk(typeof latest?.psy === "number", "PSY is available once enough close-to-close comparisons exist");
+  assertEqual(latest?.psyMa, null, "PSYMA is missing before enough PSY samples exist");
 }
 
 function testTrendOverlayIndicatorsNeedEnoughSamples() {

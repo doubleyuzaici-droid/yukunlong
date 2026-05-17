@@ -5471,6 +5471,11 @@ label {
   stroke-dasharray: 5 4;
 }
 
+.indicator-line.psy-ma {
+  stroke: rgba(238, 242, 247, 0.78);
+  stroke-dasharray: 2 5;
+}
+
 .indicator-line.kdj-k {
   stroke: #42d3c8;
 }
