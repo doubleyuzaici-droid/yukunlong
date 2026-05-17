@@ -5170,7 +5170,8 @@ label {
 .ema-line,
 .vwap-line,
 .sar-line,
-.bbi-line {
+.bbi-line,
+.ichimoku-line {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -5202,6 +5203,51 @@ label {
 .bbi-line {
   stroke: #c792ea;
   stroke-width: 1.22;
+}
+
+.ichimoku-cloud {
+  opacity: 0.2;
+  pointer-events: none;
+  stroke-width: 0;
+}
+
+.ichimoku-cloud.good {
+  fill: #42d3c8;
+}
+
+.ichimoku-cloud.risk {
+  fill: #ff8c84;
+}
+
+.ichimoku-cloud.neutral {
+  fill: rgba(238, 242, 247, 0.36);
+}
+
+.ichimoku-line {
+  stroke-width: 1;
+}
+
+.ichimoku-line.conversion {
+  stroke: #f4d37e;
+}
+
+.ichimoku-line.base {
+  stroke: #8fb3ff;
+}
+
+.ichimoku-line.span-a {
+  stroke: rgba(66, 211, 200, 0.74);
+  stroke-dasharray: 5 4;
+}
+
+.ichimoku-line.span-b {
+  stroke: rgba(255, 140, 132, 0.74);
+  stroke-dasharray: 5 4;
+}
+
+.ichimoku-line.lagging {
+  stroke: rgba(238, 242, 247, 0.7);
+  stroke-dasharray: 2 5;
 }
 
 .prev-close-level line {
@@ -5757,6 +5803,17 @@ label {
 
 .legend-line.trend {
   background: linear-gradient(90deg, #ff8c84 0 48%, #c792ea 52% 100%);
+}
+
+.legend-ichimoku {
+  display: inline-block;
+  width: 18px;
+  height: 9px !important;
+  border-radius: 2px !important;
+  background:
+    linear-gradient(90deg, rgba(66, 211, 200, 0.54) 0 48%, rgba(255, 140, 132, 0.48) 52% 100%),
+    repeating-linear-gradient(90deg, #f4d37e 0 3px, transparent 3px 6px, #8fb3ff 6px 9px, transparent 9px 12px);
+  box-shadow: 0 0 0 1px rgba(238, 242, 247, 0.16);
 }
 
 .legend-line.macd {

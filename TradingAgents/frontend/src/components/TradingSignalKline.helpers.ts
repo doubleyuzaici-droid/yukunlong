@@ -301,6 +301,7 @@ export type ChartPreferenceName =
   | "relative"
   | "profile"
   | "fundFlow"
+  | "ichimoku"
   | "fibonacci"
   | "supportResistance"
   | "trendLines"
@@ -374,6 +375,7 @@ const BASE_CHART_PRESET_VALUES: Record<ChartPreferenceName, boolean> = {
   relative: false,
   profile: true,
   fundFlow: true,
+  ichimoku: false,
   fibonacci: false,
   supportResistance: true,
   trendLines: true,
@@ -435,6 +437,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
     values: {
       ...BASE_CHART_PRESET_VALUES,
       ema: true,
+      ichimoku: true,
       vwap: false,
       relative: false,
       profile: false,
@@ -537,6 +540,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
     values: {
       ...BASE_CHART_PRESET_VALUES,
       ema: true,
+      ichimoku: true,
       vwap: true,
       relative: true,
       fibonacci: true,
@@ -856,6 +860,20 @@ export interface TrendRibbonAreaSegment {
   endIndex: number;
 }
 
+export interface IchimokuBarLike {
+  high?: number | null;
+  low?: number | null;
+  close?: number | null;
+}
+
+export interface IchimokuIndicatorPoint {
+  conversion: number | null;
+  base: number | null;
+  spanA: number | null;
+  spanB: number | null;
+  lagging: number | null;
+}
+
 export function buildLimitPriceLines(
   bars: LimitPriceBarLike[],
   yOf: (price: number) => number | null | undefined,
@@ -1064,6 +1082,44 @@ export function buildTrendRibbonAreaSegments(points: TrendRibbonAreaPoint[]): Tr
       startIndex: segment.startIndex,
       endIndex,
     }];
+  });
+}
+
+export function buildIchimokuIndicators(
+  bars: IchimokuBarLike[],
+  options: {
+    conversionPeriod?: number;
+    basePeriod?: number;
+    spanBPeriod?: number;
+    displacement?: number;
+  } = {},
+): IchimokuIndicatorPoint[] {
+  const conversionPeriod = Math.max(1, Math.floor(options.conversionPeriod ?? 9));
+  const basePeriod = Math.max(1, Math.floor(options.basePeriod ?? 26));
+  const spanBPeriod = Math.max(1, Math.floor(options.spanBPeriod ?? 52));
+  const displacement = Math.max(0, Math.floor(options.displacement ?? 26));
+  const midpoint = (period: number, index: number) => {
+    const start = index - period + 1;
+    if (start < 0) return null;
+    const window = bars.slice(start, index + 1);
+    const highs = window.map((bar) => bar.high).filter(isFiniteNumber);
+    const lows = window.map((bar) => bar.low).filter(isFiniteNumber);
+    if (highs.length !== period || lows.length !== period) return null;
+    return (Math.max(...highs) + Math.min(...lows)) / 2;
+  };
+
+  return bars.map((bar, index) => {
+    const conversion = midpoint(conversionPeriod, index);
+    const base = midpoint(basePeriod, index);
+    const spanB = midpoint(spanBPeriod, index);
+    const laggingSource = bars[index + displacement]?.close;
+    return {
+      conversion,
+      base,
+      spanA: isFiniteNumber(conversion) && isFiniteNumber(base) ? (conversion + base) / 2 : null,
+      spanB,
+      lagging: isFiniteNumber(laggingSource) ? laggingSource : null,
+    };
   });
 }
 

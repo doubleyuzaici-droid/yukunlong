@@ -23,6 +23,7 @@ import {
   buildIndicatorAxisTicks,
   buildIndicatorSectionLayout,
   buildIndicatorThresholdGuides,
+  buildIchimokuIndicators,
   buildKlineHoverMetrics,
   buildLimitPriceLines,
   buildManualDrawingGeometry,
@@ -233,6 +234,7 @@ interface TradingChartPreferences {
   relative: boolean;
   profile: boolean;
   fundFlow: boolean;
+  ichimoku: boolean;
   fibonacci: boolean;
   supportResistance: boolean;
   trendLines: boolean;
@@ -431,6 +433,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   relative: false,
   profile: true,
   fundFlow: true,
+  ichimoku: false,
   fibonacci: false,
   supportResistance: true,
   trendLines: true,
@@ -502,6 +505,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     relative: typeof next.relative === "boolean" ? next.relative : DEFAULT_TRADING_CHART_PREFS.relative,
     profile: typeof next.profile === "boolean" ? next.profile : DEFAULT_TRADING_CHART_PREFS.profile,
     fundFlow: typeof next.fundFlow === "boolean" ? next.fundFlow : DEFAULT_TRADING_CHART_PREFS.fundFlow,
+    ichimoku: typeof next.ichimoku === "boolean" ? next.ichimoku : DEFAULT_TRADING_CHART_PREFS.ichimoku,
     fibonacci: typeof next.fibonacci === "boolean" ? next.fibonacci : DEFAULT_TRADING_CHART_PREFS.fibonacci,
     supportResistance: typeof next.supportResistance === "boolean" ? next.supportResistance : DEFAULT_TRADING_CHART_PREFS.supportResistance,
     trendLines: typeof next.trendLines === "boolean" ? next.trendLines : DEFAULT_TRADING_CHART_PREFS.trendLines,
@@ -1792,6 +1796,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.divergences ? "active" : ""} onClick={() => toggleChartPref("divergences")} type="button">背离</button>
         <button className={chartPrefs.sar ? "active" : ""} onClick={() => toggleChartPref("sar")} type="button">SAR</button>
         <button className={chartPrefs.bbi ? "active" : ""} onClick={() => toggleChartPref("bbi")} type="button">BBI</button>
+        <button className={chartPrefs.ichimoku ? "active" : ""} onClick={() => toggleChartPref("ichimoku")} type="button">一目</button>
         <span>指标·副图</span>
         <button className={chartPrefs.volume ? "active" : ""} onClick={() => toggleChartPref("volume")} type="button">VOL</button>
         <button className={chartPrefs.volumeSignals ? "active" : ""} onClick={() => toggleChartPref("volumeSignals")} type="button">量信</button>
@@ -2217,6 +2222,9 @@ export function TradingSignalKlinePanel({
           {chartPrefs.ma && chart.maTrendRibbons.map((ribbon) => (
             <path className={`ma-trend-ribbon ${ribbon.tone}`} d={ribbon.path} key={ribbon.key} />
           ))}
+          {chartPrefs.ichimoku && chart.ichimokuCloudSegments.map((segment) => (
+            <path className={`ichimoku-cloud ${segment.tone}`} d={segment.path} key={segment.key} />
+          ))}
           {chartPrefs.macd && chart.macdBars.map((bar) => (
             <rect
               className={`macd-bar ${bar.value >= 0 ? "positive" : "negative"}`}
@@ -2275,6 +2283,11 @@ export function TradingSignalKlinePanel({
           {chartPrefs.ema && chart.emaSlowLine && <polyline className="ema-line slow" points={chart.emaSlowLine} />}
           {chartPrefs.sar && chart.sarLine && <polyline className="sar-line" points={chart.sarLine} />}
           {chartPrefs.bbi && chart.bbiLine && <polyline className="bbi-line" points={chart.bbiLine} />}
+          {chartPrefs.ichimoku && chart.ichimokuConversionLine && <polyline className="ichimoku-line conversion" points={chart.ichimokuConversionLine} />}
+          {chartPrefs.ichimoku && chart.ichimokuBaseLine && <polyline className="ichimoku-line base" points={chart.ichimokuBaseLine} />}
+          {chartPrefs.ichimoku && chart.ichimokuSpanALine && <polyline className="ichimoku-line span-a" points={chart.ichimokuSpanALine} />}
+          {chartPrefs.ichimoku && chart.ichimokuSpanBLine && <polyline className="ichimoku-line span-b" points={chart.ichimokuSpanBLine} />}
+          {chartPrefs.ichimoku && chart.ichimokuLaggingLine && <polyline className="ichimoku-line lagging" points={chart.ichimokuLaggingLine} />}
           {chartPrefs.ma && chart.ma5 && <polyline className="ma-line ma5" points={chart.ma5} />}
           {chartPrefs.ma && chart.ma20 && <polyline className="ma-line ma20" points={chart.ma20} />}
           {chartPrefs.ma && chart.ma60 && <polyline className="ma-line ma60" points={chart.ma60} />}
@@ -2755,6 +2768,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line vwap" />VWAP/EMA</span>
         <span><i className="legend-trend-regime" />趋势背景</span>
         <span><i className="legend-line trend" />SAR/BBI</span>
+        <span><i className="legend-ichimoku" />一目均衡</span>
         <span><i className="legend-line macd" />MACD/RSI</span>
         <span><i className="legend-line advanced" />CR/ARBR/EMV</span>
         <span><i className="legend-line momentum" />DMI/CCI/WR</span>
@@ -3924,6 +3938,12 @@ function buildTradingSignalGeometry(
       indicatorThresholdGuides: [],
       bollBandArea: "",
       maTrendRibbons: [],
+      ichimokuCloudSegments: [],
+      ichimokuConversionLine: "",
+      ichimokuBaseLine: "",
+      ichimokuSpanALine: "",
+      ichimokuSpanBLine: "",
+      ichimokuLaggingLine: "",
       trendRegimeBands: [],
       fibonacciLevels: [],
       supportResistanceLevels: [],
@@ -4029,6 +4049,7 @@ function buildTradingSignalGeometry(
     dmaSlow: params.dmaSlow,
     dmaSignal: params.dmaSignal,
   });
+  const ichimokuValues = buildIchimokuIndicators(visible);
   const volumeMomentumValues = buildVolumeMomentumIndicators(visible, {
     period: params.volumeMomentumPeriod,
     rocPeriod: params.rocPeriod,
@@ -4040,6 +4061,11 @@ function buildTradingSignalGeometry(
   });
   const sarValues = trendOverlayValues.map((value) => value.sar);
   const bbiValues = trendOverlayValues.map((value) => value.bbi);
+  const ichimokuConversionValues = ichimokuValues.map((value) => value.conversion);
+  const ichimokuBaseValues = ichimokuValues.map((value) => value.base);
+  const ichimokuSpanAValues = ichimokuValues.map((value) => value.spanA);
+  const ichimokuSpanBValues = ichimokuValues.map((value) => value.spanB);
+  const ichimokuLaggingValues = ichimokuValues.map((value) => value.lagging);
   const biasValues = trendOverlayValues.map((value) => value.bias);
   const dmaValues = trendOverlayValues.map((value) => value.dma);
   const amaValues = trendOverlayValues.map((value) => value.ama);
@@ -4074,6 +4100,11 @@ function buildTradingSignalGeometry(
     ...vwapValues.filter(isFiniteNumber),
     ...sarValues.filter(isFiniteNumber),
     ...bbiValues.filter(isFiniteNumber),
+    ...ichimokuConversionValues.filter(isFiniteNumber),
+    ...ichimokuBaseValues.filter(isFiniteNumber),
+    ...ichimokuSpanAValues.filter(isFiniteNumber),
+    ...ichimokuSpanBValues.filter(isFiniteNumber),
+    ...ichimokuLaggingValues.filter(isFiniteNumber),
     ...levelDomainValues,
     ...limitDomainValues,
     ...trendLineDomainValues,
@@ -4554,6 +4585,11 @@ function buildTradingSignalGeometry(
         bollLower: bollValues[index]?.lower ?? null,
         sar: trendOverlay?.sar ?? null,
         bbi: trendOverlay?.bbi ?? null,
+        ichimokuConversion: ichimokuValues[index]?.conversion ?? null,
+        ichimokuBase: ichimokuValues[index]?.base ?? null,
+        ichimokuSpanA: ichimokuValues[index]?.spanA ?? null,
+        ichimokuSpanB: ichimokuValues[index]?.spanB ?? null,
+        ichimokuLagging: ichimokuValues[index]?.lagging ?? null,
         bias: trendOverlay?.bias ?? null,
         dma: trendOverlay?.dma ?? null,
         ama: trendOverlay?.ama ?? null,
@@ -4726,6 +4762,13 @@ function buildTradingSignalGeometry(
     fastValue: candle.ma20,
     slowValue: candle.ma60,
   })));
+  const ichimokuCloudSegments = buildTrendRibbonAreaSegments(candles.map((candle, index) => ({
+    x: candle.x,
+    fastY: isFiniteNumber(ichimokuSpanAValues[index]) ? yOf(ichimokuSpanAValues[index]) : null,
+    slowY: isFiniteNumber(ichimokuSpanBValues[index]) ? yOf(ichimokuSpanBValues[index]) : null,
+    fastValue: ichimokuSpanAValues[index],
+    slowValue: ichimokuSpanBValues[index],
+  })));
   const macdBars = macdValues.map((value, index) => {
     const y = macdY(value);
     return {
@@ -4837,6 +4880,12 @@ function buildTradingSignalGeometry(
     bbiLine: indicatorPoints(bbiValues, yOf),
     bollBandArea,
     maTrendRibbons,
+    ichimokuCloudSegments,
+    ichimokuConversionLine: indicatorPoints(ichimokuConversionValues, yOf),
+    ichimokuBaseLine: indicatorPoints(ichimokuBaseValues, yOf),
+    ichimokuSpanALine: indicatorPoints(ichimokuSpanAValues, yOf),
+    ichimokuSpanBLine: indicatorPoints(ichimokuSpanBValues, yOf),
+    ichimokuLaggingLine: indicatorPoints(ichimokuLaggingValues, yOf),
     bollUpper: bollLine("upper"),
     bollMid: bollLine("mid"),
     bollLower: bollLine("lower"),

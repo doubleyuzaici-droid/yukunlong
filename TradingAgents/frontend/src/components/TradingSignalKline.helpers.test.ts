@@ -11,6 +11,7 @@ import {
   buildIndicatorThresholdGuides,
   buildIndicatorBandAreaPath,
   buildTrendRibbonAreaSegments,
+  buildIchimokuIndicators,
   buildFundFlowOverlayGeometry,
   buildLimitPriceLines,
   buildKlineHoverMetrics,
@@ -85,6 +86,7 @@ const baseChartPrefs = {
   relative: true,
   profile: true,
   fundFlow: true,
+  ichimoku: true,
   fibonacci: true,
   supportResistance: true,
   trendLines: true,
@@ -833,6 +835,23 @@ function testBuildsTrendRibbonAreaSegments() {
   assertOk(segments[1]?.path.includes("M 30.00,38.00"), "bearish segment uses the visual upper boundary first");
 }
 
+function testBuildsIchimokuIndicators() {
+  const sourceBars = Array.from({ length: 60 }, (_, index) => ({
+    high: 11 + index,
+    low: 9 + index,
+    close: 10 + index,
+  }));
+  const indicators = buildIchimokuIndicators(sourceBars);
+
+  assertEqual(indicators.length, sourceBars.length, "Ichimoku values preserve source bar count");
+  assertApprox(indicators[8]?.conversion, 14, 0.001, "conversion line uses the 9-period high-low midpoint");
+  assertEqual(indicators[24]?.base, null, "base line waits for 26 bars");
+  assertApprox(indicators[25]?.base, 22.5, 0.001, "base line uses the 26-period high-low midpoint");
+  assertApprox(indicators[51]?.spanB, 35.5, 0.001, "span B uses the 52-period high-low midpoint");
+  assertApprox(indicators[51]?.spanA, 52.75, 0.001, "span A averages conversion and base lines");
+  assertApprox(indicators[20]?.lagging, 56, 0.001, "lagging line exposes the close displaced backward by 26 bars");
+}
+
 function testBuildsSplitIndicatorPanelReadouts() {
   const readouts = buildIndicatorPanelReadouts({
     close: 13.5,
@@ -1268,6 +1287,7 @@ testBuildsCompactIndicatorAxisTickLabels();
 testBuildsIndicatorThresholdGuides();
 testBuildsIndicatorBandAreaPath();
 testBuildsTrendRibbonAreaSegments();
+testBuildsIchimokuIndicators();
 testBuildsSplitIndicatorPanelReadouts();
 testCompactIndicatorPanelReadoutsFoldExtraIndicators();
 testSelectsCursorIndicatorReadoutSnapshot();
