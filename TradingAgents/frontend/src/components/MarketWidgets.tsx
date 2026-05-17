@@ -25,6 +25,7 @@ import {
   buildIndicatorThresholdGuides,
   buildIndicatorThresholdZones,
   buildIndicatorValueLabels,
+  buildChartLayerSummary,
   buildIchimokuIndicators,
   buildKlineEventSummary,
   buildKlineRangeNavigator,
@@ -1370,6 +1371,7 @@ export function TradingSignalKlinePanel({
   const chartMarkers = chart.markers || [];
   const evidenceEventMarkers = chart.eventMarkers || [];
   const activeChartPreset = useMemo(() => matchChartPreferencePreset(chartPrefs), [chartPrefs]);
+  const chartLayerSummary = useMemo(() => buildChartLayerSummary(chartPrefs), [chartPrefs]);
   const activeChartParameterPreset = useMemo(() => matchChartParameterPreset(chartParams), [chartParams]);
   const tradePlanLevels = useMemo(
     () => buildTradePlanLevels(strategyAnalysis, chart),
@@ -1855,6 +1857,17 @@ export function TradingSignalKlinePanel({
           </button>
         ))}
         <span>{activeChartPreset ? "当前组合" : "自定义组合"}</span>
+      </div>
+
+      <div className="chart-layer-summary" aria-label="交易信号K线图层摘要">
+        <span className="chart-layer-summary-label">图层摘要</span>
+        {chartLayerSummary.map((item) => (
+          <div className={`chart-layer-summary-card ${item.key}`} key={item.key} title={item.detail}>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+            <em>{item.detail}</em>
+          </div>
+        ))}
       </div>
 
       <div className="chart-tool-strip" aria-label="交易信号K线指标与工具">

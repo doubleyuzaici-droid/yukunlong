@@ -352,6 +352,16 @@ export interface ChartPreferencePreset {
   values: Record<ChartPreferenceName, boolean>;
 }
 
+export type ChartLayerSummaryKey = "preset" | "overlays" | "subcharts" | "annotations" | "mode";
+
+export interface ChartLayerSummaryItem {
+  key: ChartLayerSummaryKey;
+  label: string;
+  value: string;
+  detail: string;
+  enabledCount: number;
+}
+
 export type ChartParameterPresetKey = "standard" | "short" | "swing" | "long";
 export type ChartParameterName =
   | "maFast"
@@ -568,6 +578,48 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
       subCharts: true,
     },
   },
+];
+
+type ChartLayerSummaryOption = [ChartPreferenceName, string];
+
+const CHART_LAYER_MAIN_OVERLAYS: ChartLayerSummaryOption[] = [
+  ["ma", "MA"],
+  ["ema", "EMA"],
+  ["boll", "BOLL"],
+  ["vwap", "VWAP"],
+  ["sar", "SAR"],
+  ["bbi", "BBI"],
+  ["ichimoku", "一目"],
+];
+
+const CHART_LAYER_SUBCHARTS: ChartLayerSummaryOption[] = [
+  ["volume", "VOL"],
+  ["macd", "MACD"],
+  ["rsi", "RSI"],
+  ["kdj", "KDJ"],
+  ["advanced", "CR/ARBR/EMV"],
+  ["momentum", "DMI/CCI/WR"],
+  ["biasDma", "BIAS/DMA"],
+  ["volumeMomentum", "VR/MFI/TRIX"],
+  ["volatility", "ATR/OBV"],
+];
+
+const CHART_LAYER_ANNOTATIONS: ChartLayerSummaryOption[] = [
+  ["levels", "价位"],
+  ["limitLines", "涨跌停"],
+  ["signals", "信号"],
+  ["events", "事件"],
+  ["relative", "相对"],
+  ["profile", "筹码"],
+  ["fundFlow", "资金流"],
+  ["fibonacci", "斐波"],
+  ["supportResistance", "支阻"],
+  ["trendLines", "趋势线"],
+  ["patterns", "形态"],
+  ["indicatorSignals", "技信"],
+  ["divergences", "背离"],
+  ["volumeSignals", "量信"],
+  ["trendRegime", "趋势带"],
 ];
 
 const STANDARD_CHART_PARAMETER_VALUES: Record<ChartParameterName, number> = {
@@ -1712,6 +1764,63 @@ export function matchChartPreferencePreset(
   return CHART_PREFERENCE_PRESETS.find((preset) =>
     (Object.keys(preset.values) as ChartPreferenceName[]).every((key) => current[key] === preset.values[key]),
   )?.key ?? null;
+}
+
+function enabledChartLayerLabels(
+  preferences: Record<string, unknown>,
+  options: ChartLayerSummaryOption[],
+): string[] {
+  return options.filter(([key]) => preferences[key] === true).map(([, label]) => label);
+}
+
+function formatChartLayerSummaryDetail(labels: string[]): string {
+  if (!labels.length) return "未启用";
+  if (labels.length <= 6) return labels.join(" / ");
+  return `${labels.slice(0, 4).join(" / ")} / ${labels[labels.length - 1]} 等${labels.length}项`;
+}
+
+function buildChartLayerGroupSummary(
+  key: Extract<ChartLayerSummaryKey, "overlays" | "subcharts" | "annotations">,
+  label: string,
+  preferences: Record<string, unknown>,
+  options: ChartLayerSummaryOption[],
+): ChartLayerSummaryItem {
+  const labels = enabledChartLayerLabels(preferences, options);
+  return {
+    key,
+    label,
+    value: labels.length ? `${labels.length}项` : "关闭",
+    detail: formatChartLayerSummaryDetail(labels),
+    enabledCount: labels.length,
+  };
+}
+
+export function buildChartLayerSummary(preferences: object | null | undefined): ChartLayerSummaryItem[] {
+  const current = preferences && typeof preferences === "object" ? preferences as Record<string, unknown> : {};
+  const matchedPresetKey = matchChartPreferencePreset(preferences);
+  const matchedPreset = CHART_PREFERENCE_PRESETS.find((preset) => preset.key === matchedPresetKey);
+  const isSplit = current.subCharts === true;
+  const isMeasuring = current.measure === true;
+
+  return [
+    {
+      key: "preset",
+      label: "组合",
+      value: matchedPreset?.label ?? "自定义",
+      detail: matchedPreset?.description ?? "已手动调整指标图层",
+      enabledCount: matchedPreset ? 1 : 0,
+    },
+    buildChartLayerGroupSummary("overlays", "主图", current, CHART_LAYER_MAIN_OVERLAYS),
+    buildChartLayerGroupSummary("subcharts", "副图", current, CHART_LAYER_SUBCHARTS),
+    buildChartLayerGroupSummary("annotations", "标注", current, CHART_LAYER_ANNOTATIONS),
+    {
+      key: "mode",
+      label: "模式",
+      value: isSplit ? "分屏" : "叠图",
+      detail: `${isSplit ? "副图独立显示" : "副图紧凑叠放"} / ${isMeasuring ? "测距开启" : "测距关闭"}`,
+      enabledCount: Number(isSplit) + Number(isMeasuring),
+    },
+  ];
 }
 
 export function applyChartParameterPreset<T extends object>(

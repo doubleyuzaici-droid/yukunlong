@@ -11,6 +11,7 @@ import {
   buildIndicatorThresholdGuides,
   buildIndicatorThresholdZones,
   buildIndicatorBandAreaPath,
+  buildChartLayerSummary,
   buildOverlayPriceLabels,
   buildIndicatorValueLabels,
   buildKlineEventSummary,
@@ -391,6 +392,24 @@ function testMatchesChartPreferencePresetFromValues() {
 
   assertEqual(matchChartPreferencePreset(prefs), "oscillator", "preset matcher identifies the current oscillator view");
   assertEqual(matchChartPreferencePreset({ ...prefs, rsi: false }), null, "manual edits make the preset custom");
+}
+
+function testBuildsChartLayerSummary() {
+  const prefs = applyChartPreferencePreset(baseChartPrefs, "trend");
+  const summary = buildChartLayerSummary(prefs);
+  const preset = summary.find((item) => item.key === "preset");
+  const overlays = summary.find((item) => item.key === "overlays");
+  const subcharts = summary.find((item) => item.key === "subcharts");
+  const annotations = summary.find((item) => item.key === "annotations");
+  const mode = summary.find((item) => item.key === "mode");
+
+  assertEqual(summary.length, 5, "layer summary exposes preset plus layer groups");
+  assertEqual(preset?.value, "趋势", "layer summary names matched preset");
+  assertEqual(overlays?.value, "6项", "layer summary counts active main overlays");
+  assertOk(overlays?.detail.includes("一目"), "trend overlay summary includes Ichimoku");
+  assertOk((subcharts?.enabledCount || 0) > 0, "layer summary counts active subcharts");
+  assertOk(annotations?.detail.includes("趋势带"), "layer summary exposes annotation layers");
+  assertEqual(mode?.value, "分屏", "layer summary names split subchart mode");
 }
 
 function testUnknownChartPreferencePresetIsNoop() {
@@ -1468,6 +1487,7 @@ testBuildsFundFlowOverlayGeometry();
 testResolvesLimitCandleState();
 testAppliesTrendChartPreferencePreset();
 testMatchesChartPreferencePresetFromValues();
+testBuildsChartLayerSummary();
 testUnknownChartPreferencePresetIsNoop();
 testAppliesShortTermChartParameterPreset();
 testMatchesChartParameterPresetFromValues();
