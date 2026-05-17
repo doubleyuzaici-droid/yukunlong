@@ -12,6 +12,7 @@ import {
   buildIndicatorThresholdZones,
   buildIndicatorBandAreaPath,
   buildChartLayerSummary,
+  buildIndicatorStateSummary,
   buildOverlayPriceLabels,
   buildIndicatorValueLabels,
   buildKlineEventSummary,
@@ -410,6 +411,48 @@ function testBuildsChartLayerSummary() {
   assertOk((subcharts?.enabledCount || 0) > 0, "layer summary counts active subcharts");
   assertOk(annotations?.detail.includes("趋势带"), "layer summary exposes annotation layers");
   assertEqual(mode?.value, "分屏", "layer summary names split subchart mode");
+}
+
+function testBuildsIndicatorStateSummary() {
+  const summary = buildIndicatorStateSummary({
+    close: 121,
+    ma20: 112,
+    ma60: 105,
+    bollUpper: 120,
+    bollMid: 112,
+    bollLower: 104,
+    vwap: 114,
+    volume: 3_200_000,
+    volumeMa5: 2_100_000,
+    volumeMa20: 1_900_000,
+    volumeRatio: 1.9,
+    dif: 1.2,
+    dea: 0.8,
+    macd: 0.8,
+    rsi14: 76,
+    kdjK: 84,
+    cci: 128,
+    wr: -18,
+    pdi: 31,
+    mdi: 18,
+    adx: 29,
+    mfi: 62,
+    vr: 150,
+    atr: 3.1,
+    bias: 3.6,
+  });
+  const trend = summary.find((item) => item.key === "trend");
+  const momentum = summary.find((item) => item.key === "momentum");
+  const volume = summary.find((item) => item.key === "volume");
+  const volatility = summary.find((item) => item.key === "volatility");
+  const position = summary.find((item) => item.key === "position");
+
+  assertEqual(summary.length, 5, "indicator state summary exposes five dimensions");
+  assertEqual(trend?.value, "多头延续", "indicator state summary identifies bullish trend");
+  assertEqual(momentum?.value, "高位钝化", "indicator state summary flags overbought momentum");
+  assertEqual(volume?.value, "放量配合", "indicator state summary identifies active volume");
+  assertEqual(volatility?.value, "波动扩张", "indicator state summary identifies elevated volatility");
+  assertEqual(position?.value, "上轨压力", "indicator state summary identifies upper Bollinger pressure");
 }
 
 function testUnknownChartPreferencePresetIsNoop() {
@@ -1488,6 +1531,7 @@ testResolvesLimitCandleState();
 testAppliesTrendChartPreferencePreset();
 testMatchesChartPreferencePresetFromValues();
 testBuildsChartLayerSummary();
+testBuildsIndicatorStateSummary();
 testUnknownChartPreferencePresetIsNoop();
 testAppliesShortTermChartParameterPreset();
 testMatchesChartParameterPresetFromValues();

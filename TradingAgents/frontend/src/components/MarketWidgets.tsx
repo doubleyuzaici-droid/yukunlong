@@ -26,6 +26,7 @@ import {
   buildIndicatorThresholdZones,
   buildIndicatorValueLabels,
   buildChartLayerSummary,
+  buildIndicatorStateSummary,
   buildIchimokuIndicators,
   buildKlineEventSummary,
   buildKlineRangeNavigator,
@@ -1429,6 +1430,10 @@ export function TradingSignalKlinePanel({
     null;
   const activeIndicators = activeMarker?.indicators || chart.latestIndicators;
   const readoutIndicators = indicatorReadoutSnapshot;
+  const indicatorStateSummary = useMemo(
+    () => buildIndicatorStateSummary(readoutIndicators),
+    [readoutIndicators],
+  );
   const readoutFundFlow = crosshair?.candle?.fundFlow || chart.fundFlowOverlay.latest;
   const klineEventSummary = buildKlineEventSummary({
     divergenceEvents: chart.technicalDivergenceEvents,
@@ -2105,6 +2110,18 @@ export function TradingSignalKlinePanel({
 
       {strategyAnalysis && <StrategyKlineTrace analysis={strategyAnalysis} />}
       {chartPrefs.profile && <VolumeProfileSummary profile={chart.volumeProfile} />}
+      {indicatorStateSummary.length > 0 && (
+        <div className="indicator-state-radar" aria-label="K线指标状态总览">
+          <span className="indicator-state-radar-title">指标状态</span>
+          {indicatorStateSummary.map((item) => (
+            <div className={`indicator-state-card ${item.tone}`} key={item.key} title={item.detail}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              <em>{item.detail}</em>
+            </div>
+          ))}
+        </div>
+      )}
       {klineEventSummary.length > 0 && (
         <div className="kline-event-radar" aria-label="K线异动雷达">
           <span className="kline-event-radar-title">异动雷达</span>

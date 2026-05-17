@@ -1627,6 +1627,8 @@ export type IndicatorSectionLayoutMode = "compact" | "split";
 
 export interface IndicatorPanelReadoutSnapshot {
   close?: number | null;
+  bollUpper?: number | null;
+  bollLower?: number | null;
   ma20?: number | null;
   ma60?: number | null;
   bollMid?: number | null;
@@ -1658,6 +1660,18 @@ export interface IndicatorPanelReadoutSnapshot {
   trix?: number | null;
   atr?: number | null;
   obv?: number | null;
+}
+
+export type IndicatorStateSummaryTone = "good" | "risk" | "neutral";
+export type IndicatorStateSummaryKey = "trend" | "momentum" | "volume" | "volatility" | "position";
+
+export interface IndicatorStateSummaryItem {
+  key: IndicatorStateSummaryKey;
+  label: string;
+  value: string;
+  detail: string;
+  tone: IndicatorStateSummaryTone;
+  score: number;
 }
 
 export interface IndicatorPanelReadoutItem {
@@ -2194,6 +2208,195 @@ export function buildIndicatorPanelReadouts(
   ];
 
   return groups.filter((value): value is IndicatorPanelReadoutGroup => Boolean(value));
+}
+
+function finiteIndicatorValue(value?: number | null): number | null {
+  return isFiniteNumber(value) ? Number(value) : null;
+}
+
+function formatIndicatorStateNumber(value?: number | null, precision = 1): string {
+  const number = finiteIndicatorValue(value);
+  if (number == null) return "-";
+  return trimFixed(number, precision);
+}
+
+function formatSignedIndicatorStateNumber(value?: number | null, precision = 1): string {
+  const number = finiteIndicatorValue(value);
+  if (number == null) return "-";
+  return `${number > 0 ? "+" : ""}${trimFixed(number, precision)}`;
+}
+
+export function buildIndicatorStateSummary(
+  snapshot?: IndicatorPanelReadoutSnapshot | null,
+): IndicatorStateSummaryItem[] {
+  if (!snapshot) return [];
+
+  const close = finiteIndicatorValue(snapshot.close);
+  const ma20 = finiteIndicatorValue(snapshot.ma20);
+  const ma60 = finiteIndicatorValue(snapshot.ma60);
+  const bollUpper = finiteIndicatorValue(snapshot.bollUpper);
+  const bollMid = finiteIndicatorValue(snapshot.bollMid);
+  const bollLower = finiteIndicatorValue(snapshot.bollLower);
+  const vwap = finiteIndicatorValue(snapshot.vwap);
+  const dif = finiteIndicatorValue(snapshot.dif);
+  const dea = finiteIndicatorValue(snapshot.dea);
+  const macd = finiteIndicatorValue(snapshot.macd);
+  const rsi = finiteIndicatorValue(snapshot.rsi14);
+  const kdjK = finiteIndicatorValue(snapshot.kdjK);
+  const cci = finiteIndicatorValue(snapshot.cci);
+  const wr = finiteIndicatorValue(snapshot.wr);
+  const pdi = finiteIndicatorValue(snapshot.pdi);
+  const mdi = finiteIndicatorValue(snapshot.mdi);
+  const adx = finiteIndicatorValue(snapshot.adx);
+  const volume = finiteIndicatorValue(snapshot.volume);
+  const volumeMa5 = finiteIndicatorValue(snapshot.volumeMa5);
+  const volumeMa20 = finiteIndicatorValue(snapshot.volumeMa20);
+  const volumeRatio = finiteIndicatorValue(snapshot.volumeRatio);
+  const mfi = finiteIndicatorValue(snapshot.mfi);
+  const vr = finiteIndicatorValue(snapshot.vr);
+  const atr = finiteIndicatorValue(snapshot.atr);
+  const bias = finiteIndicatorValue(snapshot.bias);
+
+  const bullishTrendScore = [
+    close != null && ma20 != null && close >= ma20,
+    ma20 != null && ma60 != null && ma20 >= ma60,
+    dif != null && dea != null && dif >= dea,
+    macd != null && macd >= 0,
+  ].filter(Boolean).length;
+  const bearishTrendScore = [
+    close != null && ma20 != null && close < ma20,
+    ma20 != null && ma60 != null && ma20 < ma60,
+    dif != null && dea != null && dif < dea,
+    macd != null && macd < 0,
+  ].filter(Boolean).length;
+  const trendValue = bullishTrendScore >= 3
+    ? "多头延续"
+    : bearishTrendScore >= 3
+      ? "空头压制"
+      : "趋势震荡";
+  const trendTone: IndicatorStateSummaryTone = trendValue === "多头延续" ? "good" : trendValue === "空头压制" ? "risk" : "neutral";
+
+  const overboughtScore = [
+    rsi != null && rsi >= 70,
+    kdjK != null && kdjK >= 80,
+    cci != null && cci >= 100,
+    wr != null && wr >= -20,
+  ].filter(Boolean).length;
+  const oversoldScore = [
+    rsi != null && rsi <= 30,
+    kdjK != null && kdjK <= 20,
+    cci != null && cci <= -100,
+    wr != null && wr <= -80,
+  ].filter(Boolean).length;
+  const directionalMomentumScore = [
+    pdi != null && mdi != null && pdi > mdi,
+    adx != null && adx >= 25,
+    macd != null && macd >= 0,
+  ].filter(Boolean).length;
+  const weakMomentumScore = [
+    pdi != null && mdi != null && pdi < mdi,
+    adx != null && adx >= 25,
+    macd != null && macd < 0,
+  ].filter(Boolean).length;
+  const momentumValue = overboughtScore >= 2
+    ? "高位钝化"
+    : oversoldScore >= 2
+      ? "超卖修复"
+      : directionalMomentumScore >= 2
+        ? "动能偏强"
+        : weakMomentumScore >= 2
+          ? "动能偏弱"
+          : "动能中性";
+  const momentumTone: IndicatorStateSummaryTone = momentumValue === "高位钝化" || momentumValue === "动能偏弱"
+    ? "risk"
+    : momentumValue === "超卖修复" || momentumValue === "动能偏强"
+      ? "good"
+      : "neutral";
+
+  const isVolumeOverheated = (mfi != null && mfi >= 80) || (vr != null && vr >= 220);
+  const isVolumeActive = (volumeRatio != null && volumeRatio >= 1.5) ||
+    (volume != null && volumeMa5 != null && volume >= volumeMa5 * 1.25);
+  const isVolumeQuiet = (volumeRatio != null && volumeRatio <= 0.7) ||
+    (volume != null && volumeMa20 != null && volume <= volumeMa20 * 0.72);
+  const volumeValue = isVolumeOverheated
+    ? "资金过热"
+    : isVolumeActive
+      ? "放量配合"
+      : isVolumeQuiet
+        ? "缩量观望"
+        : "量能平稳";
+  const volumeTone: IndicatorStateSummaryTone = volumeValue === "资金过热"
+    ? "risk"
+    : volumeValue === "放量配合"
+      ? "good"
+      : "neutral";
+
+  const atrPct = close && atr != null ? atr / Math.abs(close) : null;
+  const absBias = bias != null ? Math.abs(bias) : null;
+  const volatilityValue = (atrPct != null && atrPct >= 0.025) || (absBias != null && absBias >= 3.5)
+    ? "波动扩张"
+    : (atrPct != null && atrPct <= 0.012) && (absBias == null || absBias <= 1.5)
+      ? "波动收敛"
+      : "波动可控";
+  const volatilityTone: IndicatorStateSummaryTone = volatilityValue === "波动扩张" ? "risk" : "neutral";
+
+  const positionValue = close != null && bollUpper != null && close >= bollUpper
+    ? "上轨压力"
+    : close != null && bollLower != null && close <= bollLower
+      ? "下轨支撑"
+      : close != null && vwap != null && bollMid != null && close >= vwap && close >= bollMid
+        ? "均价上方"
+        : close != null && vwap != null && bollMid != null && close < vwap && close < bollMid
+          ? "均价下方"
+          : "中枢附近";
+  const positionTone: IndicatorStateSummaryTone = positionValue === "上轨压力" || positionValue === "均价下方"
+    ? "risk"
+    : positionValue === "下轨支撑" || positionValue === "均价上方"
+      ? "good"
+      : "neutral";
+
+  return [
+    {
+      key: "trend",
+      label: "趋势判读",
+      value: trendValue,
+      detail: `C ${formatIndicatorStateNumber(close, 2)} / MA20 ${formatIndicatorStateNumber(ma20, 2)} / MA60 ${formatIndicatorStateNumber(ma60, 2)}`,
+      tone: trendTone,
+      score: bullishTrendScore - bearishTrendScore,
+    },
+    {
+      key: "momentum",
+      label: "动量温度",
+      value: momentumValue,
+      detail: `RSI ${formatIndicatorStateNumber(rsi, 1)} / K ${formatIndicatorStateNumber(kdjK, 1)} / WR ${formatIndicatorStateNumber(wr, 1)}`,
+      tone: momentumTone,
+      score: overboughtScore - oversoldScore + directionalMomentumScore - weakMomentumScore,
+    },
+    {
+      key: "volume",
+      label: "量能确认",
+      value: volumeValue,
+      detail: `量比 ${formatIndicatorStateNumber(volumeRatio, 2)} / MFI ${formatIndicatorStateNumber(mfi, 1)} / VR ${formatIndicatorStateNumber(vr, 1)}`,
+      tone: volumeTone,
+      score: Number(isVolumeActive) - Number(isVolumeQuiet) - Number(isVolumeOverheated),
+    },
+    {
+      key: "volatility",
+      label: "波动状态",
+      value: volatilityValue,
+      detail: `ATR ${formatIndicatorStateNumber(atr, 2)} (${atrPct == null ? "-" : `${trimFixed(atrPct * 100, 1)}%`}) / BIAS ${formatSignedIndicatorStateNumber(bias, 2)}`,
+      tone: volatilityTone,
+      score: volatilityValue === "波动扩张" ? 1 : volatilityValue === "波动收敛" ? -1 : 0,
+    },
+    {
+      key: "position",
+      label: "价格位置",
+      value: positionValue,
+      detail: `VWAP ${formatIndicatorStateNumber(vwap, 2)} / BOLL ${formatIndicatorStateNumber(bollLower, 2)}-${formatIndicatorStateNumber(bollUpper, 2)}`,
+      tone: positionTone,
+      score: positionTone === "good" ? 1 : positionTone === "risk" ? -1 : 0,
+    },
+  ];
 }
 
 export function buildIndicatorAxisTicks(options: {
