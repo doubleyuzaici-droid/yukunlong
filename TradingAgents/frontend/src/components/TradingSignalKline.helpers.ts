@@ -913,6 +913,20 @@ export interface IndicatorValueLabel {
   compact?: boolean;
 }
 
+export interface KlineRangeNavigator {
+  total: number;
+  visibleCount: number;
+  startIndex: number;
+  endIndex: number;
+  trackX: number;
+  trackWidth: number;
+  selectionX: number;
+  selectionWidth: number;
+  leftRatio: number;
+  rightRatio: number;
+  label: string;
+}
+
 export interface IndicatorBandAreaPoint {
   x?: number | null;
   upperY?: number | null;
@@ -1218,6 +1232,63 @@ export function buildIndicatorValueLabels(
       };
     });
   });
+}
+
+export function buildKlineRangeNavigator(options: {
+  total: number;
+  visibleCount: number;
+  rightOffset?: number;
+  plotLeft: number;
+  plotRight: number;
+}): KlineRangeNavigator | null {
+  const total = Math.max(0, Math.floor(Number(options.total)));
+  const visibleCount = clampInteger(Number(options.visibleCount), 0, total);
+  if (total <= 0 || visibleCount <= 0 || visibleCount >= total) return null;
+
+  const trackX = Math.min(options.plotLeft, options.plotRight);
+  const trackWidth = Math.max(1, Math.abs(options.plotRight - options.plotLeft));
+  const maxOffset = Math.max(0, total - visibleCount);
+  const offset = clampInteger(Number(options.rightOffset ?? 0), 0, maxOffset);
+  const endExclusive = total - offset;
+  const startIndex = clampInteger(endExclusive - visibleCount, 0, Math.max(0, total - 1));
+  const endIndex = clampInteger(endExclusive - 1, startIndex, Math.max(0, total - 1));
+  const leftRatio = startIndex / total;
+  const rightRatio = (endIndex + 1) / total;
+  const selectionX = trackX + leftRatio * trackWidth;
+  const selectionWidth = Math.max(4, (rightRatio - leftRatio) * trackWidth);
+
+  return {
+    total,
+    visibleCount,
+    startIndex,
+    endIndex,
+    trackX,
+    trackWidth,
+    selectionX,
+    selectionWidth,
+    leftRatio,
+    rightRatio,
+    label: `${startIndex + 1}-${endIndex + 1} / ${total}`,
+  };
+}
+
+export function rightOffsetFromKlineNavigatorX(options: {
+  x: number;
+  total: number;
+  visibleCount: number;
+  plotLeft: number;
+  plotRight: number;
+}) {
+  const total = Math.max(0, Math.floor(Number(options.total)));
+  const visibleCount = clampInteger(Number(options.visibleCount), 0, total);
+  if (total <= 0 || visibleCount <= 0 || visibleCount >= total) return 0;
+  const trackX = Math.min(options.plotLeft, options.plotRight);
+  const trackWidth = Math.max(1, Math.abs(options.plotRight - options.plotLeft));
+  const maxOffset = Math.max(0, total - visibleCount);
+  const ratio = clampNumber((Number(options.x) - trackX) / trackWidth, 0, 1);
+  const centerIndex = Math.round(ratio * total);
+  const startIndex = clampInteger(centerIndex - Math.floor(visibleCount / 2), 0, maxOffset);
+  return clampInteger(total - (startIndex + visibleCount), 0, maxOffset);
 }
 
 export function buildIndicatorBandAreaPath(points: IndicatorBandAreaPoint[]): string {

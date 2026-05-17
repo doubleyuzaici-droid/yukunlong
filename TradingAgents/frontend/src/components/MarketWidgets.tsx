@@ -26,6 +26,7 @@ import {
   buildIndicatorValueLabels,
   buildIchimokuIndicators,
   buildKlineEventSummary,
+  buildKlineRangeNavigator,
   buildKlineHoverMetrics,
   buildLimitPriceLines,
   buildManualDrawingGeometry,
@@ -61,6 +62,7 @@ import {
   priceAxisPriceFromY,
   priceAxisValueFromPrice,
   priceAxisYOf,
+  rightOffsetFromKlineNavigatorX,
   resolveLimitCandleState,
   selectIndicatorReadoutSnapshot,
   type IndicatorAxisTick,
@@ -1579,6 +1581,28 @@ export function TradingSignalKlinePanel({
     setRangeFromControl(nextRange);
   };
 
+  const jumpToRangeNavigator = (event: MouseEvent<SVGRectElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const svg = event.currentTarget.ownerSVGElement;
+    if (!svg || !chart.rangeNavigator) return;
+    const point = mapClientPointToChartViewBox({
+      clientX: event.clientX,
+      clientY: event.clientY,
+      rect: svg.getBoundingClientRect(),
+      viewBoxHeight: chart.viewBoxHeight,
+      viewBoxWidth: 1000,
+    });
+    setRightOffset(rightOffsetFromKlineNavigatorX({
+      x: point.x,
+      total: chart.rangeNavigator.total,
+      visibleCount: chart.rangeNavigator.visibleCount,
+      plotLeft: chart.plotLeft,
+      plotRight: chart.plotRight,
+    }));
+    setCrosshair(null);
+  };
+
   const toggleChartPref = (key: keyof TradingChartPreferences) => {
     setChartPrefs((value) => ({
       ...value,
@@ -2297,6 +2321,37 @@ export function TradingSignalKlinePanel({
               {tick.label}
             </text>
           ))}
+          {chart.rangeNavigator && (
+            <g className="kline-range-navigator">
+              <rect
+                className="navigator-hit-target"
+                height="20"
+                onClick={jumpToRangeNavigator}
+                onMouseDown={jumpToRangeNavigator}
+                rx="4"
+                width={chart.rangeNavigator.trackWidth}
+                x={chart.rangeNavigator.trackX}
+                y={chart.timeAxisY - 15}
+              />
+              <line
+                className="navigator-track"
+                x1={chart.rangeNavigator.trackX}
+                x2={chart.rangeNavigator.trackX + chart.rangeNavigator.trackWidth}
+                y1={chart.timeAxisY - 4}
+                y2={chart.timeAxisY - 4}
+              />
+              <rect
+                className="navigator-window"
+                height="6"
+                rx="3"
+                width={chart.rangeNavigator.selectionWidth}
+                x={chart.rangeNavigator.selectionX}
+                y={chart.timeAxisY - 7}
+              />
+              <text x={chart.plotRight - 92} y={chart.timeAxisY - 10}>{chart.rangeNavigator.label}</text>
+              <title>当前窗口 {chart.rangeNavigator.label}</title>
+            </g>
+          )}
           {chartPrefs.boll && chart.bollBandArea && (
             <path className="boll-band-area" d={chart.bollBandArea} />
           )}
@@ -4003,6 +4058,7 @@ function buildTradingSignalGeometry(
   const VOLATILITY_BOTTOM = layout.volatility.bottom;
   const SIGNAL_LANE_Y = layout.signalLaneY;
   const sections = layout.sections;
+  const usableBarCount = bars.filter((bar) => typeof bar.close === "number").length;
   const visible = sliceVisibleBars(bars, range, rightOffset).filter((bar) => typeof bar.close === "number");
   if (visible.length === 0) {
     return {
@@ -4019,6 +4075,7 @@ function buildTradingSignalGeometry(
       indicatorThresholdGuides: [],
       overlayPriceLabels: [],
       indicatorValueLabels: [],
+      rangeNavigator: null,
       bollBandArea: "",
       maTrendRibbons: [],
       ichimokuCloudSegments: [],
@@ -4353,6 +4410,13 @@ function buildTradingSignalGeometry(
     { label: "mid", value: priceTickValues[1], price: priceAxisPriceFromValue(priceAxisScale, priceTickValues[1]), y: (PRICE_TOP + PRICE_BOTTOM) / 2 },
     { label: "low", value: priceTickValues[2], price: priceAxisPriceFromValue(priceAxisScale, priceTickValues[2]), y: PRICE_BOTTOM },
   ];
+  const rangeNavigator = buildKlineRangeNavigator({
+    total: usableBarCount,
+    visibleCount: visible.length,
+    rightOffset,
+    plotLeft: PLOT_LEFT,
+    plotRight: PLOT_RIGHT,
+  });
   const maValue = (index: number, windowSize: number) => {
     const start = Math.max(0, index - windowSize + 1);
     const slice = visible.slice(start, index + 1);
@@ -5111,6 +5175,7 @@ function buildTradingSignalGeometry(
     indicatorThresholdGuides,
     overlayPriceLabels,
     indicatorValueLabels,
+    rangeNavigator,
     timeTicks,
     latestIndicators: candles[candles.length - 1]?.indicators || null,
     prevCloseY: isFiniteNumber(candles[candles.length - 1]?.prevClose)

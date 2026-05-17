@@ -13,6 +13,8 @@ import {
   buildOverlayPriceLabels,
   buildIndicatorValueLabels,
   buildKlineEventSummary,
+  buildKlineRangeNavigator,
+  rightOffsetFromKlineNavigatorX,
   buildTrendRibbonAreaSegments,
   buildIchimokuIndicators,
   buildFundFlowOverlayGeometry,
@@ -865,6 +867,49 @@ function testBuildsIndicatorValueLabelsBySection() {
   assertEqual(labels[2]!.precision, 1, "formatting metadata is preserved for rendering");
 }
 
+function testBuildsKlineRangeNavigator() {
+  const navigator = buildKlineRangeNavigator({
+    total: 260,
+    visibleCount: 60,
+    rightOffset: 20,
+    plotLeft: 48,
+    plotRight: 928,
+  });
+
+  assertOk(navigator, "range navigator exists when a partial window is visible");
+  assertEqual(navigator?.startIndex, 180, "navigator maps right offset to the visible start index");
+  assertEqual(navigator?.endIndex, 239, "navigator maps right offset to the inclusive visible end index");
+  assertApprox(navigator?.selectionX, 657.2308, 0.001, "navigator selection starts at the visible window ratio");
+  assertApprox(navigator?.selectionWidth, 203.0769, 0.001, "navigator selection width follows visible ratio");
+  assertEqual(navigator?.label, "181-240 / 260", "navigator exposes human-readable one-based range");
+}
+
+function testKlineRangeNavigatorHidesForFullRange() {
+  const navigator = buildKlineRangeNavigator({
+    total: 80,
+    visibleCount: 80,
+    rightOffset: 0,
+    plotLeft: 48,
+    plotRight: 928,
+  });
+
+  assertEqual(navigator, null, "full visible history does not need a navigator selection");
+}
+
+function testMapsKlineNavigatorClickToRightOffset() {
+  const nextOffset = rightOffsetFromKlineNavigatorX({
+    x: 758.7692,
+    total: 260,
+    visibleCount: 60,
+    plotLeft: 48,
+    plotRight: 928,
+  });
+
+  assertEqual(nextOffset, 20, "navigator click centers the visible window around the clicked history position");
+  assertEqual(rightOffsetFromKlineNavigatorX({ x: 928, total: 260, visibleCount: 60, plotLeft: 48, plotRight: 928 }), 0, "right edge jumps to latest");
+  assertEqual(rightOffsetFromKlineNavigatorX({ x: 48, total: 260, visibleCount: 60, plotLeft: 48, plotRight: 928 }), 200, "left edge jumps to earliest");
+}
+
 function testBuildsTrendRibbonAreaSegments() {
   const segments = buildTrendRibbonAreaSegments([
     { x: 10, fastY: 30, slowY: 58, fastValue: 12, slowValue: 10 },
@@ -1369,6 +1414,9 @@ testBuildsIndicatorThresholdGuides();
 testBuildsIndicatorBandAreaPath();
 testBuildsOverlayPriceLabelsWithoutOverlap();
 testBuildsIndicatorValueLabelsBySection();
+testBuildsKlineRangeNavigator();
+testKlineRangeNavigatorHidesForFullRange();
+testMapsKlineNavigatorClickToRightOffset();
 testBuildsTrendRibbonAreaSegments();
 testBuildsIchimokuIndicators();
 testBuildsSplitIndicatorPanelReadouts();

@@ -2785,6 +2785,44 @@ label {
   font-size: 3.8px !important;
 }
 
+.kline-range-navigator {
+  cursor: pointer;
+}
+
+.kline-range-navigator .navigator-hit-target {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.kline-range-navigator .navigator-track {
+  pointer-events: none;
+  stroke: rgba(148, 163, 184, 0.24);
+  stroke-linecap: round;
+  stroke-width: 2.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.kline-range-navigator .navigator-window {
+  fill: rgba(94, 234, 212, 0.28);
+  pointer-events: none;
+  stroke: rgba(94, 234, 212, 0.74);
+  stroke-width: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+
+.kline-range-navigator text {
+  fill: rgba(203, 213, 225, 0.7) !important;
+  font-size: 9px !important;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(5, 10, 16, 0.82);
+  stroke-width: 1.4px;
+  pointer-events: none;
+  text-anchor: end;
+}
+
 .price-history-chart polyline {
   fill: none;
   stroke: #d9f8df;
