@@ -2775,7 +2775,7 @@ export function TradingSignalKlinePanel({
               <text className="crosshair-date-text" x={clampNumber(crosshair.x, chart.plotLeft + 38, chart.plotRight - 38)} y={chart.timeAxisY - 5}>
                 {shortDateLabel(crosshair.candle.periodLabel || crosshair.candle.date)}
               </text>
-              <rect className="crosshair-readout-panel" x={crosshair.labelX} y="52" width="304" height="268" rx="6" />
+              <rect className="crosshair-readout-panel" x={crosshair.labelX} y="52" width="304" height="316" rx="6" />
               <text className="crosshair-readout-title" x={crosshair.labelX + 12} y="76">
                 {crosshair.candle.periodLabel || crosshair.candle.date}
               </text>
@@ -2818,8 +2818,17 @@ export function TradingSignalKlinePanel({
               <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="268">
                 MFI {formatNumber(crosshair.candle.indicators.mfi, 1)} · VR {formatNumber(crosshair.candle.indicators.vr, 1)} · ATR {formatNumber(crosshair.candle.indicators.atr, 2)}
               </text>
+              <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="292">
+                DMI +DI {formatNumber(crosshair.candle.indicators.pdi, 1)} / -DI {formatNumber(crosshair.candle.indicators.mdi, 1)}
+              </text>
+              <text className="crosshair-readout-row" x={crosshair.labelX + 162} y="292">
+                ADX {formatNumber(crosshair.candle.indicators.adx, 1)}
+              </text>
+              <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="316">
+                CCI {formatNumber(crosshair.candle.indicators.cci, 1)} · WR {formatNumber(crosshair.candle.indicators.wr, 1)}
+              </text>
               {chartPrefs.fundFlow && crosshair.candle.fundFlow && (
-                <text className="crosshair-readout-row fund-flow" x={crosshair.labelX + 12} y="292">
+                <text className="crosshair-readout-row fund-flow" x={crosshair.labelX + 12} y="340">
                   资金 主力 {formatCompactNumber(crosshair.candle.fundFlow.main_net_inflow)} · 大单 {formatCompactNumber(crosshair.candle.fundFlow.large_net_inflow)} · 北向 {formatCompactNumber(crosshair.candle.fundFlow.northbound_net_inflow)}
                 </text>
               )}
