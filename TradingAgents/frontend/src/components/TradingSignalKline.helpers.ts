@@ -883,6 +883,28 @@ export interface IndicatorThresholdZone {
   tone: IndicatorThresholdGuideTone;
 }
 
+export type LatestPriceLineTone = "good" | "risk" | "neutral";
+
+export interface LatestPriceLineDefinition {
+  key?: string;
+  label?: string;
+  price?: number | null;
+  prevClose?: number | null;
+  y?: number | null;
+  top: number;
+  bottom: number;
+}
+
+export interface LatestPriceLine {
+  key: string;
+  label: string;
+  price: number;
+  y: number;
+  labelY: number;
+  changePct: number | null;
+  tone: LatestPriceLineTone;
+}
+
 export type OverlayPriceLabelTone = "good" | "risk" | "neutral" | "info";
 
 export interface OverlayPriceLabelDefinition {
@@ -1180,6 +1202,38 @@ export function buildIndicatorThresholdZones(
       tone: definition.tone ?? "neutral",
     }];
   });
+}
+
+export function buildLatestPriceLine(definition: LatestPriceLineDefinition): LatestPriceLine | null {
+  if (
+    !isFiniteNumber(definition.price) ||
+    !isFiniteNumber(definition.y) ||
+    !isFiniteNumber(definition.top) ||
+    !isFiniteNumber(definition.bottom)
+  ) {
+    return null;
+  }
+  const top = Math.min(definition.top, definition.bottom);
+  const bottom = Math.max(definition.top, definition.bottom);
+  const y = clampNumber(definition.y, top, bottom);
+  const changePct = isFiniteNumber(definition.prevClose) && definition.prevClose !== 0
+    ? definition.price / definition.prevClose - 1
+    : null;
+  const tone: LatestPriceLineTone =
+    changePct == null || changePct === 0
+      ? "neutral"
+      : changePct > 0
+        ? "good"
+        : "risk";
+  return {
+    key: definition.key || "latest-price",
+    label: definition.label || "现价",
+    price: definition.price,
+    y,
+    labelY: clampNumber(y - 7, top + 13, bottom - 6),
+    changePct,
+    tone,
+  };
 }
 
 export function buildOverlayPriceLabels(

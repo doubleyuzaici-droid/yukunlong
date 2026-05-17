@@ -29,6 +29,7 @@ import {
   buildKlineEventSummary,
   buildKlineRangeNavigator,
   buildKlineHoverMetrics,
+  buildLatestPriceLine,
   buildLimitPriceLines,
   buildManualDrawingGeometry,
   buildOverlayPriceLabels,
@@ -1451,6 +1452,7 @@ export function TradingSignalKlinePanel({
   });
   const visibleOverlayPriceLabels = buildOverlayPriceLabels(
     (chart.overlayPriceLabels || []).filter((label: OverlayPriceLabelDefinition) => {
+      if (label.group === "latest") return chartPrefs.levels;
       if (label.group === "ma") return chartPrefs.ma;
       if (label.group === "ema") return chartPrefs.ema;
       if (label.group === "boll") return chartPrefs.boll;
@@ -2214,6 +2216,15 @@ export function TradingSignalKlinePanel({
           ))}
           <line className="macd-zero-line" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.macdZeroY} y2={chart.macdZeroY} />
           <line className="signal-lane" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.signalLaneY} y2={chart.signalLaneY} />
+          {chartPrefs.levels && chart.latestPriceLine && (
+            <g className={`latest-price-line ${chart.latestPriceLine.tone}`}>
+              <line x1={chart.plotLeft} x2={chart.plotRight} y1={chart.latestPriceLine.y} y2={chart.latestPriceLine.y} />
+              <circle cx={chart.plotRight - 3} cy={chart.latestPriceLine.y} r="3.6" />
+              <title>
+                {chart.latestPriceLine.label} {formatChartAxisPrice(chart, chart.latestPriceLine.price)} · {formatSignedPercent(chart.latestPriceLine.changePct)}
+              </title>
+            </g>
+          )}
           {chartPrefs.levels && chart.prevCloseY != null && (
             <g className="prev-close-level">
               <line x1={chart.plotLeft} x2={chart.plotRight} y1={chart.prevCloseY} y2={chart.prevCloseY} />
@@ -4156,6 +4167,7 @@ function buildTradingSignalGeometry(
       indicatorAxisTicks: {},
       timeTicks: [],
       latestIndicators: null,
+      latestPriceLine: null,
       prevCloseY: null as number | null,
       macdZeroY: (MACD_TOP + MACD_BOTTOM) / 2,
       advanced100Y: ADVANCED_BOTTOM - 0.5 * (ADVANCED_BOTTOM - ADVANCED_TOP),
@@ -5006,6 +5018,14 @@ function buildTradingSignalGeometry(
     slowValue: ichimokuSpanBValues[index],
   })));
   const latestIndicator = candles[candles.length - 1]?.indicators;
+  const latestPriceLine = buildLatestPriceLine({
+    price: latestIndicator?.close,
+    prevClose: latestIndicator?.prevClose,
+    y: latestIndicator ? yOf(latestIndicator.close) : null,
+    top: PRICE_TOP,
+    bottom: PRICE_BOTTOM,
+  });
+  const latestPriceTone = latestPriceLine?.tone ?? "neutral";
   const overlayPriceLabel = (
     key: string,
     group: string,
@@ -5023,6 +5043,7 @@ function buildTradingSignalGeometry(
     priority,
   });
   const overlayPriceLabels = buildOverlayPriceLabels([
+    overlayPriceLabel("latest-price", "latest", latestPriceLine?.label || "现价", latestPriceLine?.price, latestPriceTone, 1),
     overlayPriceLabel("ma-fast", "ma", `MA${fastPeriod}`, latestIndicator?.ma5, "info", 10),
     overlayPriceLabel("ma-mid", "ma", `MA${midPeriod}`, latestIndicator?.ma20, "info", 11),
     overlayPriceLabel("ma-slow", "ma", `MA${slowPeriod}`, latestIndicator?.ma60, "info", 12),
@@ -5268,6 +5289,7 @@ function buildTradingSignalGeometry(
     rangeNavigator,
     timeTicks,
     latestIndicators: candles[candles.length - 1]?.indicators || null,
+    latestPriceLine,
     prevCloseY: isFiniteNumber(candles[candles.length - 1]?.prevClose)
       ? yOf(candles[candles.length - 1].prevClose)
       : null,

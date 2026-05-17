@@ -4985,6 +4985,15 @@ label {
   fill: rgba(255, 190, 184, 0.96) !important;
 }
 
+.overlay-price-label.latest rect {
+  fill: rgba(8, 12, 17, 0.98);
+  stroke-width: 0.95;
+}
+
+.overlay-price-label.latest text {
+  font-size: 8.9px !important;
+}
+
 .indicator-value-label {
   pointer-events: none;
 }
@@ -5488,6 +5497,40 @@ label {
   stroke-dasharray: 7 5;
   stroke-width: 0.7;
   vector-effect: non-scaling-stroke;
+}
+
+.latest-price-line {
+  pointer-events: none;
+}
+
+.latest-price-line line {
+  stroke: rgba(226, 232, 240, 0.52);
+  stroke-dasharray: 2 4;
+  stroke-width: 0.85;
+  vector-effect: non-scaling-stroke;
+}
+
+.latest-price-line circle {
+  fill: rgba(226, 232, 240, 0.9);
+  stroke: rgba(5, 10, 16, 0.88);
+  stroke-width: 1.1;
+  vector-effect: non-scaling-stroke;
+}
+
+.latest-price-line.good line {
+  stroke: rgba(126, 224, 163, 0.7);
+}
+
+.latest-price-line.good circle {
+  fill: rgba(126, 224, 163, 0.95);
+}
+
+.latest-price-line.risk line {
+  stroke: rgba(255, 140, 132, 0.72);
+}
+
+.latest-price-line.risk circle {
+  fill: rgba(255, 140, 132, 0.95);
 }
 
 .prev-close-level text {

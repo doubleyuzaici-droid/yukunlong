@@ -14,6 +14,7 @@ import {
   buildOverlayPriceLabels,
   buildIndicatorValueLabels,
   buildKlineEventSummary,
+  buildLatestPriceLine,
   buildKlineRangeNavigator,
   rightOffsetFromKlineNavigatorX,
   buildTrendRibbonAreaSegments,
@@ -858,6 +859,42 @@ function testBuildsIndicatorThresholdZones() {
   assertEqual(zones[1]?.tone, "good", "threshold zone preserves tone for styling");
 }
 
+function testBuildsLatestPriceLine() {
+  const rising = buildLatestPriceLine({
+    price: 112,
+    prevClose: 100,
+    y: 88,
+    top: 60,
+    bottom: 180,
+  });
+  const clipped = buildLatestPriceLine({
+    price: 96,
+    prevClose: 100,
+    y: 42,
+    top: 60,
+    bottom: 180,
+  });
+  const missing = buildLatestPriceLine({
+    price: null,
+    prevClose: 100,
+    y: 88,
+    top: 60,
+    bottom: 180,
+  });
+
+  assertOk(rising, "latest price line is built for finite price and y");
+  assertEqual(rising?.tone, "good", "latest price line marks rising price as good");
+  assertApprox(rising?.changePct, 0.12, 0.0001, "latest price line derives change percent");
+  assertEqual(rising?.label, "现价", "latest price line uses a market terminal label");
+  assertApprox(rising?.y, 88, 0.001, "latest price line keeps visible y");
+  assertApprox(rising?.labelY, 81, 0.001, "latest price line places label above the line");
+  assertOk(clipped, "latest price line clips y into the price section");
+  assertEqual(clipped?.tone, "risk", "latest price line marks falling price as risk");
+  assertApprox(clipped?.y, 60, 0.001, "latest price line clips y to section top");
+  assertApprox(clipped?.labelY, 73, 0.001, "latest price label stays inside the section after clipping");
+  assertEqual(missing, null, "latest price line omits missing price");
+}
+
 function testBuildsIndicatorBandAreaPath() {
   const path = buildIndicatorBandAreaPath([
     { x: 10, upperY: 20, lowerY: 80 },
@@ -1460,6 +1497,7 @@ testBuildsIndicatorAxisTicks();
 testBuildsCompactIndicatorAxisTickLabels();
 testBuildsIndicatorThresholdGuides();
 testBuildsIndicatorThresholdZones();
+testBuildsLatestPriceLine();
 testBuildsIndicatorBandAreaPath();
 testBuildsOverlayPriceLabelsWithoutOverlap();
 testBuildsIndicatorValueLabelsBySection();
