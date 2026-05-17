@@ -40,6 +40,7 @@ import {
   matchChartParameterPreset,
   matchChartPreferencePreset,
   normalizeManualDrawings,
+  normalizeKlineRenderMode,
   normalizePriceAdjustmentMode,
   normalizePriceAxisMode,
   priceAdjustmentPriceByFactor,
@@ -50,6 +51,7 @@ import {
   selectIndicatorReadoutSnapshot,
   type IndicatorAxisTick,
   type IndicatorPanelReadoutItem,
+  type KlineRenderMode,
   type ManualDrawing,
   type ManualDrawingAnchor,
   type ManualDrawingType,
@@ -397,6 +399,12 @@ const PRICE_ADJUSTMENT_MODES: { key: PriceAdjustmentMode; label: string }[] = [
   { key: "none", label: "不复权" },
   { key: "forward", label: "前复权" },
   { key: "backward", label: "后复权" },
+];
+
+const KLINE_RENDER_MODES: { key: KlineRenderMode; label: string }[] = [
+  { key: "candle", label: "蜡烛" },
+  { key: "line", label: "收盘线" },
+  { key: "ohlc", label: "OHLC" },
 ];
 
 const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
@@ -1259,6 +1267,11 @@ export function TradingSignalKlinePanel({
     "none",
     normalizePriceAdjustmentMode,
   );
+  const [klineRenderMode, setKlineRenderMode] = usePersistentChartValue<KlineRenderMode>(
+    "tradingagents.tradeSignalKline.renderMode",
+    "candle",
+    normalizeKlineRenderMode,
+  );
   const [expanded, setExpanded] = useState(false);
   const [paramsOpen, setParamsOpen] = useState(false);
   const [hoveredSignalId, setHoveredSignalId] = useState<string | null>(null);
@@ -1523,6 +1536,7 @@ export function TradingSignalKlinePanel({
     setChartParams(DEFAULT_TRADING_CHART_PARAMS);
     setPriceAxisMode("price");
     setPriceAdjustmentMode("none");
+    setKlineRenderMode("candle");
     setMeasureStartIndex(null);
     setMeasureEndIndex(null);
   };
@@ -1649,6 +1663,7 @@ export function TradingSignalKlinePanel({
             策略口径 周线趋势 + 日线执行 ·{" "}
             V2主信号 {strategySignal ? "已接入" : "未生成"} · 历史信号 {safeSignals.length} ·{" "}
             机会 {summary.opportunity} / 风险 {summary.risk} · 复权 {priceAdjustmentStatusLabel(priceAdjustmentMode, priceAdjustedHistory.mode)} ·{" "}
+            图形 {KLINE_RENDER_MODES.find((item) => item.key === klineRenderMode)?.label || "蜡烛"} ·{" "}
             坐标 {priceAxisMode === "percent" ? "涨跌幅" : "价格"} ·{" "}
             {rightOffset > 0 ? `向前平移 ${rightOffset} 根` : "最新区间"}
           </span>
@@ -1752,6 +1767,12 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.volatility ? "active" : ""} onClick={() => toggleChartPref("volatility")} type="button">ATR/OBV</button>
         <button className={chartPrefs.subCharts ? "active" : ""} onClick={() => toggleChartPref("subCharts")} type="button">分屏</button>
         <button className={chartPrefs.measure ? "active measure" : "measure"} onClick={() => toggleChartPref("measure")} type="button">测距</button>
+        <span>图形</span>
+        {KLINE_RENDER_MODES.map((item) => (
+          <button className={klineRenderMode === item.key ? "active" : ""} key={item.key} onClick={() => setKlineRenderMode(item.key)} type="button">
+            {item.label}
+          </button>
+        ))}
         <span>复权</span>
         {PRICE_ADJUSTMENT_MODES.map((item) => (
           <button className={priceAdjustmentMode === item.key ? "active" : ""} key={item.key} onClick={() => setPriceAdjustmentMode(item.key)} type="button">
@@ -2169,16 +2190,27 @@ export function TradingSignalKlinePanel({
           {chartPrefs.ma && chart.ma20 && <polyline className="ma-line ma20" points={chart.ma20} />}
           {chartPrefs.ma && chart.ma60 && <polyline className="ma-line ma60" points={chart.ma60} />}
           {chartPrefs.ma && chart.ma120 && <polyline className="ma-line ma120" points={chart.ma120} />}
+          {klineRenderMode === "line" && chart.closeLine && <polyline className="kline-close-line" points={chart.closeLine} />}
           {chart.candles.map((candle) => (
-            <g className={`candle ${candle.tone}`} key={candle.date}>
-              <line x1={candle.x} x2={candle.x} y1={candle.highY} y2={candle.lowY} />
-              <rect
-                x={candle.x - candle.width / 2}
-                y={candle.bodyY}
-                width={candle.width}
-                height={Math.max(candle.bodyHeight, 1.2)}
-                rx="0.35"
-              />
+            <g className={`candle ${candle.tone} ${klineRenderMode}`} key={candle.date}>
+              {klineRenderMode === "ohlc" ? (
+                <>
+                  <line className="ohlc-stem" x1={candle.x} x2={candle.x} y1={candle.highY} y2={candle.lowY} />
+                  <line className="ohlc-open" x1={candle.x - candle.width * 0.48} x2={candle.x} y1={candle.openY} y2={candle.openY} />
+                  <line className="ohlc-close" x1={candle.x} x2={candle.x + candle.width * 0.48} y1={candle.closeY} y2={candle.closeY} />
+                </>
+              ) : klineRenderMode === "candle" ? (
+                <>
+                  <line x1={candle.x} x2={candle.x} y1={candle.highY} y2={candle.lowY} />
+                  <rect
+                    x={candle.x - candle.width / 2}
+                    y={candle.bodyY}
+                    width={candle.width}
+                    height={Math.max(candle.bodyHeight, 1.2)}
+                    rx="0.35"
+                  />
+                </>
+              ) : null}
               {chartPrefs.volume && (
                 <rect
                   className="volume-bar"
@@ -3631,6 +3663,7 @@ function buildCandleGeometry(
       width: candleWidth,
       highY: yOf(high),
       lowY: yOf(low),
+      openY,
       bodyY: Math.min(openY, closeY),
       bodyHeight: Math.abs(openY - closeY),
       volumeY: 250 - volumeHeight,
@@ -3739,6 +3772,7 @@ function buildTradingSignalGeometry(
       ma20: "",
       ma60: "",
       ma120: "",
+      closeLine: "",
       emaFastLine: "",
       emaSlowLine: "",
       vwapLine: "",
@@ -4194,6 +4228,7 @@ function buildTradingSignalGeometry(
       width: candleWidth,
       highY: yOf(high),
       lowY: yOf(low),
+      openY,
       bodyY: Math.min(openY, closeY),
       bodyHeight: Math.abs(openY - closeY),
       closeY: yOf(close),
@@ -4387,6 +4422,7 @@ function buildTradingSignalGeometry(
       .map((value, index) => (typeof value === "number" ? `${xOf(index).toFixed(2)},${yFn(value).toFixed(2)}` : ""))
       .filter(Boolean)
       .join(" ");
+  const closeLine = indicatorPoints(closeValues, yOf);
   const bollLine = (key: "upper" | "mid" | "lower") =>
     indicatorPoints(bollValues.map((value) => value?.[key] ?? null), yOf);
   const kdjLine = (key: "k" | "d" | "j") =>
@@ -4494,6 +4530,7 @@ function buildTradingSignalGeometry(
     ma20: maPoints("ma20"),
     ma60: maPoints("ma60"),
     ma120: maPoints("ma120"),
+    closeLine,
     emaFastLine: indicatorPoints(emaFastValues, yOf),
     emaSlowLine: indicatorPoints(emaSlowValues, yOf),
     vwapLine: indicatorPoints(vwapValues, yOf),

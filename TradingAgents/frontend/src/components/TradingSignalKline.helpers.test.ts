@@ -31,6 +31,7 @@ import {
   normalizeManualDrawings,
   normalizePriceAxisMode,
   normalizePriceAdjustmentMode,
+  normalizeKlineRenderMode,
   priceAdjustmentPriceByFactor,
   priceAxisPriceFromY,
   priceAxisValueFromPrice,
@@ -492,6 +493,12 @@ function testPriceAdjustmentModeFallback() {
   assertEqual(result.mode, "none", "missing factors keep the series unadjusted");
   assertApprox(result.bars[0]?.close, 11, 0.001, "fallback keeps raw close");
   assertApprox(priceAdjustmentPriceByFactor(11, 2, result), 11, 0.001, "fallback single price stays raw");
+}
+
+function testNormalizesKlineRenderMode() {
+  assertEqual(normalizeKlineRenderMode("line"), "line", "line chart mode is accepted");
+  assertEqual(normalizeKlineRenderMode("ohlc"), "ohlc", "OHLC bar mode is accepted");
+  assertEqual(normalizeKlineRenderMode("area"), "candle", "unknown chart mode falls back to candle");
 }
 
 function testBuildsMeasuredRangeStats() {
@@ -1053,6 +1060,7 @@ testPriceAxisModeFallsBackForInvalidInput();
 testBuildsForwardAdjustedBars();
 testBuildsBackwardAdjustedBars();
 testPriceAdjustmentModeFallback();
+testNormalizesKlineRenderMode();
 testBuildsMeasuredRangeStats();
 testMeasuredRangeStatsKeepSelectionDirection();
 testHandlesMissingBarsExplicitly();

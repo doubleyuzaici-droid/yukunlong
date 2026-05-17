@@ -2857,6 +2857,22 @@ label {
   stroke-dasharray: 8 5;
 }
 
+.trade-signal-chart .kline-close-line {
+  fill: none;
+  stroke: rgba(248, 250, 252, 0.92);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.45;
+  vector-effect: non-scaling-stroke;
+}
+
+.trade-signal-chart .candle.ohlc line {
+  stroke: currentColor;
+  stroke-linecap: square;
+  stroke-width: 1.05;
+  vector-effect: non-scaling-stroke;
+}
+
 .chart-crosshair line {
   stroke: rgba(238, 242, 247, 0.38);
   stroke-width: 0.45;

@@ -253,6 +253,7 @@ export interface ManualDrawingGeometry {
 }
 
 export type PriceAxisMode = "price" | "percent";
+export type KlineRenderMode = "candle" | "line" | "ohlc";
 
 export interface PriceAxisScale {
   mode: PriceAxisMode;
@@ -940,6 +941,11 @@ export function normalizeManualDrawings(value: unknown, maxCount = 80): ManualDr
 
 export function normalizePriceAxisMode(value: unknown): PriceAxisMode {
   return value === "percent" ? "percent" : "price";
+}
+
+export function normalizeKlineRenderMode(value: unknown): KlineRenderMode {
+  if (value === "line" || value === "ohlc") return value;
+  return "candle";
 }
 
 export function normalizePriceAdjustmentMode(value: unknown): PriceAdjustmentMode {
