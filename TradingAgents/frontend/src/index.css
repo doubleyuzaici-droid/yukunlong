@@ -2381,6 +2381,19 @@ label {
   vector-effect: non-scaling-stroke;
 }
 
+.overview-technical-chart .companion-line {
+  stroke-width: 1.6;
+  opacity: 0.82;
+}
+
+.overview-technical-chart .companion-line.plus-di {
+  stroke: rgba(126, 224, 163, 0.88);
+}
+
+.overview-technical-chart .companion-line.minus-di {
+  stroke: rgba(255, 140, 132, 0.86);
+}
+
 .overview-technical-chart .positive-bar {
   fill: rgba(126, 224, 163, 0.78);
 }

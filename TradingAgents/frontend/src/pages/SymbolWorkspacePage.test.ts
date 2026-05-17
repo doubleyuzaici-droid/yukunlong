@@ -223,6 +223,8 @@ function testBuildsOverviewTechnicalCharts() {
   assertOk(atr?.points.every((point: any) => point.value >= 0), "ATR volatility chart uses non-negative percent values");
   assertOk(obv?.points.length, "OBV trend chart exposes volume-price confirmation points");
   assertOk(adx?.points.every((point: any) => point.value >= 0 && point.value <= 100), "ADX trend strength chart is bounded");
+  assertOk(adx?.lines?.some((line: any) => line.key === "plus-di" && line.points.length), "DMI chart exposes +DI companion line");
+  assertOk(adx?.lines?.some((line: any) => line.key === "minus-di" && line.points.length), "DMI chart exposes -DI companion line");
   assertOk(cci?.points.length, "CCI oscillator chart exposes points");
   assertOk(wr?.points.every((point: any) => point.value >= -100 && point.value <= 0), "Williams %R chart stays in oscillator scale");
   assertEqual(missing[0]?.tone, "missing", "missing bars create explicit missing technical chart");

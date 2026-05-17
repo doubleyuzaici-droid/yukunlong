@@ -1588,9 +1588,13 @@ function OverviewTechnicalChartCard({ chart }: { chart: MarketAnalysisTechnicalC
     ? chart.scaleMax
     : Math.max(0, ...values);
   const spread = scaleMax === scaleMin ? 1 : scaleMax - scaleMin;
-  const xOf = (index: number) => 5 + (index / Math.max(points.length - 1, 1)) * 110;
+  const xOfFor = (index: number, length: number) => 5 + (index / Math.max(length - 1, 1)) * 110;
+  const xOf = (index: number) => xOfFor(index, points.length);
   const yOf = (value: number) => 57 - ((value - scaleMin) / spread) * 48;
-  const linePoints = points.map((point, index) => `${xOf(index).toFixed(1)},${yOf(point.value).toFixed(1)}`).join(" ");
+  const linePointsFor = (linePoints: typeof points) => linePoints
+    .map((point, index) => `${xOfFor(index, linePoints.length).toFixed(1)},${yOf(point.value).toFixed(1)}`)
+    .join(" ");
+  const linePoints = linePointsFor(points);
   const zeroY = yOf(Math.max(scaleMin, Math.min(scaleMax, 0)));
   return (
     <div className={`overview-technical-chart ${chart.tone}`}>
@@ -1636,7 +1640,16 @@ function OverviewTechnicalChartCard({ chart }: { chart: MarketAnalysisTechnicalC
             />
           );
         }) : (
-          <polyline points={linePoints} />
+          <>
+            <polyline className="primary-line" points={linePoints} />
+            {(chart.lines || []).map((line) => (
+              <polyline
+                className={`companion-line ${line.key}`}
+                key={line.key}
+                points={linePointsFor(line.points.slice(-32))}
+              />
+            ))}
+          </>
         )}
       </svg>
       <em>{chart.detail}</em>

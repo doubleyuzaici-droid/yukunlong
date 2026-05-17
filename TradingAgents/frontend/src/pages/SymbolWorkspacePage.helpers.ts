@@ -159,6 +159,12 @@ export interface MarketAnalysisSparkPoint {
   tone?: MarketAnalysisTone;
 }
 
+export interface MarketAnalysisTechnicalLine {
+  key: string;
+  label: string;
+  points: MarketAnalysisSparkPoint[];
+}
+
 export interface MarketAnalysisTechnicalChart {
   key: string;
   label: string;
@@ -166,6 +172,7 @@ export interface MarketAnalysisTechnicalChart {
   detail: string;
   tone: MarketAnalysisTone;
   points: MarketAnalysisSparkPoint[];
+  lines?: MarketAnalysisTechnicalLine[];
   scaleMin?: number;
   scaleMax?: number;
 }
@@ -639,13 +646,32 @@ export function buildOverviewTechnicalCharts(bars: MarketBarLike[]): MarketAnaly
       tone: volatilityPct >= 0.06 ? "warn" as MarketAnalysisTone : volatilityPct <= 0.018 ? "neutral" as MarketAnalysisTone : "opportunity" as MarketAnalysisTone,
     }];
   }).slice(-32);
-  const adxPoints = adxSeries(highs, lows, closes, 14).flatMap((value, index) => {
-    if (value == null) return [];
-    const bounded = Math.max(0, Math.min(100, value));
+  const dmiValues = dmiSeries(highs, lows, closes, 14);
+  const adxPoints = dmiValues.flatMap((value, index) => {
+    if (value.adx == null) return [];
+    const bounded = Math.max(0, Math.min(100, value.adx));
     return [{
       date: orderedBars[index].date,
       value: bounded,
       tone: adxIndicatorTone(bounded),
+    }];
+  }).slice(-32);
+  const plusDiPoints = dmiValues.flatMap((value, index) => {
+    if (value.plusDi == null) return [];
+    const bounded = Math.max(0, Math.min(100, value.plusDi));
+    return [{
+      date: orderedBars[index].date,
+      value: bounded,
+      tone: "good" as MarketAnalysisTone,
+    }];
+  }).slice(-32);
+  const minusDiPoints = dmiValues.flatMap((value, index) => {
+    if (value.minusDi == null) return [];
+    const bounded = Math.max(0, Math.min(100, value.minusDi));
+    return [{
+      date: orderedBars[index].date,
+      value: bounded,
+      tone: "risk" as MarketAnalysisTone,
     }];
   }).slice(-32);
   const cciPoints = cciSeries(highs, lows, closes, 20).flatMap((value, index) => {
@@ -737,8 +763,12 @@ export function buildOverviewTechnicalCharts(bars: MarketBarLike[]): MarketAnaly
       detail: "ADX 衡量趋势强度，25 上方说明趋势更清晰，需结合 +DI/-DI 方向。",
       tone: adxIndicatorTone(latestAdx),
       points: adxPoints,
+      lines: [
+        { key: "plus-di", label: "+DI", points: plusDiPoints },
+        { key: "minus-di", label: "-DI", points: minusDiPoints },
+      ],
       scaleMin: 0,
-      scaleMax: 60,
+      scaleMax: 70,
     },
     {
       key: "cci",
@@ -1026,7 +1056,7 @@ function atrSeries(highs: number[], lows: number[], closes: number[], period: nu
   });
 }
 
-function adxSeries(highs: number[], lows: number[], closes: number[], period: number): (number | null)[] {
+function dmiSeries(highs: number[], lows: number[], closes: number[], period: number) {
   const trueRanges = highs.map((high, index) => {
     if (index === 0) return high - lows[index];
     const previousClose = closes[index - 1];
@@ -1045,20 +1075,33 @@ function adxSeries(highs: number[], lows: number[], closes: number[], period: nu
     return downward > upward && downward > 0 ? downward : 0;
   });
   const dxValues = closes.map((_, index) => {
-    if (index + 1 < period) return null;
+    if (index + 1 < period) return { plusDi: null, minusDi: null, dx: null };
     const trSum = sumNumbers(trueRanges.slice(index - period + 1, index + 1));
-    if (!trSum) return null;
+    if (!trSum) return { plusDi: null, minusDi: null, dx: null };
     const plusDi = (sumNumbers(plusDm.slice(index - period + 1, index + 1)) / trSum) * 100;
     const minusDi = (sumNumbers(minusDm.slice(index - period + 1, index + 1)) / trSum) * 100;
     const totalDi = plusDi + minusDi;
-    return totalDi === 0 ? 0 : (Math.abs(plusDi - minusDi) / totalDi) * 100;
+    return {
+      plusDi,
+      minusDi,
+      dx: totalDi === 0 ? 0 : (Math.abs(plusDi - minusDi) / totalDi) * 100,
+    };
   });
-  return dxValues.map((_, index) => {
-    if (index + 1 < period * 2) return null;
+  return dxValues.map((value, index) => {
+    if (index + 1 < period * 2) return {
+      plusDi: value.plusDi,
+      minusDi: value.minusDi,
+      adx: null,
+    };
     const recent = dxValues
       .slice(index - period + 1, index + 1)
-      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
-    return recent.length === period ? averageNumbers(recent) : null;
+      .map((item) => item.dx)
+      .filter((item): item is number => typeof item === "number" && Number.isFinite(item));
+    return {
+      plusDi: value.plusDi,
+      minusDi: value.minusDi,
+      adx: recent.length === period ? averageNumbers(recent) : null,
+    };
   });
 }
 
