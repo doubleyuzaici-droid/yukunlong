@@ -1709,6 +1709,7 @@ function testBuildsKlineEventSummary() {
     quietMovePct: 0.8,
   });
   const patterns = buildCandlestickPatternAnnotations(patternBars);
+  const tdsEvents = buildTdsSequentialAnnotations(risingTdsBars);
   const gaps = buildPriceGapAnnotations(gapBars, { minGapPct: 1 });
   const trendBands = buildTrendRegimeBands(trendRegimeBars);
   const summary = buildKlineEventSummary({
@@ -1716,17 +1717,22 @@ function testBuildsKlineEventSummary() {
     divergenceEvents,
     volumeEvents,
     patterns,
+    tdsEvents,
     gaps,
     trendBands,
   });
 
-  assertEqual(summary.length, 6, "event summary keeps one compact item per signal family");
-  assertEqual(summary.map((item) => item.key).join(","), "technical,divergence,volume,pattern,gap,trend", "event summary uses stable display order");
+  assertEqual(summary.length, 7, "event summary keeps one compact item per signal family");
+  assertEqual(summary.map((item) => item.key).join(","), "technical,divergence,volume,pattern,tds9,gap,trend", "event summary uses stable display order");
   assertEqual(summary[0]?.value, "6个", "technical item reports total event count");
   assertEqual(summary[0]?.detail, "最近 2026-05-07 下破BOLL", "technical item highlights the latest event");
   assertEqual(summary[1]?.tone, "risk", "latest bearish divergence keeps risk tone");
   assertEqual(summary[2]?.detail, "最近 2026-05-07 缩量整理", "volume item highlights latest volume event");
-  assertEqual(summary[5]?.value, "空头排列", "trend item reports latest regime label");
+  assertEqual(summary[4]?.label, "TDS9序列", "TDS9 item exposes the sequential signal family");
+  assertEqual(summary[4]?.value, "上涨9", "TDS9 item reports the latest sequence direction and count");
+  assertEqual(summary[4]?.detail, "最近 2026-06-13 上涨序列 9", "TDS9 item highlights the latest sequence number");
+  assertEqual(summary[4]?.tone, "risk", "rising TDS9 sequence is marked as risk in the radar");
+  assertEqual(summary[6]?.value, "空头排列", "trend item reports latest regime label");
 }
 
 function testBuildsKlineEventDensity() {
@@ -1746,17 +1752,21 @@ function testBuildsKlineEventDensity() {
     patterns: [
       { key: "pattern-2", type: "doji", label: "十字星", tone: "neutral", index: 2, date: "2026-05-03", dateLabel: "05-03", price: 11 },
     ],
+    tdsEvents: [
+      { key: "tds-2", direction: "sell", tone: "risk", count: 7, index: 2, date: "2026-05-03", dateLabel: "05-03", price: 11.4 },
+    ],
     gaps: [
       { key: "gap-4", direction: "down", startIndex: 3, endIndex: 4, startDate: "2026-05-04", endDate: "2026-05-05", startLabel: "05-04", endLabel: "05-05", lowPrice: 9.7, highPrice: 10.2, gapPct: 3.4 },
     ],
   });
 
   assertEqual(density.length, 3, "event density groups events by candle index");
-  assertEqual(density.map((bar) => `${bar.index}:${bar.count}:${bar.tone}`).join(","), "1:1:good,2:3:mixed,4:1:risk", "event density exposes counts and mixed tone");
+  assertEqual(density.map((bar) => `${bar.index}:${bar.count}:${bar.tone}`).join(","), "1:1:good,2:4:mixed,4:1:risk", "event density exposes counts and mixed tone");
   assertApprox(density[0]?.x, 200, 0.001, "event density maps index to chart x");
   assertEqual((density[1]?.height || 0) > (density[0]?.height || 0), true, "larger event clusters get taller bars");
-  assertEqual(density[1]?.label, "3个事件", "event density labels cluster count");
+  assertEqual(density[1]?.label, "4个事件", "event density labels cluster count");
   assertOk(density[1]?.detail.includes("MACD死叉"), "event density detail includes event labels");
+  assertOk(density[1]?.detail.includes("TDS9上涨7"), "event density includes TDS9 sequence labels");
   assertOk(density[2]?.detail.includes("向下缺口"), "event density includes gap direction labels");
 }
 

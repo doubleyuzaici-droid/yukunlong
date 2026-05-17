@@ -178,7 +178,7 @@ export interface TrendRegimeBand {
 }
 
 export type KlineEventSummaryTone = "good" | "risk" | "neutral";
-export type KlineEventSummaryKey = "technical" | "divergence" | "volume" | "pattern" | "gap" | "trend";
+export type KlineEventSummaryKey = "technical" | "divergence" | "volume" | "pattern" | "tds9" | "gap" | "trend";
 
 export interface KlineEventSummaryItem {
   key: KlineEventSummaryKey;
@@ -194,6 +194,7 @@ export interface KlineEventSummaryInput {
   divergenceEvents?: TechnicalDivergenceAnnotation[];
   volumeEvents?: VolumeSignalAnnotation[];
   patterns?: CandlestickPatternAnnotation[];
+  tdsEvents?: TdsSequentialAnnotation[];
   gaps?: PriceGapAnnotation[];
   trendBands?: TrendRegimeBand[];
 }
@@ -3326,6 +3327,7 @@ export function buildKlineEventSummary(input: KlineEventSummaryInput): KlineEven
   const latestDivergence = latestIndexedEvent(input.divergenceEvents ?? []);
   const latestVolume = latestIndexedEvent(input.volumeEvents ?? []);
   const latestPattern = latestIndexedEvent(input.patterns ?? []);
+  const latestTds = latestTdsSequentialEvent(input.tdsEvents ?? []);
   const latestGap = latestGapEvent(input.gaps ?? []);
   const latestTrend = latestTrendBand(input.trendBands ?? []);
   const items: KlineEventSummaryItem[] = [];
@@ -3368,6 +3370,17 @@ export function buildKlineEventSummary(input: KlineEventSummaryInput): KlineEven
       detail: `最近 ${latestPattern.dateLabel} ${latestPattern.label}`,
       tone: latestPattern.tone,
       count: input.patterns?.length ?? 0,
+    });
+  }
+  if (latestTds) {
+    const directionLabel = tdsSequentialDisplayLabel(latestTds.direction);
+    items.push({
+      key: "tds9",
+      label: "TDS9序列",
+      value: `${directionLabel}${latestTds.count}`,
+      detail: `最近 ${latestTds.dateLabel} ${directionLabel}序列 ${latestTds.count}`,
+      tone: latestTds.tone,
+      count: input.tdsEvents?.length ?? 0,
     });
   }
   if (latestGap) {
@@ -3416,6 +3429,11 @@ export function buildKlineEventDensity(input: KlineEventDensityInput): KlineEven
   (input.divergenceEvents ?? []).forEach((event) => addEvent(event.index, event.tone, event.label));
   (input.volumeEvents ?? []).forEach((event) => addEvent(event.index, event.tone, event.label));
   (input.patterns ?? []).forEach((event) => addEvent(event.index, event.tone, event.label));
+  (input.tdsEvents ?? []).forEach((event) => addEvent(
+    event.index,
+    event.tone,
+    `TDS9${tdsSequentialDisplayLabel(event.direction)}${event.count}`,
+  ));
   (input.gaps ?? []).forEach((gap) => addEvent(
     gap.endIndex,
     gap.direction === "up" ? "good" : "risk",
@@ -4461,6 +4479,14 @@ function buildRateOfChangeAt(values: Array<number | null>, period: number, index
 
 function latestIndexedEvent<T extends { index: number; label: string; dateLabel: string; tone: KlineEventSummaryTone }>(events: T[]) {
   return [...events].sort((left, right) => right.index - left.index)[0] ?? null;
+}
+
+function latestTdsSequentialEvent(events: TdsSequentialAnnotation[]) {
+  return [...events].sort((left, right) => right.index - left.index || right.count - left.count)[0] ?? null;
+}
+
+function tdsSequentialDisplayLabel(direction: TdsSequentialDirection) {
+  return direction === "sell" ? "上涨" : "下跌";
 }
 
 function latestGapEvent(gaps: PriceGapAnnotation[]) {
