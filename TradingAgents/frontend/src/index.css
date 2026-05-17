@@ -3553,6 +3553,75 @@ label {
   color: var(--price-down);
 }
 
+.kline-event-backtest {
+  display: grid;
+  grid-template-columns: 112px repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+  align-items: stretch;
+  margin: -6px 0 14px;
+}
+
+.kline-event-backtest-title,
+.kline-backtest-card {
+  min-height: 58px;
+  border: 1px solid rgba(222, 225, 230, 0.12);
+  border-radius: 8px;
+  background: rgba(8, 12, 17, 0.48);
+}
+
+.kline-event-backtest-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(238, 242, 247, 0.84);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.kline-backtest-card {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.kline-backtest-card span,
+.kline-backtest-card em {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kline-backtest-card strong {
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.15;
+}
+
+.kline-backtest-card.good {
+  border-color: rgba(126, 224, 163, 0.22);
+}
+
+.kline-backtest-card.risk {
+  border-color: rgba(255, 140, 132, 0.26);
+}
+
+.kline-backtest-card.neutral {
+  border-color: rgba(143, 179, 255, 0.2);
+}
+
+.kline-backtest-card.good strong {
+  color: var(--price-up);
+}
+
+.kline-backtest-card.risk strong {
+  color: var(--price-down);
+}
+
 .indicator-state-radar {
   display: grid;
   grid-template-columns: 112px repeat(auto-fit, minmax(144px, 1fr));
@@ -7792,6 +7861,7 @@ label {
   .trade-signal-readout,
   .indicator-state-radar,
   .kline-event-radar,
+  .kline-event-backtest,
   .volume-profile-summary,
   .strategy-kline-trace,
   .strategy-trace-metrics,

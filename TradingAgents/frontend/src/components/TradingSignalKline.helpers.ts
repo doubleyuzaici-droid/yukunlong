@@ -227,6 +227,27 @@ export interface KlineEventDensityBar {
   detail: string;
 }
 
+export type KlineEventBacktestKey = Exclude<KlineEventSummaryKey, "trend">;
+
+export interface KlineEventBacktestItem {
+  key: KlineEventBacktestKey;
+  label: string;
+  value: string;
+  detail: string;
+  tone: KlineEventSummaryTone;
+  horizon: number;
+  sampleCount: number;
+  riseCount: number;
+  fallCount: number;
+  riseRate: number;
+  averageReturnPct: number;
+}
+
+export interface KlineEventBacktestInput extends KlineEventSummaryInput {
+  bars: PriceExtremaBarLike[];
+  horizon?: number;
+}
+
 export interface PriceStructureTrendLine {
   key: string;
   type: PriceStructureTrendLineType;
@@ -3486,6 +3507,42 @@ export function buildKlineEventDensity(input: KlineEventDensityInput): KlineEven
     });
 }
 
+export function buildKlineEventBacktestSummary(input: KlineEventBacktestInput): KlineEventBacktestItem[] {
+  const horizon = clampInteger(input.horizon ?? 1, 1, 20);
+  const bars = input.bars.map(normalizeCandlestickPatternBar);
+  const families = buildKlineEventBacktestFamilies(input);
+
+  return families.flatMap((family) => {
+    const returns = family.events.flatMap((event) => {
+      const start = bars[event.index];
+      const end = bars[event.index + horizon];
+      if (!start || !end || start.close === 0) return [];
+      return [((end.close - start.close) / start.close) * 100];
+    });
+
+    if (returns.length === 0) return [];
+
+    const riseCount = returns.filter((value) => value > 0).length;
+    const fallCount = returns.filter((value) => value < 0).length;
+    const averageReturnPct = averageNumbers(returns) ?? 0;
+    const riseRate = riseCount / returns.length;
+
+    return [{
+      key: family.key,
+      label: family.label,
+      value: formatBacktestRate(riseRate),
+      detail: `${horizon}日后上涨 ${riseCount}/${returns.length} · 均幅 ${formatBacktestSignedPercent(averageReturnPct)}`,
+      tone: backtestTone(averageReturnPct),
+      horizon,
+      sampleCount: returns.length,
+      riseCount,
+      fallCount,
+      riseRate,
+      averageReturnPct,
+    }];
+  });
+}
+
 export function buildPriceStructureTrendLines(
   bars: PriceExtremaBarLike[],
   options: {
@@ -4479,6 +4536,66 @@ function buildRateOfChangeAt(values: Array<number | null>, period: number, index
 
 function latestIndexedEvent<T extends { index: number; label: string; dateLabel: string; tone: KlineEventSummaryTone }>(events: T[]) {
   return [...events].sort((left, right) => right.index - left.index)[0] ?? null;
+}
+
+function buildKlineEventBacktestFamilies(input: KlineEventBacktestInput): Array<{
+  key: KlineEventBacktestKey;
+  label: string;
+  events: Array<{ index: number; label: string }>;
+}> {
+  return [
+    {
+      key: "technical",
+      label: "技术信号",
+      events: (input.technicalEvents ?? []).map((event) => ({ index: event.index, label: event.label })),
+    },
+    {
+      key: "divergence",
+      label: "指标背离",
+      events: (input.divergenceEvents ?? []).map((event) => ({ index: event.index, label: event.label })),
+    },
+    {
+      key: "volume",
+      label: "量价异动",
+      events: (input.volumeEvents ?? []).map((event) => ({ index: event.index, label: event.label })),
+    },
+    {
+      key: "pattern",
+      label: "K线形态",
+      events: (input.patterns ?? []).map((event) => ({ index: event.index, label: event.label })),
+    },
+    {
+      key: "tds9",
+      label: "TDS9序列",
+      events: (input.tdsEvents ?? []).map((event) => ({
+        index: event.index,
+        label: `TDS9${tdsSequentialDisplayLabel(event.direction)}${event.count}`,
+      })),
+    },
+    {
+      key: "gap",
+      label: "跳空缺口",
+      events: (input.gaps ?? []).map((gap) => ({
+        index: gap.endIndex,
+        label: gap.direction === "up" ? "向上缺口" : "向下缺口",
+      })),
+    },
+  ];
+}
+
+function formatBacktestRate(value: number) {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatBacktestSignedPercent(value: number) {
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}%`;
+}
+
+function backtestTone(averageReturnPct: number): KlineEventSummaryTone {
+  if (averageReturnPct > 0) return "good";
+  if (averageReturnPct < 0) return "risk";
+  return "neutral";
 }
 
 function latestTdsSequentialEvent(events: TdsSequentialAnnotation[]) {

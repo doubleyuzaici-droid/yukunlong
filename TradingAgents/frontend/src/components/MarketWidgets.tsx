@@ -32,6 +32,7 @@ import {
   buildPsychologicalLineIndicators,
   buildOscillatorIndicators,
   buildKlineEventDensity,
+  buildKlineEventBacktestSummary,
   buildKlineEventSummary,
   buildKlineRangeNavigator,
   buildKlineHoverMetrics,
@@ -1477,6 +1478,16 @@ export function TradingSignalKlinePanel({
     trendBands: chart.trendRegimeBands,
     volumeEvents: chart.volumeSignalEvents,
   });
+  const klineEventBacktests = buildKlineEventBacktestSummary({
+    bars: chart.candles,
+    divergenceEvents: chart.technicalDivergenceEvents,
+    gaps: chart.priceGaps,
+    horizon: 1,
+    patterns: chart.candlestickPatterns,
+    tdsEvents: chart.tdsSequentialEvents,
+    technicalEvents: chart.technicalIndicatorEvents,
+    volumeEvents: chart.volumeSignalEvents,
+  });
   const visibleIndicatorThresholdGuides = chart.indicatorThresholdGuides.filter((guide) => {
     if (!chartPrefs.subCharts && guide.section !== "oscillator") return false;
     if (guide.section === "oscillator") return chartPrefs.rsi || chartPrefs.kdj;
@@ -2176,6 +2187,18 @@ export function TradingSignalKlinePanel({
           <span className="kline-event-radar-title">异动雷达</span>
           {klineEventSummary.map((item) => (
             <div className={`kline-event-card ${item.tone}`} key={item.key}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              <em>{item.detail}</em>
+            </div>
+          ))}
+        </div>
+      )}
+      {klineEventBacktests.length > 0 && (
+        <div className="kline-event-backtest" aria-label="K线信号回测">
+          <span className="kline-event-backtest-title">信号回测</span>
+          {klineEventBacktests.map((item) => (
+            <div className={`kline-backtest-card ${item.tone}`} key={item.key} title={item.detail}>
               <span>{item.label}</span>
               <strong>{item.value}</strong>
               <em>{item.detail}</em>

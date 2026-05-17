@@ -17,6 +17,7 @@ import {
   buildIndicatorValueLabels,
   buildKlineEventSummary,
   buildKlineEventDensity,
+  buildKlineEventBacktestSummary,
   buildLatestPriceLine,
   buildKlineRangeNavigator,
   rightOffsetFromKlineNavigatorX,
@@ -239,6 +240,15 @@ const partialTdsBars = risingTdsBars.slice(0, 10);
 const failedPartialTdsBars = [
   ...risingTdsBars.slice(0, 10),
   { date: "2026-06-11", open: 9.5, high: 9.8, low: 9.2, close: 9.5, volume: 120, amount: 1_140 },
+];
+
+const eventBacktestBars = [
+  { date: "2026-08-01", open: 9.8, high: 10.2, low: 9.6, close: 10, volume: 100, amount: 1_000 },
+  { date: "2026-08-02", open: 10.2, high: 11.4, low: 10, close: 11, volume: 130, amount: 1_430 },
+  { date: "2026-08-03", open: 11.2, high: 12.4, low: 11, close: 12, volume: 150, amount: 1_800 },
+  { date: "2026-08-04", open: 11.8, high: 12, low: 10.8, close: 11, volume: 160, amount: 1_760 },
+  { date: "2026-08-05", open: 11.4, high: 12.8, low: 11.2, close: 12.5, volume: 180, amount: 2_250 },
+  { date: "2026-08-06", open: 12.4, high: 12.6, low: 11.8, close: 12, volume: 170, amount: 2_040 },
 ];
 
 const technicalSignalBars = [
@@ -1770,6 +1780,35 @@ function testBuildsKlineEventDensity() {
   assertOk(density[2]?.detail.includes("向下缺口"), "event density includes gap direction labels");
 }
 
+function testBuildsKlineEventBacktestSummary() {
+  const summary = buildKlineEventBacktestSummary({
+    bars: eventBacktestBars,
+    horizon: 1,
+    technicalEvents: [
+      { key: "tech-0", type: "ma-golden-cross", label: "MA金叉", tone: "good", index: 0, date: "2026-08-01", dateLabel: "08-01", price: 10 },
+      { key: "tech-2", type: "macd-death-cross", label: "MACD死叉", tone: "risk", index: 2, date: "2026-08-03", dateLabel: "08-03", price: 12 },
+      { key: "tech-5", type: "rsi-overbought", label: "RSI超买", tone: "risk", index: 5, date: "2026-08-06", dateLabel: "08-06", price: 12 },
+    ],
+    tdsEvents: [
+      { key: "tds-3", direction: "sell", tone: "risk", count: 9, index: 3, date: "2026-08-04", dateLabel: "08-04", price: 11 },
+    ],
+  });
+
+  assertEqual(summary.length, 2, "event backtest keeps only signal families with forward samples");
+  assertEqual(summary.map((item) => item.key).join(","), "technical,tds9", "event backtest keeps stable family order");
+  assertEqual(summary[0]?.label, "技术信号", "technical backtest item keeps the family label");
+  assertEqual(summary[0]?.sampleCount, 2, "events without enough future bars are excluded from samples");
+  assertEqual(summary[0]?.riseCount, 1, "technical backtest counts next-bar rises");
+  assertEqual(summary[0]?.fallCount, 1, "technical backtest counts next-bar falls");
+  assertApprox(summary[0]?.riseRate, 0.5, 0.0001, "technical backtest exposes next-bar rise rate");
+  assertApprox(summary[0]?.averageReturnPct, 0.8333, 0.001, "technical backtest averages next-bar returns");
+  assertEqual(summary[0]?.value, "50.0%", "technical backtest formats rise rate for display");
+  assertEqual(summary[0]?.detail, "1日后上涨 1/2 · 均幅 +0.83%", "technical backtest exposes a compact Chinese detail");
+  assertEqual(summary[1]?.label, "TDS9序列", "TDS9 backtest item keeps the sequence family label");
+  assertEqual(summary[1]?.value, "100.0%", "TDS9 backtest reports its next-bar rise rate");
+  assertEqual(summary[1]?.tone, "good", "positive average forward return is marked constructive");
+}
+
 testBuildsVisibleVolumeDistribution();
 testBuildsLimitPriceLinesFromFinitePrices();
 testMapsClientPointToSplitChartViewBox();
@@ -1861,3 +1900,4 @@ testBuildsPriceGapAnnotations();
 testPriceGapAnnotationsRespectThreshold();
 testBuildsKlineEventSummary();
 testBuildsKlineEventDensity();
+testBuildsKlineEventBacktestSummary();
