@@ -56,6 +56,19 @@ export interface VolumeProfileModel {
   resistanceBin: VolumeProfileBin | null;
 }
 
+export type VolumeProfileLevelKey = "poc" | "support" | "resistance";
+
+export interface VolumeProfileLevelAnnotation {
+  key: VolumeProfileLevelKey;
+  label: string;
+  price: number;
+  low: number;
+  high: number;
+  percent: number;
+  volume: number;
+  amount: number;
+}
+
 export interface AdvancedIndicatorSnapshot {
   cr: number | null;
   ar: number | null;
@@ -355,6 +368,28 @@ export function buildVisiblePriceExtrema(bars: PriceExtremaBarLike[]): VisiblePr
     lowIndex: lowBar.index,
     rangePct: lowBar.low > 0 ? ((highBar.high - lowBar.low) / lowBar.low) * 100 : null,
   };
+}
+
+export function buildVolumeProfileLevelAnnotations(profile: VolumeProfileModel): VolumeProfileLevelAnnotation[] {
+  const candidates: Array<{ key: VolumeProfileLevelKey; label: string; bin: VolumeProfileBin | null }> = [
+    { key: "poc", label: "峰值筹码", bin: profile.pointOfControl },
+    { key: "support", label: "筹码支撑", bin: profile.supportBin },
+    { key: "resistance", label: "筹码压力", bin: profile.resistanceBin },
+  ];
+
+  return candidates.flatMap(({ key, label, bin }) => {
+    if (!bin || !isFiniteNumber(bin.mid) || bin.volume <= 0) return [];
+    return [{
+      key,
+      label,
+      price: bin.mid,
+      low: bin.low,
+      high: bin.high,
+      percent: bin.percent,
+      volume: bin.volume,
+      amount: bin.amount,
+    }];
+  });
 }
 
 export function buildVolumeProfile(

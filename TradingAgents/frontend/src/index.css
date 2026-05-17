@@ -4593,6 +4593,58 @@ label {
   pointer-events: none;
 }
 
+.volume-profile-level line {
+  stroke: rgba(238, 242, 247, 0.46);
+  stroke-dasharray: 7 5;
+  stroke-width: 0.75;
+  vector-effect: non-scaling-stroke;
+}
+
+.volume-profile-level circle {
+  fill: #0b0f14;
+  stroke: rgba(238, 242, 247, 0.78);
+  stroke-width: 1.1;
+  vector-effect: non-scaling-stroke;
+}
+
+.volume-profile-level text {
+  fill: rgba(238, 242, 247, 0.86) !important;
+  font-size: 10.5px !important;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(11, 15, 20, 0.92);
+  stroke-width: 2px;
+}
+
+.volume-profile-level.poc line,
+.volume-profile-level.poc circle {
+  stroke: rgba(244, 176, 0, 0.82);
+}
+
+.volume-profile-level.poc text {
+  fill: #f4d37e !important;
+}
+
+.volume-profile-level.support line,
+.volume-profile-level.support circle {
+  stroke: rgba(126, 224, 163, 0.78);
+}
+
+.volume-profile-level.support text {
+  fill: #9cf2bc !important;
+}
+
+.volume-profile-level.resistance line,
+.volume-profile-level.resistance circle {
+  stroke: rgba(93, 168, 255, 0.78);
+}
+
+.volume-profile-level.resistance text {
+  fill: #9cc4ff !important;
+}
+
 .volume-profile-panel {
   fill: rgba(8, 12, 17, 0.46);
   stroke: rgba(94, 234, 212, 0.18);
@@ -4889,6 +4941,10 @@ label {
 
 .legend-line.profile {
   background: linear-gradient(90deg, rgba(5, 177, 105, 0.86) 0 34%, rgba(244, 176, 0, 0.9) 34% 66%, rgba(93, 168, 255, 0.86) 66% 100%);
+}
+
+.legend-line.profile-level {
+  background: repeating-linear-gradient(90deg, rgba(126, 224, 163, 0.9) 0 4px, transparent 4px 7px, rgba(93, 168, 255, 0.9) 7px 11px, transparent 11px 14px);
 }
 
 .legend-extrema {

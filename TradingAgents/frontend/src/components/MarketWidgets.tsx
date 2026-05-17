@@ -13,6 +13,7 @@ import {
   buildMomentumIndicators,
   buildTrendOverlayIndicators,
   buildVisiblePriceExtrema,
+  buildVolumeProfileLevelAnnotations,
   buildVolumeMomentumIndicators,
   buildVolumeProfile,
   type VolumeProfileModel,
@@ -2119,6 +2120,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line bias-dma" />BIAS/DMA</span>
         <span><i className="legend-line volume-momentum" />VR/MFI/TRIX</span>
         <span><i className="legend-line profile" />筹码分布</span>
+        <span><i className="legend-line profile-level" />筹码价位</span>
         <span><i className="legend-extrema" />窗口高低</span>
         <span><i className="legend-marker" />信号日至入场日</span>
         <span><i className="legend-event" />证据事件</span>
@@ -2253,8 +2255,25 @@ function VolumeProfileLayer({
   const panelWidth = 116;
   const panelLeft = panelRight - panelWidth;
   const averageY = chartPriceToY(chart, profile.weightedAveragePrice);
+  const profileLevels = buildVolumeProfileLevelAnnotations(profile);
   return (
     <g className="volume-profile-layer">
+      {profileLevels.map((level) => {
+        const y = chartPriceToY(chart, level.price);
+        if (!isFiniteNumber(y)) return null;
+        return (
+          <g className={`volume-profile-level ${level.key}`} key={level.key}>
+            <line x1={chart.plotLeft} x2={panelLeft - 14} y1={y} y2={y} />
+            <circle cx={panelLeft - 14} cy={y} r="3.1" />
+            <text x={chart.plotLeft + 8} y={clampNumber(y - 5, chart.priceTop + 30, chart.priceBottom - 8)}>
+              {level.label} {formatNumber(level.price, 2)}
+            </text>
+            <title>
+              {level.label} {formatNumber(level.price, 2)} · {formatPercent(level.percent)} · {formatCompactNumber(level.volume)}
+            </title>
+          </g>
+        );
+      })}
       <rect className="volume-profile-panel" x={panelLeft - 8} y={chart.priceTop + 2} width={panelWidth + 14} height={chart.priceBottom - chart.priceTop - 4} rx="8" />
       <text className="volume-profile-title" x={panelLeft} y={chart.priceTop + 18}>筹码分布</text>
       {profile.bins.map((bin) => {

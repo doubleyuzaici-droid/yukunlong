@@ -4,6 +4,7 @@ import {
   buildMomentumIndicators,
   buildTrendOverlayIndicators,
   buildVisiblePriceExtrema,
+  buildVolumeProfileLevelAnnotations,
   buildVolumeMomentumIndicators,
   buildVolumeProfile,
 } from "./TradingSignalKline.helpers.js";
@@ -66,6 +67,18 @@ function testHandlesMissingBarsExplicitly() {
   assertEqual(profile.totalVolume, 0, "empty input has zero volume");
   assertEqual(profile.pointOfControl, null, "empty input has no peak chip area");
   assertEqual(profile.currentBin, null, "empty input has no current bin");
+}
+
+function testBuildsVolumeProfileLevelAnnotations() {
+  const profile = buildVolumeProfile(bars, { binCount: 4, currentPrice: 11.8 });
+  const annotations = buildVolumeProfileLevelAnnotations(profile);
+
+  assertEqual(annotations.length, 3, "profile levels expose poc support and resistance");
+  assertEqual(annotations.map((level) => level.key).join(","), "poc,support,resistance", "profile levels keep stable order");
+  assertApprox(annotations[0]?.price, 11.8, 0.001, "poc level uses peak bin midpoint");
+  assertApprox(annotations[1]?.price, 11, 0.001, "support level uses strongest below-current bin midpoint");
+  assertApprox(annotations[2]?.price, 12.6, 0.001, "resistance level uses strongest above-current bin midpoint");
+  assertOk(annotations.every((level) => level.percent > 0), "profile levels carry volume share for labels");
 }
 
 function testBuildsFutuStyleAdvancedIndicators() {
@@ -225,6 +238,7 @@ function testVisiblePriceExtremaNeedUsableBars() {
 
 testBuildsVisibleVolumeDistribution();
 testHandlesMissingBarsExplicitly();
+testBuildsVolumeProfileLevelAnnotations();
 testBuildsFutuStyleAdvancedIndicators();
 testAdvancedIndicatorsNeedEnoughSamples();
 testBuildsMomentumIndicatorSet();
