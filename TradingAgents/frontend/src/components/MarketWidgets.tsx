@@ -7,6 +7,7 @@ import type {
   RealtimeQuote,
   RealtimeQuotePayload,
 } from "../types/market";
+import { buildVolumeProfile, type VolumeProfileModel } from "./TradingSignalKline.helpers";
 import {
   formatCompactNumber,
   formatMoney,
@@ -134,6 +135,7 @@ interface TradingChartPreferences {
   levels: boolean;
   signals: boolean;
   relative: boolean;
+  profile: boolean;
   volume: boolean;
   macd: boolean;
   rsi: boolean;
@@ -287,6 +289,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   levels: true,
   signals: true,
   relative: false,
+  profile: true,
   volume: true,
   macd: true,
   rsi: true,
@@ -327,6 +330,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     levels: typeof next.levels === "boolean" ? next.levels : DEFAULT_TRADING_CHART_PREFS.levels,
     signals: typeof next.signals === "boolean" ? next.signals : DEFAULT_TRADING_CHART_PREFS.signals,
     relative: typeof next.relative === "boolean" ? next.relative : DEFAULT_TRADING_CHART_PREFS.relative,
+    profile: typeof next.profile === "boolean" ? next.profile : DEFAULT_TRADING_CHART_PREFS.profile,
     volume: typeof next.volume === "boolean" ? next.volume : DEFAULT_TRADING_CHART_PREFS.volume,
     macd: typeof next.macd === "boolean" ? next.macd : DEFAULT_TRADING_CHART_PREFS.macd,
     rsi: typeof next.rsi === "boolean" ? next.rsi : DEFAULT_TRADING_CHART_PREFS.rsi,
@@ -1334,6 +1338,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.levels ? "active" : ""} onClick={() => toggleChartPref("levels")} type="button">价位线</button>
         <button className={chartPrefs.signals ? "active" : ""} onClick={() => toggleChartPref("signals")} type="button">信号</button>
         <button className={chartPrefs.relative ? "active" : ""} onClick={() => toggleChartPref("relative")} type="button">相对</button>
+        <button className={chartPrefs.profile ? "active" : ""} onClick={() => toggleChartPref("profile")} type="button">筹码</button>
         <span>指标·副图</span>
         <button className={chartPrefs.volume ? "active" : ""} onClick={() => toggleChartPref("volume")} type="button">VOL</button>
         <button className={chartPrefs.macd ? "active" : ""} onClick={() => toggleChartPref("macd")} type="button">MACD</button>
@@ -1423,6 +1428,7 @@ export function TradingSignalKlinePanel({
       </div>
 
       {strategyAnalysis && <StrategyKlineTrace analysis={strategyAnalysis} />}
+      {chartPrefs.profile && <VolumeProfileSummary profile={chart.volumeProfile} />}
       {chartDiagnostics.length > 0 && <ChartDiagnosticsStrip diagnostics={chartDiagnostics} />}
       {strategyAnalysis && strategyControls && (
         <StrategyWorkbenchControls analysis={strategyAnalysis} controls={strategyControls} />
@@ -1511,6 +1517,9 @@ export function TradingSignalKlinePanel({
                 相对 {formatSignedPercent(chart.relativeLatest)}
               </text>
             </g>
+          )}
+          {chartPrefs.profile && chart.volumeProfile.bins.length > 0 && (
+            <VolumeProfileLayer chart={chart} profile={chart.volumeProfile} />
           )}
           {chart.timeTicks.map((tick) => (
             <text className="time-axis-label" key={`${tick.label}-${tick.x}`} x={tick.x} y="716">
@@ -1783,6 +1792,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line ma120" />MA120</span>
         <span><i className="legend-line vwap" />VWAP/EMA</span>
         <span><i className="legend-line macd" />MACD/RSI</span>
+        <span><i className="legend-line profile" />筹码分布</span>
         <span><i className="legend-marker" />信号日至入场日</span>
       </div>
     </div>
@@ -1853,6 +1863,107 @@ function ChartParamInput({
       <input inputMode="decimal" min="1" step={step} type="number" value={value} onChange={onChange} />
     </label>
   );
+}
+
+function VolumeProfileSummary({ profile }: { profile: VolumeProfileModel }) {
+  if (profile.bins.length === 0) {
+    return (
+      <div className="volume-profile-summary missing" aria-label="筹码分布摘要">
+        <span>筹码分布</span>
+        <strong>暂无可用价量样本</strong>
+        <em>同步历史 K 线和成交量后展示可视区价量分布。</em>
+      </div>
+    );
+  }
+  const rows = [
+    {
+      key: "poc",
+      label: "峰值筹码",
+      value: profileRangeLabel(profile.pointOfControl),
+      detail: `${formatPercent(profile.pointOfControl?.percent)} · ${formatCompactNumber(profile.pointOfControl?.volume)}`,
+    },
+    {
+      key: "avg",
+      label: "平均成本",
+      value: formatNumber(profile.weightedAveragePrice, 2),
+      detail: `可视区成交 ${formatCompactNumber(profile.totalVolume)}`,
+    },
+    {
+      key: "support",
+      label: "下方支撑",
+      value: profileRangeLabel(profile.supportBin),
+      detail: profile.supportBin ? `${formatPercent(profile.supportBin.percent)} · ${formatCompactNumber(profile.supportBin.volume)}` : "当前价下方暂无集中筹码",
+    },
+    {
+      key: "resistance",
+      label: "上方压力",
+      value: profileRangeLabel(profile.resistanceBin),
+      detail: profile.resistanceBin ? `${formatPercent(profile.resistanceBin.percent)} · ${formatCompactNumber(profile.resistanceBin.volume)}` : "当前价上方暂无集中筹码",
+    },
+  ];
+  return (
+    <div className="volume-profile-summary" aria-label="筹码分布摘要">
+      {rows.map((row) => (
+        <div key={row.key}>
+          <span>{row.label}</span>
+          <strong>{row.value}</strong>
+          <em>{row.detail}</em>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function VolumeProfileLayer({
+  chart,
+  profile,
+}: {
+  chart: Record<string, any>;
+  profile: VolumeProfileModel;
+}) {
+  const panelRight = chart.plotRight - 8;
+  const panelWidth = 116;
+  const panelLeft = panelRight - panelWidth;
+  const averageY = chartPriceToY(chart, profile.weightedAveragePrice);
+  return (
+    <g className="volume-profile-layer">
+      <rect className="volume-profile-panel" x={panelLeft - 8} y={chart.priceTop + 2} width={panelWidth + 14} height={chart.priceBottom - chart.priceTop - 4} rx="8" />
+      <text className="volume-profile-title" x={panelLeft} y={chart.priceTop + 18}>筹码分布</text>
+      {profile.bins.map((bin) => {
+        const topY = chartPriceToY(chart, bin.high);
+        const bottomY = chartPriceToY(chart, bin.low);
+        if (!isFiniteNumber(topY) || !isFiniteNumber(bottomY)) return null;
+        const y = Math.min(topY, bottomY);
+        const height = Math.max(Math.abs(bottomY - topY) - 1, 1.8);
+        const width = Math.max(1.4, (panelWidth - 18) * (bin.widthPercent / 100));
+        return (
+          <rect
+            className={`volume-profile-bar ${bin.side} ${bin.isPointOfControl ? "poc" : ""}`}
+            height={height}
+            key={`${bin.low}-${bin.high}`}
+            width={width}
+            x={panelRight - width}
+            y={y}
+          >
+            <title>
+              {profileRangeLabel(bin)} · {formatPercent(bin.percent)} · {formatCompactNumber(bin.volume)}
+            </title>
+          </rect>
+        );
+      })}
+      {isFiniteNumber(averageY) && (
+        <g className="volume-profile-average">
+          <line x1={panelLeft - 2} x2={panelRight + 4} y1={averageY} y2={averageY} />
+          <text x={panelLeft} y={Math.max(chart.priceTop + 34, averageY - 5)}>成本 {formatNumber(profile.weightedAveragePrice, 2)}</text>
+        </g>
+      )}
+    </g>
+  );
+}
+
+function profileRangeLabel(bin?: { low: number; high: number } | null) {
+  if (!bin) return "-";
+  return `${formatNumber(bin.low, 2)}-${formatNumber(bin.high, 2)}`;
 }
 
 function ChartDiagnosticsStrip({
@@ -2770,6 +2881,7 @@ function buildTradingSignalGeometry(
       relativeLine: "",
       relativeZeroY: (PRICE_TOP + PRICE_BOTTOM) / 2,
       relativeLatest: null as number | null,
+      volumeProfile: buildVolumeProfile([], { currentPrice: null }),
       priceTicks: [],
       timeTicks: [],
       latestIndicators: null,
@@ -2864,6 +2976,10 @@ function buildTradingSignalGeometry(
   const maxRelativeAbs = Math.max(0.01, ...relativeValues.map(Math.abs));
   const relativeY = (value: number) =>
     PRICE_BOTTOM - (((value + maxRelativeAbs) / (maxRelativeAbs * 2)) * (PRICE_BOTTOM - PRICE_TOP));
+  const volumeProfile = buildVolumeProfile(visible, {
+    binCount: 24,
+    currentPrice: closeValues[closeValues.length - 1],
+  });
 
   const candles = visible.map((bar, index) => {
     const open = Number(bar.open ?? bar.close ?? 0);
@@ -3050,6 +3166,7 @@ function buildTradingSignalGeometry(
     relativeLine,
     relativeZeroY: relativeY(0),
     relativeLatest: relativeValues[relativeValues.length - 1] ?? null,
+    volumeProfile,
     priceTicks,
     timeTicks,
     latestIndicators: candles[candles.length - 1]?.indicators || null,

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "test": "tsc --project tsconfig.json --outDir .tmp/test-build --noEmit false --allowImportingTsExtensions false && node --experimental-specifier-resolution=node .tmp/test-build/pages/SymbolWorkspacePage.test.js",
+    "test": "tsc --project tsconfig.json --outDir .tmp/test-build --noEmit false --allowImportingTsExtensions false && node --experimental-specifier-resolution=node .tmp/test-build/pages/SymbolWorkspacePage.test.js && node --experimental-specifier-resolution=node .tmp/test-build/components/TradingSignalKline.helpers.test.js",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },

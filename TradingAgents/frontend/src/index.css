@@ -3125,6 +3125,46 @@ label {
   color: var(--price-down);
 }
 
+.volume-profile-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  margin: -4px 0 14px;
+}
+
+.volume-profile-summary > div,
+.volume-profile-summary.missing {
+  display: grid;
+  gap: 4px;
+  min-height: 66px;
+  border: 1px solid rgba(94, 234, 212, 0.14);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background:
+    linear-gradient(135deg, rgba(94, 234, 212, 0.08), transparent 58%),
+    rgba(8, 12, 17, 0.42);
+  font-variant-numeric: tabular-nums;
+}
+
+.volume-profile-summary span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.volume-profile-summary strong {
+  color: var(--text-primary);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.volume-profile-summary em {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
 .strategy-kline-trace {
   display: grid;
   grid-template-columns: minmax(220px, 0.52fr) minmax(0, 1.48fr);
@@ -4385,6 +4425,62 @@ label {
   stroke-width: 2px;
 }
 
+.volume-profile-layer {
+  pointer-events: none;
+}
+
+.volume-profile-panel {
+  fill: rgba(8, 12, 17, 0.46);
+  stroke: rgba(94, 234, 212, 0.18);
+  stroke-width: 0.75;
+  vector-effect: non-scaling-stroke;
+}
+
+.volume-profile-title {
+  fill: rgba(157, 248, 239, 0.9) !important;
+  font-size: 11px !important;
+  font-weight: 850;
+  paint-order: stroke;
+  stroke: rgba(11, 15, 20, 0.92);
+  stroke-width: 2px;
+}
+
+.volume-profile-bar {
+  fill: rgba(94, 234, 212, 0.34);
+}
+
+.volume-profile-bar.below {
+  fill: rgba(5, 177, 105, 0.34);
+}
+
+.volume-profile-bar.current {
+  fill: rgba(244, 176, 0, 0.56);
+}
+
+.volume-profile-bar.above {
+  fill: rgba(93, 168, 255, 0.36);
+}
+
+.volume-profile-bar.poc {
+  fill: rgba(244, 176, 0, 0.76);
+}
+
+.volume-profile-average line {
+  stroke: rgba(238, 242, 247, 0.72);
+  stroke-dasharray: 5 4;
+  stroke-width: 0.85;
+  vector-effect: non-scaling-stroke;
+}
+
+.volume-profile-average text {
+  fill: rgba(248, 250, 252, 0.9) !important;
+  font-size: 10px !important;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: rgba(11, 15, 20, 0.92);
+  stroke-width: 2px;
+}
+
 .chart-measure line {
   stroke: #dbe7ff;
   stroke-width: 1.15;
@@ -4541,6 +4637,10 @@ label {
 
 .legend-line.macd {
   background: linear-gradient(90deg, #f4b000 0 48%, #8fb3ff 52% 100%);
+}
+
+.legend-line.profile {
+  background: linear-gradient(90deg, rgba(5, 177, 105, 0.86) 0 34%, rgba(244, 176, 0, 0.9) 34% 66%, rgba(93, 168, 255, 0.86) 66% 100%);
 }
 
 .symbol-signal-panel {
@@ -5646,6 +5746,7 @@ label {
   .signal-workbench-layout,
   .realtime-grid,
   .trade-signal-readout,
+  .volume-profile-summary,
   .strategy-kline-trace,
   .strategy-trace-metrics,
   .strategy-workbench-controls,
