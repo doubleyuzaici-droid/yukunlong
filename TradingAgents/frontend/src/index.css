@@ -4090,6 +4090,56 @@ label {
   fill: #ffe4a3 !important;
 }
 
+.technical-indicator-event {
+  pointer-events: none;
+}
+
+.technical-indicator-event line {
+  stroke-dasharray: 4 3;
+  stroke-width: 0.75;
+  vector-effect: non-scaling-stroke;
+}
+
+.technical-indicator-event path {
+  stroke: rgba(11, 15, 20, 0.78);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.technical-indicator-event text {
+  font-size: 10.5px !important;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(11, 15, 20, 0.92);
+  stroke-width: 2px;
+}
+
+.technical-indicator-event.good line {
+  stroke: rgba(94, 234, 212, 0.58);
+}
+
+.technical-indicator-event.good path {
+  fill: #5eead4;
+}
+
+.technical-indicator-event.good text {
+  fill: #8ff7ea !important;
+}
+
+.technical-indicator-event.risk line {
+  stroke: rgba(255, 140, 132, 0.6);
+}
+
+.technical-indicator-event.risk path {
+  fill: #ff8c84;
+}
+
+.technical-indicator-event.risk text {
+  fill: #ffb3ad !important;
+}
+
 .fibonacci-level {
   pointer-events: none;
 }
@@ -5213,6 +5263,15 @@ label {
   height: 10px !important;
   border-radius: 999px !important;
   background: linear-gradient(90deg, #7ee0a3 0 33%, #f4d37e 33% 66%, #ff8c84 66% 100%);
+  box-shadow: 0 0 0 1px rgba(238, 242, 247, 0.24);
+}
+
+.legend-tech-signal {
+  display: inline-block;
+  width: 14px;
+  height: 10px !important;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+  background: linear-gradient(90deg, #5eead4 0 48%, #ff8c84 52% 100%);
   box-shadow: 0 0 0 1px rgba(238, 242, 247, 0.24);
 }
 

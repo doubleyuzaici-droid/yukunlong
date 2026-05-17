@@ -17,6 +17,23 @@ export interface PriceExtremaBarLike extends VolumeProfileBarLike {
 export type PriceGapDirection = "up" | "down";
 export type CandlestickPatternTone = "good" | "risk" | "neutral";
 export type CandlestickPatternType = "doji" | "hammer" | "bullish-engulfing" | "bearish-engulfing";
+export type TechnicalIndicatorEventTone = "good" | "risk";
+export type TechnicalIndicatorEventType =
+  | "ma-golden-cross"
+  | "ma-death-cross"
+  | "macd-golden-cross"
+  | "macd-death-cross"
+  | "boll-breakout-up"
+  | "boll-breakout-down";
+
+export interface TechnicalIndicatorBarLike extends PriceExtremaBarLike {
+  maFast?: number | null;
+  maSlow?: number | null;
+  dif?: number | null;
+  dea?: number | null;
+  bollUpper?: number | null;
+  bollLower?: number | null;
+}
 
 export interface PriceGapAnnotation {
   key: string;
@@ -37,6 +54,17 @@ export interface CandlestickPatternAnnotation {
   type: CandlestickPatternType;
   label: string;
   tone: CandlestickPatternTone;
+  index: number;
+  date: string;
+  dateLabel: string;
+  price: number;
+}
+
+export interface TechnicalIndicatorAnnotation {
+  key: string;
+  type: TechnicalIndicatorEventType;
+  label: string;
+  tone: TechnicalIndicatorEventTone;
   index: number;
   date: string;
   dateLabel: string;
@@ -708,6 +736,70 @@ export function buildCandlestickPatternAnnotations(
   });
 }
 
+export function buildTechnicalIndicatorAnnotations(
+  bars: TechnicalIndicatorBarLike[],
+): TechnicalIndicatorAnnotation[] {
+  const normalized = bars
+    .map(normalizeTechnicalIndicatorBar)
+    .filter((bar): bar is NonNullable<ReturnType<typeof normalizeTechnicalIndicatorBar>> => Boolean(bar));
+  if (normalized.length < 2) return [];
+
+  return normalized.flatMap((bar, cursor) => {
+    if (cursor === 0) return [];
+    const previous = normalized[cursor - 1];
+    if (!previous) return [];
+
+    const events: TechnicalIndicatorAnnotation[] = [];
+    const pushEvent = (
+      type: TechnicalIndicatorEventType,
+      label: string,
+      tone: TechnicalIndicatorEventTone,
+    ) => {
+      events.push({
+        key: `${type}-${bar.index}`,
+        type,
+        label,
+        tone,
+        index: bar.index,
+        date: bar.date,
+        dateLabel: bar.label,
+        price: tone === "risk" ? bar.high : bar.low,
+      });
+    };
+
+    if (crossedAbove(previous.maFast, previous.maSlow, bar.maFast, bar.maSlow)) {
+      pushEvent("ma-golden-cross", "MA金叉", "good");
+    }
+    if (crossedBelow(previous.maFast, previous.maSlow, bar.maFast, bar.maSlow)) {
+      pushEvent("ma-death-cross", "MA死叉", "risk");
+    }
+    if (crossedAbove(previous.dif, previous.dea, bar.dif, bar.dea)) {
+      pushEvent("macd-golden-cross", "MACD金叉", "good");
+    }
+    if (crossedBelow(previous.dif, previous.dea, bar.dif, bar.dea)) {
+      pushEvent("macd-death-cross", "MACD死叉", "risk");
+    }
+    if (
+      isFiniteNumber(previous.bollUpper) &&
+      isFiniteNumber(bar.bollUpper) &&
+      previous.close <= previous.bollUpper &&
+      bar.close > bar.bollUpper
+    ) {
+      pushEvent("boll-breakout-up", "上破BOLL", "good");
+    }
+    if (
+      isFiniteNumber(previous.bollLower) &&
+      isFiniteNumber(bar.bollLower) &&
+      previous.close >= previous.bollLower &&
+      bar.close < bar.bollLower
+    ) {
+      pushEvent("boll-breakout-down", "下破BOLL", "risk");
+    }
+
+    return events;
+  });
+}
+
 export function buildSupportResistanceLevels(
   bars: PriceExtremaBarLike[],
   options: {
@@ -1057,6 +1149,30 @@ function normalizeCandlestickPatternBar(bar: PriceExtremaBarLike, index: number)
   };
 }
 
+function normalizeTechnicalIndicatorBar(bar: TechnicalIndicatorBarLike, index: number) {
+  const close = Number(bar.close ?? bar.open ?? bar.high ?? bar.low);
+  const open = Number(bar.open ?? close);
+  const high = Number(bar.high ?? Math.max(open, close));
+  const low = Number(bar.low ?? Math.min(open, close));
+  if (![open, high, low, close].every(isFiniteNumber)) return null;
+  const date = String(bar.date || index);
+  return {
+    index,
+    date,
+    label: String(bar.period_label || bar.date || index),
+    open,
+    high: Math.max(high, low, open, close),
+    low: Math.min(high, low, open, close),
+    close,
+    maFast: normalizeOptionalNumber(bar.maFast),
+    maSlow: normalizeOptionalNumber(bar.maSlow),
+    dif: normalizeOptionalNumber(bar.dif),
+    dea: normalizeOptionalNumber(bar.dea),
+    bollUpper: normalizeOptionalNumber(bar.bollUpper),
+    bollLower: normalizeOptionalNumber(bar.bollLower),
+  };
+}
+
 function normalizeSupportResistanceBar(bar: PriceExtremaBarLike, index: number) {
   const close = Number(bar.close ?? bar.open ?? bar.high ?? bar.low);
   const open = Number(bar.open ?? close);
@@ -1095,6 +1211,45 @@ function normalizeAdvancedBar(bar: VolumeProfileBarLike) {
     close,
     volume: Math.max(volume, 0),
   };
+}
+
+function normalizeOptionalNumber(value: unknown) {
+  const next = Number(value);
+  return isFiniteNumber(next) ? next : null;
+}
+
+function crossedAbove(
+  previousLeft: number | null,
+  previousRight: number | null,
+  currentLeft: number | null,
+  currentRight: number | null,
+) {
+  if (
+    !isFiniteNumber(previousLeft) ||
+    !isFiniteNumber(previousRight) ||
+    !isFiniteNumber(currentLeft) ||
+    !isFiniteNumber(currentRight)
+  ) {
+    return false;
+  }
+  return previousLeft <= previousRight && currentLeft > currentRight;
+}
+
+function crossedBelow(
+  previousLeft: number | null,
+  previousRight: number | null,
+  currentLeft: number | null,
+  currentRight: number | null,
+) {
+  if (
+    !isFiniteNumber(previousLeft) ||
+    !isFiniteNumber(previousRight) ||
+    !isFiniteNumber(currentLeft) ||
+    !isFiniteNumber(currentRight)
+  ) {
+    return false;
+  }
+  return previousLeft >= previousRight && currentLeft < currentRight;
 }
 
 function buildCciWrSnapshot(

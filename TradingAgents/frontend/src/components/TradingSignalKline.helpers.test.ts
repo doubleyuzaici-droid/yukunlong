@@ -7,6 +7,7 @@ import {
   buildMomentumIndicators,
   buildPriceGapAnnotations,
   buildSupportResistanceLevels,
+  buildTechnicalIndicatorAnnotations,
   buildTrendOverlayIndicators,
   buildVisiblePriceExtrema,
   buildVolumeProfileLevelAnnotations,
@@ -82,6 +83,16 @@ const patternBars = [
   { date: "2026-05-05", open: 10.4, high: 11.2, low: 10.3, close: 11, volume: 210, amount: 2_310 },
   { date: "2026-05-06", open: 11.1, high: 11.3, low: 10.1, close: 10.2, volume: 280, amount: 2_856 },
   { date: "2026-05-07", open: 10.3, high: 10.55, low: 9.4, close: 10.5, volume: 320, amount: 3_360 },
+];
+
+const technicalSignalBars = [
+  { date: "2026-05-01", open: 10, high: 10.2, low: 9.8, close: 10, maFast: 9.8, maSlow: 10, dif: -0.08, dea: 0.02, bollUpper: 11, bollLower: 9 },
+  { date: "2026-05-02", open: 10, high: 10.9, low: 9.9, close: 10.8, maFast: 10.2, maSlow: 10.1, dif: -0.04, dea: 0.01, bollUpper: 11.2, bollLower: 9.1 },
+  { date: "2026-05-03", open: 10.8, high: 11, low: 10.4, close: 10.9, maFast: 10.5, maSlow: 10.2, dif: 0.05, dea: 0.02, bollUpper: 11.4, bollLower: 9.3 },
+  { date: "2026-05-04", open: 10.9, high: 12.4, low: 10.8, close: 12.2, maFast: 10.9, maSlow: 10.4, dif: 0.08, dea: 0.03, bollUpper: 12, bollLower: 9.5 },
+  { date: "2026-05-05", open: 12.2, high: 12.3, low: 11, close: 11.2, maFast: 11.2, maSlow: 11, dif: 0.04, dea: 0.02, bollUpper: 12.5, bollLower: 9.8 },
+  { date: "2026-05-06", open: 11.2, high: 11.3, low: 10.6, close: 10.8, maFast: 10.9, maSlow: 11.1, dif: 0.01, dea: 0.03, bollUpper: 12.2, bollLower: 9.6 },
+  { date: "2026-05-07", open: 10.8, high: 10.9, low: 8.7, close: 8.8, maFast: 10.3, maSlow: 10.9, dif: -0.03, dea: 0.02, bollUpper: 11.8, bollLower: 9 },
 ];
 
 function testBuildsVisibleVolumeDistribution() {
@@ -419,6 +430,31 @@ function testCandlestickPatternsNeedUsableBars() {
   assertEqual(patterns.length, 0, "empty input has no candlestick patterns");
 }
 
+function testBuildsTechnicalIndicatorAnnotations() {
+  const events = buildTechnicalIndicatorAnnotations(technicalSignalBars);
+
+  assertEqual(events.length, 6, "technical indicator events detect key crosses and breakouts");
+  assertEqual(
+    events.map((event) => event.type).join(","),
+    "ma-golden-cross,macd-golden-cross,boll-breakout-up,ma-death-cross,macd-death-cross,boll-breakout-down",
+    "technical indicator events keep chronological order",
+  );
+  assertEqual(events.map((event) => event.label).join(","), "MA金叉,MACD金叉,上破BOLL,MA死叉,MACD死叉,下破BOLL", "events expose compact Chinese chart labels");
+  assertEqual(events.map((event) => event.index).join(","), "1,2,3,5,5,6", "events anchor to the signal candle");
+  assertEqual(events.filter((event) => event.tone === "good").length, 3, "constructive events are marked good");
+  assertEqual(events.filter((event) => event.tone === "risk").length, 3, "risk events are marked risk");
+  assertApprox(events.find((event) => event.type === "boll-breakout-down")?.price, 10.9, 0.001, "downside events anchor above the candle");
+}
+
+function testTechnicalIndicatorAnnotationsNeedComparableValues() {
+  const events = buildTechnicalIndicatorAnnotations([
+    { date: "2026-05-01", open: 10, high: 10.2, low: 9.8, close: 10 },
+    { date: "2026-05-02", open: 10, high: 10.3, low: 9.9, close: 10.2 },
+  ]);
+
+  assertEqual(events.length, 0, "missing indicator values have no technical indicator events");
+}
+
 function testBuildsPriceGapAnnotations() {
   const gaps = buildPriceGapAnnotations(gapBars, { minGapPct: 1 });
 
@@ -465,5 +501,7 @@ testBuildsSupportResistanceLevelsFromSwingPivots();
 testSupportResistanceNeedsUsableBars();
 testBuildsCandlestickPatternAnnotations();
 testCandlestickPatternsNeedUsableBars();
+testBuildsTechnicalIndicatorAnnotations();
+testTechnicalIndicatorAnnotationsNeedComparableValues();
 testBuildsPriceGapAnnotations();
 testPriceGapAnnotationsRespectThreshold();

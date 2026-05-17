@@ -16,6 +16,7 @@ import {
   buildMomentumIndicators,
   buildPriceGapAnnotations,
   buildSupportResistanceLevels,
+  buildTechnicalIndicatorAnnotations,
   buildTrendOverlayIndicators,
   buildVisiblePriceExtrema,
   buildVolumeProfileLevelAnnotations,
@@ -189,6 +190,7 @@ interface TradingChartPreferences {
   fibonacci: boolean;
   supportResistance: boolean;
   patterns: boolean;
+  indicatorSignals: boolean;
   sar: boolean;
   bbi: boolean;
   volume: boolean;
@@ -366,6 +368,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   fibonacci: false,
   supportResistance: true,
   patterns: true,
+  indicatorSignals: true,
   sar: true,
   bbi: true,
   volume: true,
@@ -430,6 +433,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     fibonacci: typeof next.fibonacci === "boolean" ? next.fibonacci : DEFAULT_TRADING_CHART_PREFS.fibonacci,
     supportResistance: typeof next.supportResistance === "boolean" ? next.supportResistance : DEFAULT_TRADING_CHART_PREFS.supportResistance,
     patterns: typeof next.patterns === "boolean" ? next.patterns : DEFAULT_TRADING_CHART_PREFS.patterns,
+    indicatorSignals: typeof next.indicatorSignals === "boolean" ? next.indicatorSignals : DEFAULT_TRADING_CHART_PREFS.indicatorSignals,
     sar: typeof next.sar === "boolean" ? next.sar : DEFAULT_TRADING_CHART_PREFS.sar,
     bbi: typeof next.bbi === "boolean" ? next.bbi : DEFAULT_TRADING_CHART_PREFS.bbi,
     volume: typeof next.volume === "boolean" ? next.volume : DEFAULT_TRADING_CHART_PREFS.volume,
@@ -1500,6 +1504,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.fibonacci ? "active" : ""} onClick={() => toggleChartPref("fibonacci")} type="button">斐波</button>
         <button className={chartPrefs.supportResistance ? "active" : ""} onClick={() => toggleChartPref("supportResistance")} type="button">支阻</button>
         <button className={chartPrefs.patterns ? "active" : ""} onClick={() => toggleChartPref("patterns")} type="button">形态</button>
+        <button className={chartPrefs.indicatorSignals ? "active" : ""} onClick={() => toggleChartPref("indicatorSignals")} type="button">技信</button>
         <button className={chartPrefs.sar ? "active" : ""} onClick={() => toggleChartPref("sar")} type="button">SAR</button>
         <button className={chartPrefs.bbi ? "active" : ""} onClick={() => toggleChartPref("bbi")} type="button">BBI</button>
         <span>指标·副图</span>
@@ -1939,6 +1944,16 @@ export function TradingSignalKlinePanel({
               </title>
             </g>
           ))}
+          {chartPrefs.indicatorSignals && chart.technicalIndicatorEvents.map((event) => (
+            <g className={`technical-indicator-event ${event.tone}`} key={event.key}>
+              <line x1={event.x} x2={event.x} y1={event.priceY} y2={event.markerY} />
+              <path d={`M ${event.x} ${event.markerY - 4.8} L ${event.x + 4.8} ${event.markerY} L ${event.x} ${event.markerY + 4.8} L ${event.x - 4.8} ${event.markerY} Z`} />
+              <text x={event.labelX} y={event.labelY}>{event.label}</text>
+              <title>
+                {event.dateLabel} {event.label} {formatNumber(event.price, 2)}
+              </title>
+            </g>
+          ))}
           {chartPrefs.volume && chart.volumeMa20Line && <polyline className="volume-ma-line" points={chart.volumeMa20Line} />}
           {chartPrefs.signals && chart.entryLinks.map((link) => (
             <g className="signal-entry-link" key={link.id}>
@@ -2215,6 +2230,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-extrema" />窗口高低</span>
         <span><i className="legend-gap" />跳空缺口</span>
         <span><i className="legend-pattern" />K线形态</span>
+        <span><i className="legend-tech-signal" />技术信号</span>
         <span><i className="legend-marker" />信号日至入场日</span>
         <span><i className="legend-event" />证据事件</span>
       </div>
@@ -3320,6 +3336,7 @@ function buildTradingSignalGeometry(
       entryLinks: [],
       priceGaps: [],
       candlestickPatterns: [],
+      technicalIndicatorEvents: [],
       fibonacciLevels: [],
       supportResistanceLevels: [],
       ma5: "",
@@ -3751,6 +3768,38 @@ function buildTradingSignalGeometry(
       },
     };
   });
+  const technicalEventRanks = new Map<number, number>();
+  const technicalIndicatorEvents = buildTechnicalIndicatorAnnotations(candles.map((candle) => ({
+    date: candle.date,
+    period_label: candle.periodLabel,
+    open: candle.open,
+    high: candle.high,
+    low: candle.low,
+    close: candle.close,
+    maFast: candle.ma5,
+    maSlow: candle.ma20,
+    dif: candle.indicators.dif,
+    dea: candle.indicators.dea,
+    bollUpper: candle.indicators.bollUpper,
+    bollLower: candle.indicators.bollLower,
+  }))).map((event) => {
+    const rank = technicalEventRanks.get(event.index) || 0;
+    technicalEventRanks.set(event.index, rank + 1);
+    const x = xOf(event.index);
+    const priceY = yOf(event.price);
+    const isRisk = event.tone === "risk";
+    const markerY = isRisk
+      ? Math.max(PRICE_TOP + 14, priceY - 24 - rank * 14)
+      : Math.min(PRICE_BOTTOM - 12, priceY + 24 + rank * 14);
+    return {
+      ...event,
+      x,
+      priceY,
+      markerY,
+      labelX: clampNumber(x + (x > PLOT_RIGHT - 116 ? -78 : 12), PLOT_LEFT + 8, PLOT_RIGHT - 92),
+      labelY: clampNumber(markerY - 7, PRICE_TOP + 14, PRICE_BOTTOM - 6),
+    };
+  });
   const maPoints = (key: "ma5" | "ma20" | "ma60" | "ma120") =>
     candles
       .filter((candle) => typeof candle[key] === "number")
@@ -3857,6 +3906,7 @@ function buildTradingSignalGeometry(
     entryLinks,
     priceGaps,
     candlestickPatterns,
+    technicalIndicatorEvents,
     fibonacciLevels,
     supportResistanceLevels,
     ma5: maPoints("ma5"),
