@@ -201,6 +201,227 @@ export interface MeasuredRangeStats {
   totalAmount: number;
 }
 
+export type ChartPreferencePresetKey = "basic" | "trend" | "oscillator" | "volume" | "structure" | "full";
+export type ChartPreferenceName =
+  | "ma"
+  | "ema"
+  | "boll"
+  | "vwap"
+  | "levels"
+  | "signals"
+  | "events"
+  | "relative"
+  | "profile"
+  | "fibonacci"
+  | "supportResistance"
+  | "trendLines"
+  | "patterns"
+  | "indicatorSignals"
+  | "divergences"
+  | "volumeSignals"
+  | "trendRegime"
+  | "sar"
+  | "bbi"
+  | "volume"
+  | "macd"
+  | "rsi"
+  | "kdj"
+  | "advanced"
+  | "momentum"
+  | "biasDma"
+  | "volumeMomentum"
+  | "volatility"
+  | "subCharts"
+  | "measure";
+
+export interface ChartPreferencePreset {
+  key: ChartPreferencePresetKey;
+  label: string;
+  description: string;
+  values: Record<ChartPreferenceName, boolean>;
+}
+
+const BASE_CHART_PRESET_VALUES: Record<ChartPreferenceName, boolean> = {
+  ma: true,
+  ema: false,
+  boll: true,
+  vwap: false,
+  levels: true,
+  signals: true,
+  events: true,
+  relative: false,
+  profile: true,
+  fibonacci: false,
+  supportResistance: true,
+  trendLines: true,
+  patterns: true,
+  indicatorSignals: true,
+  divergences: true,
+  volumeSignals: true,
+  trendRegime: true,
+  sar: true,
+  bbi: true,
+  volume: true,
+  macd: true,
+  rsi: true,
+  kdj: true,
+  advanced: true,
+  momentum: true,
+  biasDma: true,
+  volumeMomentum: true,
+  volatility: true,
+  subCharts: true,
+  measure: false,
+};
+
+export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
+  {
+    key: "basic",
+    label: "基础",
+    description: "保留均线、BOLL、成交量与MACD，适合快速看价量。",
+    values: {
+      ...BASE_CHART_PRESET_VALUES,
+      ema: false,
+      vwap: false,
+      relative: false,
+      profile: false,
+      fibonacci: false,
+      supportResistance: false,
+      trendLines: false,
+      patterns: false,
+      indicatorSignals: false,
+      divergences: false,
+      volumeSignals: false,
+      trendRegime: false,
+      sar: false,
+      bbi: false,
+      rsi: false,
+      kdj: false,
+      advanced: false,
+      momentum: false,
+      biasDma: false,
+      volumeMomentum: false,
+      volatility: false,
+      subCharts: false,
+    },
+  },
+  {
+    key: "trend",
+    label: "趋势",
+    description: "突出均线、EMA、BOLL、SAR/BBI、趋势带与结构趋势线。",
+    values: {
+      ...BASE_CHART_PRESET_VALUES,
+      ema: true,
+      vwap: false,
+      relative: false,
+      profile: false,
+      fibonacci: false,
+      patterns: false,
+      divergences: false,
+      volumeSignals: false,
+      rsi: false,
+      kdj: false,
+      advanced: false,
+      momentum: false,
+      biasDma: false,
+      volumeMomentum: false,
+      volatility: false,
+      subCharts: true,
+    },
+  },
+  {
+    key: "oscillator",
+    label: "震荡",
+    description: "聚焦MACD、RSI、KDJ、CCI/WR、BIAS/DMA和背离。",
+    values: {
+      ...BASE_CHART_PRESET_VALUES,
+      ema: false,
+      vwap: false,
+      relative: false,
+      profile: false,
+      fibonacci: false,
+      supportResistance: false,
+      trendLines: false,
+      patterns: false,
+      volumeSignals: false,
+      trendRegime: false,
+      sar: false,
+      bbi: false,
+      advanced: false,
+      volumeMomentum: false,
+      volatility: false,
+      subCharts: true,
+    },
+  },
+  {
+    key: "volume",
+    label: "量价",
+    description: "突出成交量、量价异动、筹码分布、VWAP、VR/MFI/TRIX与OBV。",
+    values: {
+      ...BASE_CHART_PRESET_VALUES,
+      ema: false,
+      vwap: true,
+      relative: false,
+      fibonacci: false,
+      supportResistance: false,
+      trendLines: false,
+      patterns: false,
+      divergences: false,
+      trendRegime: false,
+      sar: false,
+      bbi: false,
+      rsi: false,
+      kdj: false,
+      advanced: false,
+      momentum: false,
+      biasDma: false,
+      volatility: true,
+      subCharts: true,
+    },
+  },
+  {
+    key: "structure",
+    label: "结构",
+    description: "打开支阻、趋势线、斐波、形态、背离和筹码价位。",
+    values: {
+      ...BASE_CHART_PRESET_VALUES,
+      ema: false,
+      vwap: false,
+      relative: false,
+      fibonacci: true,
+      supportResistance: true,
+      trendLines: true,
+      patterns: true,
+      indicatorSignals: true,
+      divergences: true,
+      volumeSignals: false,
+      sar: false,
+      bbi: false,
+      rsi: false,
+      kdj: false,
+      advanced: false,
+      momentum: false,
+      biasDma: false,
+      volumeMomentum: false,
+      volatility: false,
+      subCharts: false,
+    },
+  },
+  {
+    key: "full",
+    label: "全量",
+    description: "打开全部主图与副图层，用于细查或验收。",
+    values: {
+      ...BASE_CHART_PRESET_VALUES,
+      ema: true,
+      vwap: true,
+      relative: true,
+      fibonacci: true,
+      subCharts: true,
+    },
+  },
+];
+
 export interface FibonacciRetracementLevel {
   key: string;
   ratio: number;
@@ -417,6 +638,28 @@ export function buildIndicatorSectionLayout(mode: IndicatorSectionLayoutMode = "
     volatility,
     sections,
   };
+}
+
+export function applyChartPreferencePreset<T extends object>(
+  preferences: T,
+  presetKey: ChartPreferencePresetKey | string,
+): T {
+  const preset = CHART_PREFERENCE_PRESETS.find((item) => item.key === presetKey);
+  if (!preset) return preferences;
+  return {
+    ...preferences,
+    ...preset.values,
+  };
+}
+
+export function matchChartPreferencePreset(
+  preferences: object | null | undefined,
+): ChartPreferencePresetKey | null {
+  if (!preferences || typeof preferences !== "object") return null;
+  const current = preferences as Record<string, unknown>;
+  return CHART_PREFERENCE_PRESETS.find((preset) =>
+    (Object.keys(preset.values) as ChartPreferenceName[]).every((key) => current[key] === preset.values[key]),
+  )?.key ?? null;
 }
 
 export function buildIndicatorPanelReadouts(

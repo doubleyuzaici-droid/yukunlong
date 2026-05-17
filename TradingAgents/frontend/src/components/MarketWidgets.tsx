@@ -8,6 +8,8 @@ import type {
   RealtimeQuotePayload,
 } from "../types/market";
 import {
+  CHART_PREFERENCE_PRESETS,
+  applyChartPreferencePreset,
   buildAdvancedIndicators,
   buildCandlestickPatternAnnotations,
   buildFibonacciRetracementLevels,
@@ -28,6 +30,7 @@ import {
   buildVolumeMomentumIndicators,
   buildVolatilityVolumeIndicators,
   buildVolumeProfile,
+  matchChartPreferencePreset,
   type IndicatorPanelReadoutItem,
   type VolumeProfileModel,
 } from "./TradingSignalKline.helpers";
@@ -1259,6 +1262,7 @@ export function TradingSignalKlinePanel({
   );
   const chartMarkers = chart.markers || [];
   const evidenceEventMarkers = chart.eventMarkers || [];
+  const activeChartPreset = useMemo(() => matchChartPreferencePreset(chartPrefs), [chartPrefs]);
   const tradePlanLevels = useMemo(
     () => buildTradePlanLevels(strategyAnalysis, chart),
     [chart, strategyAnalysis],
@@ -1366,6 +1370,10 @@ export function TradingSignalKlinePanel({
       ...value,
       [key]: !value[key],
     }));
+  };
+
+  const applyChartPreset = (key: string) => {
+    setChartPrefs((value) => applyChartPreferencePreset(value, key));
   };
 
   const resetChartPrefs = () => {
@@ -1505,6 +1513,23 @@ export function TradingSignalKlinePanel({
             </button>
           )}
         </div>
+      </div>
+
+      <div className="chart-tool-strip chart-preset-strip" aria-label="交易信号K线指标预设">
+        <span>预设</span>
+        {CHART_PREFERENCE_PRESETS.map((preset) => (
+          <button
+            aria-pressed={activeChartPreset === preset.key}
+            className={activeChartPreset === preset.key ? "active" : ""}
+            key={preset.key}
+            onClick={() => applyChartPreset(preset.key)}
+            title={preset.description}
+            type="button"
+          >
+            {preset.label}
+          </button>
+        ))}
+        <span>{activeChartPreset ? "当前组合" : "自定义组合"}</span>
       </div>
 
       <div className="chart-tool-strip" aria-label="交易信号K线指标与工具">

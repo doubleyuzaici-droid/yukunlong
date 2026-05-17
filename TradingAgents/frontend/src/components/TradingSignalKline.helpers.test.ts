@@ -1,4 +1,5 @@
 import {
+  applyChartPreferencePreset,
   buildAdvancedIndicators,
   buildCandlestickPatternAnnotations,
   buildFibonacciRetracementLevels,
@@ -19,6 +20,7 @@ import {
   buildVolumeMomentumIndicators,
   buildVolatilityVolumeIndicators,
   buildVolumeProfile,
+  matchChartPreferencePreset,
 } from "./TradingSignalKline.helpers.js";
 
 function assertEqual<T>(actual: T, expected: T, message: string) {
@@ -45,6 +47,39 @@ const bars = [
   { date: "2026-05-13", open: 11.6, high: 12.5, low: 11.2, close: 11.4, volume: 200, amount: 2_280 },
   { date: "2026-05-14", open: 11.4, high: 13, low: 11.3, close: 12.7, volume: 500, amount: 6_350 },
 ];
+
+const baseChartPrefs = {
+  ma: true,
+  ema: true,
+  boll: true,
+  vwap: true,
+  levels: true,
+  signals: true,
+  events: true,
+  relative: true,
+  profile: true,
+  fibonacci: true,
+  supportResistance: true,
+  trendLines: true,
+  patterns: true,
+  indicatorSignals: true,
+  divergences: true,
+  volumeSignals: true,
+  trendRegime: true,
+  sar: true,
+  bbi: true,
+  volume: true,
+  macd: true,
+  rsi: true,
+  kdj: true,
+  advanced: true,
+  momentum: true,
+  biasDma: true,
+  volumeMomentum: true,
+  volatility: true,
+  subCharts: true,
+  measure: true,
+};
 
 const mixedTrendBars = [
   ...bars,
@@ -160,6 +195,34 @@ function testBuildsVisibleVolumeDistribution() {
   assertOk(profile.supportBin, "profile locates nearest support chip area");
   assertOk(profile.resistanceBin, "profile locates nearest resistance chip area");
   assertEqual(profile.bins.some((bin) => bin.widthPercent === 100), true, "largest bin is normalized to 100 width");
+}
+
+function testAppliesTrendChartPreferencePreset() {
+  const prefs = applyChartPreferencePreset(baseChartPrefs, "trend");
+
+  assertEqual(prefs.ma, true, "trend preset keeps moving averages");
+  assertEqual(prefs.ema, true, "trend preset enables EMA");
+  assertEqual(prefs.boll, true, "trend preset keeps BOLL");
+  assertEqual(prefs.trendRegime, true, "trend preset enables trend background");
+  assertEqual(prefs.trendLines, true, "trend preset enables structure trend lines");
+  assertEqual(prefs.macd, true, "trend preset keeps MACD");
+  assertEqual(prefs.rsi, false, "trend preset hides oscillator-only RSI");
+  assertEqual(prefs.kdj, false, "trend preset hides oscillator-only KDJ");
+  assertEqual(prefs.volumeMomentum, false, "trend preset hides volume momentum panel");
+  assertEqual(prefs.measure, false, "preset application exits measuring mode");
+}
+
+function testMatchesChartPreferencePresetFromValues() {
+  const prefs = applyChartPreferencePreset(baseChartPrefs, "oscillator");
+
+  assertEqual(matchChartPreferencePreset(prefs), "oscillator", "preset matcher identifies the current oscillator view");
+  assertEqual(matchChartPreferencePreset({ ...prefs, rsi: false }), null, "manual edits make the preset custom");
+}
+
+function testUnknownChartPreferencePresetIsNoop() {
+  const prefs = applyChartPreferencePreset(baseChartPrefs, "missing-preset");
+
+  assertEqual(prefs, baseChartPrefs, "unknown preset keeps the original preferences object");
 }
 
 function testBuildsMeasuredRangeStats() {
@@ -666,6 +729,9 @@ function testPriceGapAnnotationsRespectThreshold() {
 }
 
 testBuildsVisibleVolumeDistribution();
+testAppliesTrendChartPreferencePreset();
+testMatchesChartPreferencePresetFromValues();
+testUnknownChartPreferencePresetIsNoop();
 testBuildsMeasuredRangeStats();
 testMeasuredRangeStatsKeepSelectionDirection();
 testHandlesMissingBarsExplicitly();
