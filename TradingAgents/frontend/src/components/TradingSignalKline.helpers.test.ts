@@ -8,6 +8,7 @@ import {
   buildIndicatorSectionLayout,
   buildIndicatorPanelReadouts,
   buildManualDrawingGeometry,
+  buildPriceAxisScale,
   buildMeasuredRangeStats,
   buildMomentumIndicators,
   buildPriceGapAnnotations,
@@ -26,6 +27,10 @@ import {
   matchChartParameterPreset,
   matchChartPreferencePreset,
   normalizeManualDrawings,
+  normalizePriceAxisMode,
+  priceAxisPriceFromY,
+  priceAxisValueFromPrice,
+  priceAxisYOf,
 } from "./TradingSignalKline.helpers.js";
 
 function assertEqual<T>(actual: T, expected: T, message: string) {
@@ -315,6 +320,25 @@ function testBuildsManualHorizontalDrawingGeometry() {
   assertEqual(geometry[0]?.label, "画线 15.00", "horizontal drawing exposes price label");
 }
 
+function testBuildsManualDrawingGeometryOnPercentAxis() {
+  const geometry = buildManualDrawingGeometry([
+    {
+      id: "h-percent",
+      type: "horizontal",
+      start: { date: "2026-05-02", label: "05-02", price: 10 },
+    },
+  ], drawingCandles, {
+    ...drawingBounds,
+    priceAxisBase: 10,
+    priceAxisMax: 20,
+    priceAxisMin: -10,
+    priceAxisMode: "percent",
+  });
+
+  assertEqual(geometry.length, 1, "percent axis keeps manual drawings visible when the converted value is inside bounds");
+  assertApprox(geometry[0]?.y1, 306.6667, 0.001, "manual drawing maps raw price through percent axis scale");
+}
+
 function testBuildsManualTrendDrawingGeometry() {
   const geometry = buildManualDrawingGeometry([
     {
@@ -389,6 +413,38 @@ function testManualDrawingStorageKeyUsesSymbolScope() {
     "tradingagents.tradeSignalKline.drawings.default",
     "drawing storage key falls back for missing symbol",
   );
+}
+
+function testBuildsPercentPriceAxisScale() {
+  const scale = buildPriceAxisScale([9, 10, 12], {
+    basePrice: 10,
+    bottom: 420,
+    mode: "percent",
+    top: 80,
+  });
+
+  assertEqual(scale.mode, "percent", "percent axis mode is preserved with a valid base price");
+  assertApprox(scale.min, -10, 0.001, "percent axis min uses base-relative return");
+  assertApprox(scale.max, 20, 0.001, "percent axis max uses base-relative return");
+  assertApprox(priceAxisValueFromPrice(scale, 12), 20, 0.001, "percent axis converts price to percent value");
+  assertApprox(priceAxisYOf(scale, 10), 306.6667, 0.001, "percent axis maps base price above the lower bound");
+  assertApprox(priceAxisPriceFromY(scale, 80), 12, 0.001, "percent axis converts top y back to raw price");
+}
+
+function testPriceAxisModeFallsBackForInvalidInput() {
+  assertEqual(normalizePriceAxisMode("percent"), "percent", "valid percent mode is accepted");
+  assertEqual(normalizePriceAxisMode("log"), "price", "unknown axis mode falls back to price");
+
+  const scale = buildPriceAxisScale([10, 20], {
+    basePrice: 0,
+    bottom: 420,
+    mode: "percent",
+    top: 80,
+  });
+
+  assertEqual(scale.mode, "price", "invalid percent base falls back to price axis");
+  assertApprox(priceAxisValueFromPrice(scale, 20), 20, 0.001, "fallback scale keeps raw price values");
+  assertApprox(priceAxisPriceFromY(scale, 80), 20, 0.001, "fallback scale converts y back to raw price");
 }
 
 function testBuildsMeasuredRangeStats() {
@@ -902,9 +958,12 @@ testAppliesShortTermChartParameterPreset();
 testMatchesChartParameterPresetFromValues();
 testUnknownChartParameterPresetIsNoop();
 testBuildsManualHorizontalDrawingGeometry();
+testBuildsManualDrawingGeometryOnPercentAxis();
 testBuildsManualTrendDrawingGeometry();
 testNormalizesManualDrawingsForStorage();
 testManualDrawingStorageKeyUsesSymbolScope();
+testBuildsPercentPriceAxisScale();
+testPriceAxisModeFallsBackForInvalidInput();
 testBuildsMeasuredRangeStats();
 testMeasuredRangeStatsKeepSelectionDirection();
 testHandlesMissingBarsExplicitly();

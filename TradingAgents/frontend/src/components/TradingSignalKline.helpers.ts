@@ -230,6 +230,10 @@ export interface ManualDrawingChartBounds {
   priceBottom: number;
   priceMin: number | null;
   priceMax: number | null;
+  priceAxisMode?: PriceAxisMode | null;
+  priceAxisBase?: number | null;
+  priceAxisMin?: number | null;
+  priceAxisMax?: number | null;
 }
 
 export interface ManualDrawingGeometry {
@@ -246,6 +250,17 @@ export interface ManualDrawingGeometry {
   endLabel: string;
   startPrice: number;
   endPrice: number;
+}
+
+export type PriceAxisMode = "price" | "percent";
+
+export interface PriceAxisScale {
+  mode: PriceAxisMode;
+  basePrice: number | null;
+  min: number;
+  max: number;
+  top: number;
+  bottom: number;
 }
 
 const MANUAL_DRAWING_STORAGE_PREFIX = "tradingagents.tradeSignalKline.drawings";
@@ -895,6 +910,74 @@ export function normalizeManualDrawings(value: unknown, maxCount = 80): ManualDr
     .slice(-limit);
 }
 
+export function normalizePriceAxisMode(value: unknown): PriceAxisMode {
+  return value === "percent" ? "percent" : "price";
+}
+
+export function buildPriceAxisScale(
+  prices: Array<number | null | undefined>,
+  options: {
+    mode?: PriceAxisMode | string | null;
+    basePrice?: number | null;
+    top: number;
+    bottom: number;
+  },
+): PriceAxisScale {
+  const finitePrices = prices.filter(isFiniteNumber);
+  const rawMin = finitePrices.length ? Math.min(...finitePrices) : 0;
+  const rawMax = finitePrices.length ? Math.max(...finitePrices) : 1;
+  const requestedMode = normalizePriceAxisMode(options.mode);
+  const canUsePercent = requestedMode === "percent" && isFiniteNumber(options.basePrice) && options.basePrice > 0;
+  const mode: PriceAxisMode = canUsePercent ? "percent" : "price";
+  const basePrice = mode === "percent" ? Number(options.basePrice) : null;
+  const axisValues = mode === "percent"
+    ? finitePrices.map((price) => ((price / Number(basePrice)) - 1) * 100)
+    : finitePrices;
+  const min = axisValues.length ? Math.min(...axisValues) : rawMin;
+  const max = axisValues.length ? Math.max(...axisValues) : rawMax;
+  return {
+    mode,
+    basePrice,
+    min,
+    max: max === min ? min + 1 : max,
+    top: options.top,
+    bottom: options.bottom,
+  };
+}
+
+export function priceAxisValueFromPrice(scale: PriceAxisScale, price?: number | null): number | null {
+  if (!isFiniteNumber(price)) return null;
+  if (scale.mode === "percent") {
+    if (!isFiniteNumber(scale.basePrice) || scale.basePrice <= 0) return null;
+    return ((price / scale.basePrice) - 1) * 100;
+  }
+  return price;
+}
+
+export function priceAxisPriceFromValue(scale: PriceAxisScale, value?: number | null): number | null {
+  if (!isFiniteNumber(value)) return null;
+  if (scale.mode === "percent") {
+    if (!isFiniteNumber(scale.basePrice) || scale.basePrice <= 0) return null;
+    return scale.basePrice * (1 + value / 100);
+  }
+  return value;
+}
+
+export function priceAxisYOf(scale: PriceAxisScale, price?: number | null): number | null {
+  const value = priceAxisValueFromPrice(scale, price);
+  if (!isFiniteNumber(value)) return null;
+  const span = scale.max - scale.min || 1;
+  return scale.bottom - ((value - scale.min) / span) * (scale.bottom - scale.top);
+}
+
+export function priceAxisPriceFromY(scale: PriceAxisScale, y: number): number | null {
+  if (!isFiniteNumber(y)) return null;
+  const boundedY = clampNumber(y, scale.top, scale.bottom);
+  const span = scale.max - scale.min || 1;
+  const value = scale.min + ((scale.bottom - boundedY) / (scale.bottom - scale.top)) * span;
+  return priceAxisPriceFromValue(scale, value);
+}
+
 export function buildManualDrawingGeometry(
   drawings: ManualDrawing[],
   candles: ManualDrawingCandleLike[],
@@ -905,21 +988,11 @@ export function buildManualDrawingGeometry(
       .filter((candle) => typeof candle.date === "string" && isFiniteNumber(candle.x))
       .map((candle) => [String(candle.date), candle]),
   );
+  const scale = chartBoundsToPriceAxisScale(bounds);
   const yOf = (price: number) => {
-    if (
-      !isFiniteNumber(price) ||
-      !isFiniteNumber(bounds.priceMin) ||
-      !isFiniteNumber(bounds.priceMax) ||
-      !isFiniteNumber(bounds.priceTop) ||
-      !isFiniteNumber(bounds.priceBottom) ||
-      bounds.priceMax <= bounds.priceMin ||
-      price < bounds.priceMin ||
-      price > bounds.priceMax
-    ) {
-      return null;
-    }
-    const span = bounds.priceMax - bounds.priceMin;
-    return bounds.priceBottom - ((price - bounds.priceMin) / span) * (bounds.priceBottom - bounds.priceTop);
+    if (!scale) return null;
+    const y = priceAxisYOf(scale, price);
+    return y != null && y >= bounds.priceTop && y <= bounds.priceBottom ? y : null;
   };
   const labelOf = (anchor: ManualDrawingAnchor, candle?: ManualDrawingCandleLike | null) =>
     anchor.label || candle?.periodLabel || candle?.period_label || anchor.date;
@@ -981,6 +1054,26 @@ function normalizeManualDrawingAnchor(value: unknown): ManualDrawingAnchor | nul
   if (!date || !isFiniteNumber(price)) return null;
   const label = typeof source.label === "string" && source.label.trim() ? source.label.trim() : undefined;
   return label ? { date, label, price } : { date, price };
+}
+
+function chartBoundsToPriceAxisScale(bounds: ManualDrawingChartBounds): PriceAxisScale | null {
+  const requestedMode = normalizePriceAxisMode(bounds.priceAxisMode);
+  const min = isFiniteNumber(bounds.priceAxisMin) ? bounds.priceAxisMin : bounds.priceMin;
+  const max = isFiniteNumber(bounds.priceAxisMax) ? bounds.priceAxisMax : bounds.priceMax;
+  if (!isFiniteNumber(min) || !isFiniteNumber(max) || !isFiniteNumber(bounds.priceTop) || !isFiniteNumber(bounds.priceBottom)) {
+    return null;
+  }
+  const mode: PriceAxisMode = requestedMode === "percent" && isFiniteNumber(bounds.priceAxisBase) && bounds.priceAxisBase > 0
+    ? "percent"
+    : "price";
+  return {
+    mode,
+    basePrice: mode === "percent" && isFiniteNumber(bounds.priceAxisBase) ? bounds.priceAxisBase : null,
+    min,
+    max: max === min ? min + 1 : max,
+    top: bounds.priceTop,
+    bottom: bounds.priceBottom,
+  };
 }
 
 export function buildIndicatorPanelReadouts(

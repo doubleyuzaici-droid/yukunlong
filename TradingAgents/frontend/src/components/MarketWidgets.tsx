@@ -19,6 +19,7 @@ import {
   buildIndicatorPanelReadouts,
   buildIndicatorSectionLayout,
   buildManualDrawingGeometry,
+  buildPriceAxisScale,
   buildMeasuredRangeStats,
   buildMomentumIndicators,
   buildPriceGapAnnotations,
@@ -37,10 +38,16 @@ import {
   matchChartParameterPreset,
   matchChartPreferencePreset,
   normalizeManualDrawings,
+  normalizePriceAxisMode,
+  priceAxisPriceFromValue,
+  priceAxisPriceFromY,
+  priceAxisValueFromPrice,
+  priceAxisYOf,
   type IndicatorPanelReadoutItem,
   type ManualDrawing,
   type ManualDrawingAnchor,
   type ManualDrawingType,
+  type PriceAxisMode,
   type VolumeProfileModel,
 } from "./TradingSignalKline.helpers";
 import {
@@ -1228,6 +1235,11 @@ export function TradingSignalKlinePanel({
     DEFAULT_TRADING_CHART_PARAMS,
     normalizeTradingChartParams,
   );
+  const [priceAxisMode, setPriceAxisMode] = usePersistentChartValue<PriceAxisMode>(
+    "tradingagents.tradeSignalKline.priceAxisMode",
+    "price",
+    normalizePriceAxisMode,
+  );
   const [expanded, setExpanded] = useState(false);
   const [paramsOpen, setParamsOpen] = useState(false);
   const [hoveredSignalId, setHoveredSignalId] = useState<string | null>(null);
@@ -1275,8 +1287,9 @@ export function TradingSignalKlinePanel({
       strategyLevelPrices,
       chartPrefs.subCharts,
       periodData.events,
+      priceAxisMode,
     ),
-    [chartParams, chartPrefs.subCharts, periodData, range, rightOffset, strategyLevelPrices],
+    [chartParams, chartPrefs.subCharts, periodData, priceAxisMode, range, rightOffset, strategyLevelPrices],
   );
   const chartMarkers = chart.markers || [];
   const evidenceEventMarkers = chart.eventMarkers || [];
@@ -1471,6 +1484,7 @@ export function TradingSignalKlinePanel({
   const resetChartPrefs = () => {
     setChartPrefs(DEFAULT_TRADING_CHART_PREFS);
     setChartParams(DEFAULT_TRADING_CHART_PARAMS);
+    setPriceAxisMode("price");
     setMeasureStartIndex(null);
     setMeasureEndIndex(null);
   };
@@ -1596,7 +1610,8 @@ export function TradingSignalKlinePanel({
             {period === "daily" ? `${safeBars.length} 根日线` : `由 ${safeBars.length} 根日线聚合`} ·{" "}
             策略口径 周线趋势 + 日线执行 ·{" "}
             V2主信号 {strategySignal ? "已接入" : "未生成"} · 历史信号 {safeSignals.length} ·{" "}
-            机会 {summary.opportunity} / 风险 {summary.risk} · {rightOffset > 0 ? `向前平移 ${rightOffset} 根` : "最新区间"}
+            机会 {summary.opportunity} / 风险 {summary.risk} · 坐标 {priceAxisMode === "percent" ? "涨跌幅" : "价格"} ·{" "}
+            {rightOffset > 0 ? `向前平移 ${rightOffset} 根` : "最新区间"}
           </span>
         </div>
         <div className="chart-control-strip">
@@ -1698,6 +1713,9 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.volatility ? "active" : ""} onClick={() => toggleChartPref("volatility")} type="button">ATR/OBV</button>
         <button className={chartPrefs.subCharts ? "active" : ""} onClick={() => toggleChartPref("subCharts")} type="button">分屏</button>
         <button className={chartPrefs.measure ? "active measure" : "measure"} onClick={() => toggleChartPref("measure")} type="button">测距</button>
+        <span>坐标</span>
+        <button className={priceAxisMode === "price" ? "active" : ""} onClick={() => setPriceAxisMode("price")} type="button">价格</button>
+        <button className={priceAxisMode === "percent" ? "active" : ""} onClick={() => setPriceAxisMode("percent")} type="button">涨跌幅</button>
         <span>画线</span>
         <button className={drawingTool === "horizontal" ? "active drawing" : "drawing"} onClick={() => selectDrawingTool("horizontal")} type="button">水平线</button>
         <button className={drawingTool === "trend" ? "active drawing" : "drawing"} onClick={() => selectDrawingTool("trend")} type="button">趋势线</button>
@@ -1938,7 +1956,7 @@ export function TradingSignalKlinePanel({
               <line x1={chart.plotLeft} x2={chart.plotRight} y1={tick.y} y2={tick.y} />
               <rect className="axis-price-label-bg" x={chart.axisX - 6} y={tick.y - 18} width="58" height="21" rx="4" />
               <text className="axis-price-label" x={chart.axisX + 23} y={tick.y - 4}>
-                {formatNumber(tick.value, 2)}
+                {formatChartAxisValue(chart, tick.value)}
               </text>
             </g>
           ))}
@@ -2377,7 +2395,7 @@ export function TradingSignalKlinePanel({
               <line x1={chart.plotLeft} x2={chart.plotRight} y1={crosshair.y} y2={crosshair.y} />
               <rect className="crosshair-price-tag" x={chart.axisX - 4} y={clampNumber(crosshair.y - 12, chart.sections[0].top + 2, chart.signalLaneY - 24)} width="58" height="22" rx="4" />
               <text className="crosshair-price-text" x={chart.axisX + 4} y={clampNumber(crosshair.y + 4, chart.sections[0].top + 18, chart.signalLaneY - 8)}>
-                {formatNumber(crosshair.price, 2)}
+                {formatChartAxisPrice(chart, crosshair.price)}
               </text>
               <rect className="crosshair-date-tag" x={clampNumber(crosshair.x - 38, chart.plotLeft, chart.plotRight - 76)} y={chart.timeAxisY - 20} width="76" height="20" rx="4" />
               <text className="crosshair-date-text" x={clampNumber(crosshair.x, chart.plotLeft + 38, chart.plotRight - 38)} y={chart.timeAxisY - 5}>
@@ -3617,6 +3635,7 @@ function buildTradingSignalGeometry(
   levelPrices: number[] = [],
   splitSubCharts = DEFAULT_TRADING_CHART_PREFS.subCharts,
   evidenceEvents: ChartEvidenceEvent[] = [],
+  priceAxisMode: PriceAxisMode = "price",
 ) {
   const PLOT_LEFT = 48;
   const PLOT_RIGHT = 925;
@@ -3720,6 +3739,10 @@ function buildTradingSignalGeometry(
       axisX: AXIS_X,
       priceMin: null as number | null,
       priceMax: null as number | null,
+      priceAxisMode: "price" as PriceAxisMode,
+      priceAxisBase: null as number | null,
+      priceAxisMin: null as number | null,
+      priceAxisMax: null as number | null,
       priceTop: PRICE_TOP,
       priceBottom: PRICE_BOTTOM,
       sections,
@@ -3793,9 +3816,15 @@ function buildTradingSignalGeometry(
     ...levelDomainValues,
     ...trendLineDomainValues,
   ];
-  const minPrice = Math.min(...lowValues, ...overlayDomainValues);
-  const maxPrice = Math.max(...highValues, ...overlayDomainValues);
-  const priceSpan = maxPrice - minPrice || 1;
+  const domainPriceValues = [...lowValues, ...highValues, ...overlayDomainValues];
+  const minPrice = Math.min(...domainPriceValues);
+  const maxPrice = Math.max(...domainPriceValues);
+  const priceAxisScale = buildPriceAxisScale(domainPriceValues, {
+    basePrice: closeValues[0],
+    bottom: PRICE_BOTTOM,
+    mode: priceAxisMode,
+    top: PRICE_TOP,
+  });
   const maxVolume = Math.max(...volumes, 1);
   const volumeY = (value?: number | null) =>
     VOLUME_BOTTOM - ((Number(value || 0) / maxVolume) * (VOLUME_BOTTOM - VOLUME_TOP));
@@ -3803,7 +3832,7 @@ function buildTradingSignalGeometry(
   const dateIndex = new Map(visible.map((bar, index) => [bar.date, index]));
   const xOf = (index: number) => PLOT_LEFT + (index / Math.max(visible.length - 1, 1)) * (PLOT_RIGHT - PLOT_LEFT);
   const yOf = (price?: number | null) =>
-    PRICE_BOTTOM - ((Number(price || minPrice) - minPrice) / priceSpan) * (PRICE_BOTTOM - PRICE_TOP);
+    priceAxisYOf(priceAxisScale, price) ?? PRICE_BOTTOM;
   const visibleExtrema = buildVisiblePriceExtrema(visible);
   const rangeExtrema = visibleExtrema
     ? {
@@ -3911,10 +3940,15 @@ function buildTradingSignalGeometry(
       labelY: clampNumber(markerY - 7, PRICE_TOP + 14, PRICE_BOTTOM - 6),
     };
   });
+  const priceTickValues = [
+    priceAxisScale.max,
+    priceAxisScale.min + (priceAxisScale.max - priceAxisScale.min) / 2,
+    priceAxisScale.min,
+  ];
   const priceTicks = [
-    { label: "high", value: maxPrice, y: yOf(maxPrice) },
-    { label: "mid", value: minPrice + priceSpan / 2, y: yOf(minPrice + priceSpan / 2) },
-    { label: "low", value: minPrice, y: yOf(minPrice) },
+    { label: "high", value: priceTickValues[0], price: priceAxisPriceFromValue(priceAxisScale, priceTickValues[0]), y: PRICE_TOP },
+    { label: "mid", value: priceTickValues[1], price: priceAxisPriceFromValue(priceAxisScale, priceTickValues[1]), y: (PRICE_TOP + PRICE_BOTTOM) / 2 },
+    { label: "low", value: priceTickValues[2], price: priceAxisPriceFromValue(priceAxisScale, priceTickValues[2]), y: PRICE_BOTTOM },
   ];
   const maValue = (index: number, windowSize: number) => {
     const start = Math.max(0, index - windowSize + 1);
@@ -4415,6 +4449,10 @@ function buildTradingSignalGeometry(
     axisX: AXIS_X,
     priceMin: minPrice,
     priceMax: maxPrice,
+    priceAxisMode: priceAxisScale.mode,
+    priceAxisBase: priceAxisScale.basePrice,
+    priceAxisMin: priceAxisScale.min,
+    priceAxisMax: priceAxisScale.max,
     priceTop: PRICE_TOP,
     priceBottom: PRICE_BOTTOM,
     sections,
@@ -4512,16 +4550,49 @@ function extractStrategyLevelPrices(analysis?: StrategyKlineAnalysis | null) {
 }
 
 function chartPriceToY(chart: Record<string, any>, price?: number | null) {
-  if (!isFiniteNumber(price) || !isFiniteNumber(chart.priceMin) || !isFiniteNumber(chart.priceMax)) return null;
-  const span = chart.priceMax - chart.priceMin || 1;
-  return chart.priceBottom - ((price - chart.priceMin) / span) * (chart.priceBottom - chart.priceTop);
+  const scale = chartPriceAxisScale(chart);
+  return scale ? priceAxisYOf(scale, price) : null;
 }
 
 function chartPriceFromY(chart: Record<string, any>, y: number) {
-  if (!isFiniteNumber(chart.priceMin) || !isFiniteNumber(chart.priceMax)) return null;
-  const boundedY = clampNumber(y, chart.priceTop, chart.priceBottom);
-  const span = chart.priceMax - chart.priceMin || 1;
-  return chart.priceMin + ((chart.priceBottom - boundedY) / (chart.priceBottom - chart.priceTop)) * span;
+  const scale = chartPriceAxisScale(chart);
+  return scale ? priceAxisPriceFromY(scale, y) : null;
+}
+
+function chartPriceAxisScale(chart: Record<string, any>) {
+  const requestedMode = normalizePriceAxisMode(chart.priceAxisMode);
+  const min = isFiniteNumber(chart.priceAxisMin) ? chart.priceAxisMin : chart.priceMin;
+  const max = isFiniteNumber(chart.priceAxisMax) ? chart.priceAxisMax : chart.priceMax;
+  if (!isFiniteNumber(min) || !isFiniteNumber(max) || !isFiniteNumber(chart.priceTop) || !isFiniteNumber(chart.priceBottom)) {
+    return null;
+  }
+  const mode: PriceAxisMode = requestedMode === "percent" && isFiniteNumber(chart.priceAxisBase) && chart.priceAxisBase > 0
+    ? "percent"
+    : "price";
+  return {
+    mode,
+    basePrice: mode === "percent" && isFiniteNumber(chart.priceAxisBase) ? chart.priceAxisBase : null,
+    min,
+    max: max === min ? min + 1 : max,
+    top: chart.priceTop,
+    bottom: chart.priceBottom,
+  };
+}
+
+function chartAxisValueFromPrice(chart: Record<string, any>, price?: number | null) {
+  const scale = chartPriceAxisScale(chart);
+  return scale ? priceAxisValueFromPrice(scale, price) : null;
+}
+
+function formatChartAxisValue(chart: Record<string, any>, value?: number | null) {
+  if (!isFiniteNumber(value)) return "-";
+  return chartPriceAxisScale(chart)?.mode === "percent"
+    ? formatSignedPercent(value / 100)
+    : formatNumber(value, 2);
+}
+
+function formatChartAxisPrice(chart: Record<string, any>, price?: number | null) {
+  return formatChartAxisValue(chart, chartAxisValueFromPrice(chart, price));
 }
 
 function formatIndicatorPanelReadout(item: IndicatorPanelReadoutItem) {
