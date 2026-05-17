@@ -9,6 +9,7 @@ import type {
 } from "../types/market";
 import {
   buildAdvancedIndicators,
+  buildIndicatorSectionLayout,
   buildMomentumIndicators,
   buildVolumeProfile,
   type VolumeProfileModel,
@@ -157,6 +158,7 @@ interface TradingChartPreferences {
   kdj: boolean;
   advanced: boolean;
   momentum: boolean;
+  subCharts: boolean;
   measure: boolean;
 }
 
@@ -316,6 +318,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   kdj: true,
   advanced: true,
   momentum: true,
+  subCharts: true,
   measure: false,
 };
 
@@ -362,6 +365,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     kdj: typeof next.kdj === "boolean" ? next.kdj : DEFAULT_TRADING_CHART_PREFS.kdj,
     advanced: typeof next.advanced === "boolean" ? next.advanced : DEFAULT_TRADING_CHART_PREFS.advanced,
     momentum: typeof next.momentum === "boolean" ? next.momentum : DEFAULT_TRADING_CHART_PREFS.momentum,
+    subCharts: typeof next.subCharts === "boolean" ? next.subCharts : DEFAULT_TRADING_CHART_PREFS.subCharts,
     measure: typeof next.measure === "boolean" ? next.measure : DEFAULT_TRADING_CHART_PREFS.measure,
   };
 }
@@ -1129,8 +1133,16 @@ export function TradingSignalKlinePanel({
   const periodData = useMemo(() => preparePeriodChartData(safeBars, mergedSignals, period), [safeBars, mergedSignals, period]);
   const strategyLevelPrices = useMemo(() => extractStrategyLevelPrices(strategyAnalysis), [strategyAnalysis]);
   const chart = useMemo(
-    () => buildTradingSignalGeometry(periodData.bars, periodData.signals, range, rightOffset, chartParams, strategyLevelPrices),
-    [chartParams, periodData, range, rightOffset, strategyLevelPrices],
+    () => buildTradingSignalGeometry(
+      periodData.bars,
+      periodData.signals,
+      range,
+      rightOffset,
+      chartParams,
+      strategyLevelPrices,
+      chartPrefs.subCharts,
+    ),
+    [chartParams, chartPrefs.subCharts, periodData, range, rightOffset, strategyLevelPrices],
   );
   const chartMarkers = chart.markers || [];
   const tradePlanLevels = useMemo(
@@ -1376,6 +1388,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.kdj ? "active" : ""} onClick={() => toggleChartPref("kdj")} type="button">KDJ</button>
         <button className={chartPrefs.advanced ? "active" : ""} onClick={() => toggleChartPref("advanced")} type="button">CR/ARBR/EMV</button>
         <button className={chartPrefs.momentum ? "active" : ""} onClick={() => toggleChartPref("momentum")} type="button">DMI/CCI/WR</button>
+        <button className={chartPrefs.subCharts ? "active" : ""} onClick={() => toggleChartPref("subCharts")} type="button">分屏</button>
         <button className={chartPrefs.measure ? "active measure" : "measure"} onClick={() => toggleChartPref("measure")} type="button">测距</button>
         <button className={paramsOpen ? "active" : ""} onClick={() => setParamsOpen((value) => !value)} type="button">参数</button>
         <button onClick={resetChartPrefs} type="button">重置</button>
@@ -1495,7 +1508,7 @@ export function TradingSignalKlinePanel({
 
       <div className="trade-signal-stage">
         <svg
-          className={`price-history-chart trade-signal-chart ${dragStart.current ? "dragging" : ""} ${chartPrefs.measure ? "measuring" : ""}`}
+          className={`price-history-chart trade-signal-chart ${chartPrefs.subCharts ? "split-indicators" : "compact-indicators"} ${dragStart.current ? "dragging" : ""} ${chartPrefs.measure ? "measuring" : ""}`}
           onMouseDown={(event) => {
             if (chartPrefs.measure) return;
             dragStart.current = { x: event.clientX, offset: rightOffset };
@@ -1513,7 +1526,7 @@ export function TradingSignalKlinePanel({
           }}
           onWheel={handleWheelZoom}
           preserveAspectRatio="none"
-          viewBox="0 0 1000 720"
+          viewBox={`0 0 1000 ${chart.viewBoxHeight}`}
         >
           {chart.sections.map((section) => (
             <g key={section.key}>
@@ -1581,7 +1594,7 @@ export function TradingSignalKlinePanel({
             <VolumeProfileLayer chart={chart} profile={chart.volumeProfile} />
           )}
           {chart.timeTicks.map((tick) => (
-            <text className="time-axis-label" key={`${tick.label}-${tick.x}`} x={tick.x} y="716">
+            <text className="time-axis-label" key={`${tick.label}-${tick.x}`} x={tick.x} y={chart.timeAxisY}>
               {tick.label}
             </text>
           ))}
@@ -1755,8 +1768,8 @@ export function TradingSignalKlinePanel({
               <text className="crosshair-price-text" x={chart.axisX + 4} y={clampNumber(crosshair.y + 4, chart.sections[0].top + 18, chart.signalLaneY - 8)}>
                 {formatNumber(crosshair.price, 2)}
               </text>
-              <rect className="crosshair-date-tag" x={clampNumber(crosshair.x - 38, chart.plotLeft, chart.plotRight - 76)} y="696" width="76" height="20" rx="4" />
-              <text className="crosshair-date-text" x={clampNumber(crosshair.x, chart.plotLeft + 38, chart.plotRight - 38)} y="711">
+              <rect className="crosshair-date-tag" x={clampNumber(crosshair.x - 38, chart.plotLeft, chart.plotRight - 76)} y={chart.timeAxisY - 20} width="76" height="20" rx="4" />
+              <text className="crosshair-date-text" x={clampNumber(crosshair.x, chart.plotLeft + 38, chart.plotRight - 38)} y={chart.timeAxisY - 5}>
                 {shortDateLabel(crosshair.candle.periodLabel || crosshair.candle.date)}
               </text>
               <rect x={crosshair.labelX} y="52" width="254" height="174" rx="4" />
@@ -2915,25 +2928,26 @@ function buildTradingSignalGeometry(
   rightOffset = 0,
   params: TradingChartParameters = DEFAULT_TRADING_CHART_PARAMS,
   levelPrices: number[] = [],
+  splitSubCharts = DEFAULT_TRADING_CHART_PREFS.subCharts,
 ) {
   const PLOT_LEFT = 48;
   const PLOT_RIGHT = 925;
   const AXIS_X = 938;
-  const PRICE_TOP = 42;
-  const PRICE_BOTTOM = 360;
-  const VOLUME_TOP = 392;
-  const VOLUME_BOTTOM = 456;
-  const MACD_TOP = 492;
-  const MACD_BOTTOM = 572;
-  const RSI_TOP = 612;
-  const RSI_BOTTOM = 684;
-  const SIGNAL_LANE_Y = 704;
-  const sections = [
-    { key: "price", label: "PRICE · MA5 / MA20 / MA60", top: PRICE_TOP, bottom: PRICE_BOTTOM },
-    { key: "volume", label: "VOL", top: VOLUME_TOP, bottom: VOLUME_BOTTOM },
-    { key: "macd", label: "MACD", top: MACD_TOP, bottom: MACD_BOTTOM },
-    { key: "rsi", label: "RSI / KDJ / CR / DMI / CCI / WR", top: RSI_TOP, bottom: RSI_BOTTOM },
-  ];
+  const layout = buildIndicatorSectionLayout(splitSubCharts ? "split" : "compact");
+  const PRICE_TOP = layout.price.top;
+  const PRICE_BOTTOM = layout.price.bottom;
+  const VOLUME_TOP = layout.volume.top;
+  const VOLUME_BOTTOM = layout.volume.bottom;
+  const MACD_TOP = layout.macd.top;
+  const MACD_BOTTOM = layout.macd.bottom;
+  const RSI_TOP = layout.oscillator.top;
+  const RSI_BOTTOM = layout.oscillator.bottom;
+  const ADVANCED_TOP = layout.advanced.top;
+  const ADVANCED_BOTTOM = layout.advanced.bottom;
+  const MOMENTUM_TOP = layout.momentum.top;
+  const MOMENTUM_BOTTOM = layout.momentum.bottom;
+  const SIGNAL_LANE_Y = layout.signalLaneY;
+  const sections = layout.sections;
   const visible = sliceVisibleBars(bars, range, rightOffset).filter((bar) => typeof bar.close === "number");
   if (visible.length === 0) {
     return {
@@ -2977,12 +2991,14 @@ function buildTradingSignalGeometry(
       latestIndicators: null,
       prevCloseY: null as number | null,
       macdZeroY: (MACD_TOP + MACD_BOTTOM) / 2,
-      advanced100Y: RSI_BOTTOM - 0.5 * (RSI_BOTTOM - RSI_TOP),
-      emvZeroY: RSI_BOTTOM - 0.5 * (RSI_BOTTOM - RSI_TOP),
-      momentumZeroY: RSI_BOTTOM - 0.5 * (RSI_BOTTOM - RSI_TOP),
+      advanced100Y: ADVANCED_BOTTOM - 0.5 * (ADVANCED_BOTTOM - ADVANCED_TOP),
+      emvZeroY: ADVANCED_BOTTOM - 0.5 * (ADVANCED_BOTTOM - ADVANCED_TOP),
+      momentumZeroY: MOMENTUM_BOTTOM - 0.5 * (MOMENTUM_BOTTOM - MOMENTUM_TOP),
       rsi70Y: RSI_BOTTOM - 0.7 * (RSI_BOTTOM - RSI_TOP),
       rsi30Y: RSI_BOTTOM - 0.3 * (RSI_BOTTOM - RSI_TOP),
       signalLaneY: SIGNAL_LANE_Y,
+      viewBoxHeight: layout.viewBoxHeight,
+      timeAxisY: layout.timeAxisY,
       plotLeft: PLOT_LEFT,
       plotRight: PLOT_RIGHT,
       axisX: AXIS_X,
@@ -3082,12 +3098,12 @@ function buildTradingSignalGeometry(
   const advancedMax = Math.max(...advancedFiniteValues);
   const advancedSpan = advancedMax - advancedMin || 1;
   const advancedY = (value?: number | null) =>
-    RSI_BOTTOM - ((Number(value ?? advancedMin) - advancedMin) / advancedSpan) * (RSI_BOTTOM - RSI_TOP);
+    ADVANCED_BOTTOM - ((Number(value ?? advancedMin) - advancedMin) / advancedSpan) * (ADVANCED_BOTTOM - ADVANCED_TOP);
   const emvFiniteValues = emvValues.filter(isFiniteNumber);
   const maxEmvAbs = Math.max(0.000001, ...emvFiniteValues.map((value) => Math.abs(value)));
-  const emvZeroY = (RSI_TOP + RSI_BOTTOM) / 2;
+  const emvZeroY = (ADVANCED_TOP + ADVANCED_BOTTOM) / 2;
   const emvY = (value?: number | null) =>
-    emvZeroY - (Number(value ?? 0) / maxEmvAbs) * ((RSI_BOTTOM - RSI_TOP) / 2 - 3);
+    emvZeroY - (Number(value ?? 0) / maxEmvAbs) * ((ADVANCED_BOTTOM - ADVANCED_TOP) / 2 - 3);
   const pdiValues = momentumValues.map((value) => value.pdi);
   const mdiValues = momentumValues.map((value) => value.mdi);
   const adxValues = momentumValues.map((value) => value.adx);
@@ -3097,8 +3113,10 @@ function buildTradingSignalGeometry(
   const momentumMin = Math.min(...momentumFiniteValues);
   const momentumMax = Math.max(...momentumFiniteValues);
   const momentumSpan = momentumMax - momentumMin || 1;
+  const dmiY = (value?: number | null) =>
+    MOMENTUM_BOTTOM - ((Number(value ?? 50) / 100) * (MOMENTUM_BOTTOM - MOMENTUM_TOP));
   const momentumY = (value?: number | null) =>
-    RSI_BOTTOM - ((Number(value ?? 0) - momentumMin) / momentumSpan) * (RSI_BOTTOM - RSI_TOP);
+    MOMENTUM_BOTTOM - ((Number(value ?? 0) - momentumMin) / momentumSpan) * (MOMENTUM_BOTTOM - MOMENTUM_TOP);
   const relativeValues = closeValues.map((close) => (closeValues[0] ? close / closeValues[0] - 1 : 0));
   const maxRelativeAbs = Math.max(0.01, ...relativeValues.map(Math.abs));
   const relativeY = (value: number) =>
@@ -3307,9 +3325,9 @@ function buildTradingSignalGeometry(
     brLine: indicatorPoints(brValues, advancedY),
     emvLine: indicatorPoints(emvValues, emvY),
     emvMaLine: indicatorPoints(emvMaValues, emvY),
-    pdiLine: indicatorPoints(pdiValues, rsiY),
-    mdiLine: indicatorPoints(mdiValues, rsiY),
-    adxLine: indicatorPoints(adxValues, rsiY),
+    pdiLine: indicatorPoints(pdiValues, dmiY),
+    mdiLine: indicatorPoints(mdiValues, dmiY),
+    adxLine: indicatorPoints(adxValues, dmiY),
     cciLine: indicatorPoints(cciValues, momentumY),
     wrLine: indicatorPoints(wrValues, momentumY),
     relativeLine,
@@ -3329,6 +3347,8 @@ function buildTradingSignalGeometry(
     rsi70Y: rsiY(70),
     rsi30Y: rsiY(30),
     signalLaneY: SIGNAL_LANE_Y,
+    viewBoxHeight: layout.viewBoxHeight,
+    timeAxisY: layout.timeAxisY,
     plotLeft: PLOT_LEFT,
     plotRight: PLOT_RIGHT,
     axisX: AXIS_X,

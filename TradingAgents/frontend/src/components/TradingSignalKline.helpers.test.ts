@@ -1,4 +1,9 @@
-import { buildAdvancedIndicators, buildMomentumIndicators, buildVolumeProfile } from "./TradingSignalKline.helpers.js";
+import {
+  buildAdvancedIndicators,
+  buildIndicatorSectionLayout,
+  buildMomentumIndicators,
+  buildVolumeProfile,
+} from "./TradingSignalKline.helpers.js";
 
 function assertEqual<T>(actual: T, expected: T, message: string) {
   if (actual !== expected) {
@@ -102,9 +107,30 @@ function testMomentumIndicatorsNeedEnoughSamples() {
   assertEqual(latest?.wr, null, "WR is missing before period is ready");
 }
 
+function testCompactIndicatorLayoutKeepsLegacyBands() {
+  const layout = buildIndicatorSectionLayout("compact");
+
+  assertEqual(layout.viewBoxHeight, 720, "compact layout preserves legacy chart height");
+  assertEqual(layout.sections.length, 4, "compact layout preserves four visible sections");
+  assertEqual(layout.advanced.top, layout.oscillator.top, "compact layout overlays advanced indicators in oscillator band");
+  assertEqual(layout.momentum.top, layout.oscillator.top, "compact layout overlays momentum indicators in oscillator band");
+}
+
+function testSplitIndicatorLayoutCreatesSeparateSubCharts() {
+  const layout = buildIndicatorSectionLayout("split");
+
+  assertOk(layout.viewBoxHeight > 720, "split layout increases vertical chart space");
+  assertEqual(layout.sections.length, 6, "split layout exposes six chart sections");
+  assertOk(layout.advanced.top > layout.oscillator.bottom, "advanced indicators get their own band");
+  assertOk(layout.momentum.top > layout.advanced.bottom, "momentum indicators get their own band");
+  assertOk(layout.signalLaneY > layout.momentum.bottom, "signal lane remains below all sub charts");
+}
+
 testBuildsVisibleVolumeDistribution();
 testHandlesMissingBarsExplicitly();
 testBuildsFutuStyleAdvancedIndicators();
 testAdvancedIndicatorsNeedEnoughSamples();
 testBuildsMomentumIndicatorSet();
 testMomentumIndicatorsNeedEnoughSamples();
+testCompactIndicatorLayoutKeepsLegacyBands();
+testSplitIndicatorLayoutCreatesSeparateSubCharts();

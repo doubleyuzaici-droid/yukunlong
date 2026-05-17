@@ -3340,9 +3340,19 @@ label {
   background: rgba(8, 12, 17, 0.36);
 }
 
+.trade-signal-chart.split-indicators {
+  height: 640px;
+  min-height: 640px;
+}
+
 .trade-signal-panel.expanded .trade-signal-chart {
   height: min(78vh, 860px);
   min-height: 680px;
+}
+
+.trade-signal-panel.expanded .trade-signal-chart.split-indicators {
+  height: min(82vh, 960px);
+  min-height: 760px;
 }
 
 .trade-signal-inspector {

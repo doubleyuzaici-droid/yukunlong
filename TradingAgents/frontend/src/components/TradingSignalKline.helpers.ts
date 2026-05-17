@@ -55,6 +55,69 @@ export interface MomentumIndicatorSnapshot {
   wr: number | null;
 }
 
+export type IndicatorSectionLayoutMode = "compact" | "split";
+
+export interface IndicatorChartBand {
+  top: number;
+  bottom: number;
+}
+
+export interface IndicatorChartSection extends IndicatorChartBand {
+  key: string;
+  label: string;
+}
+
+export interface IndicatorSectionLayout {
+  mode: IndicatorSectionLayoutMode;
+  viewBoxHeight: number;
+  timeAxisY: number;
+  signalLaneY: number;
+  price: IndicatorChartBand;
+  volume: IndicatorChartBand;
+  macd: IndicatorChartBand;
+  oscillator: IndicatorChartBand;
+  advanced: IndicatorChartBand;
+  momentum: IndicatorChartBand;
+  sections: IndicatorChartSection[];
+}
+
+export function buildIndicatorSectionLayout(mode: IndicatorSectionLayoutMode = "compact"): IndicatorSectionLayout {
+  const price = mode === "split" ? { top: 42, bottom: 330 } : { top: 42, bottom: 360 };
+  const volume = mode === "split" ? { top: 360, bottom: 418 } : { top: 392, bottom: 456 };
+  const macd = mode === "split" ? { top: 452, bottom: 522 } : { top: 492, bottom: 572 };
+  const oscillator = mode === "split" ? { top: 554, bottom: 624 } : { top: 612, bottom: 684 };
+  const advanced = mode === "split" ? { top: 656, bottom: 736 } : oscillator;
+  const momentum = mode === "split" ? { top: 768, bottom: 848 } : oscillator;
+  const sections: IndicatorChartSection[] = [
+    { key: "price", label: "PRICE · MA5 / MA20 / MA60", ...price },
+    { key: "volume", label: "VOL", ...volume },
+    { key: "macd", label: "MACD", ...macd },
+    { key: "oscillator", label: "RSI / KDJ", ...oscillator },
+  ];
+  if (mode === "split") {
+    sections.push(
+      { key: "advanced", label: "CR / ARBR / EMV", ...advanced },
+      { key: "momentum", label: "DMI / CCI / WR", ...momentum },
+    );
+  } else {
+    sections[3] = { key: "oscillator", label: "RSI / KDJ / CR / DMI / CCI / WR", ...oscillator };
+  }
+
+  return {
+    mode,
+    viewBoxHeight: mode === "split" ? 900 : 720,
+    timeAxisY: mode === "split" ? 894 : 716,
+    signalLaneY: mode === "split" ? 876 : 704,
+    price,
+    volume,
+    macd,
+    oscillator,
+    advanced,
+    momentum,
+    sections,
+  };
+}
+
 export function buildAdvancedIndicators(
   bars: VolumeProfileBarLike[],
   options: { period?: number; emvPeriod?: number } = {},
