@@ -12,6 +12,7 @@ import {
   buildIndicatorSectionLayout,
   buildMomentumIndicators,
   buildTrendOverlayIndicators,
+  buildVisiblePriceExtrema,
   buildVolumeMomentumIndicators,
   buildVolumeProfile,
   type VolumeProfileModel,
@@ -1525,6 +1526,15 @@ export function TradingSignalKlinePanel({
           sub={`振幅 ${formatSignedPercent(readoutIndicators?.amplitudePct)}`}
         />
         <MarketReadoutStat
+          label="窗口高低"
+          value={`${formatNumber(chart.rangeExtrema?.high, 2)} / ${formatNumber(chart.rangeExtrema?.low, 2)}`}
+          sub={
+            chart.rangeExtrema
+              ? `高 ${shortDateLabel(chart.rangeExtrema.highLabel)} / 低 ${shortDateLabel(chart.rangeExtrema.lowLabel)} · 振幅 ${formatNumber(chart.rangeExtrema.rangePct, 2)}%`
+              : "当前窗口暂无可用K线"
+          }
+        />
+        <MarketReadoutStat
           label="成交量 / 额"
           value={formatCompactNumber(readoutIndicators?.volume)}
           sub={formatMoney(readoutIndicators?.amount)}
@@ -1802,6 +1812,44 @@ export function TradingSignalKlinePanel({
               )}
             </g>
           ))}
+          {chart.rangeExtrema && (
+            <g className="price-extrema-layer">
+              <g className="price-extrema-marker high">
+                <line
+                  x1={chart.rangeExtrema.highX}
+                  x2={chart.rangeExtrema.highLabelX}
+                  y1={chart.rangeExtrema.highY}
+                  y2={chart.rangeExtrema.highY - 12}
+                />
+                <circle cx={chart.rangeExtrema.highX} cy={chart.rangeExtrema.highY} r="3.2" />
+                <text
+                  textAnchor={chart.rangeExtrema.highAnchor}
+                  x={chart.rangeExtrema.highLabelX}
+                  y={Math.max(chart.sections[0].top + 12, chart.rangeExtrema.highY - 16)}
+                >
+                  高 {formatNumber(chart.rangeExtrema.high, 2)}
+                </text>
+                <title>{chart.rangeExtrema.highLabel} 高点 {formatNumber(chart.rangeExtrema.high, 2)}</title>
+              </g>
+              <g className="price-extrema-marker low">
+                <line
+                  x1={chart.rangeExtrema.lowX}
+                  x2={chart.rangeExtrema.lowLabelX}
+                  y1={chart.rangeExtrema.lowY}
+                  y2={chart.rangeExtrema.lowY + 12}
+                />
+                <circle cx={chart.rangeExtrema.lowX} cy={chart.rangeExtrema.lowY} r="3.2" />
+                <text
+                  textAnchor={chart.rangeExtrema.lowAnchor}
+                  x={chart.rangeExtrema.lowLabelX}
+                  y={Math.min(chart.sections[0].bottom - 6, chart.rangeExtrema.lowY + 24)}
+                >
+                  低 {formatNumber(chart.rangeExtrema.low, 2)}
+                </text>
+                <title>{chart.rangeExtrema.lowLabel} 低点 {formatNumber(chart.rangeExtrema.low, 2)}</title>
+              </g>
+            </g>
+          )}
           {chartPrefs.volume && chart.volumeMa20Line && <polyline className="volume-ma-line" points={chart.volumeMa20Line} />}
           {chartPrefs.signals && chart.entryLinks.map((link) => (
             <g className="signal-entry-link" key={link.id}>
@@ -2071,6 +2119,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line bias-dma" />BIAS/DMA</span>
         <span><i className="legend-line volume-momentum" />VR/MFI/TRIX</span>
         <span><i className="legend-line profile" />筹码分布</span>
+        <span><i className="legend-extrema" />窗口高低</span>
         <span><i className="legend-marker" />信号日至入场日</span>
         <span><i className="legend-event" />证据事件</span>
       </div>
@@ -3197,6 +3246,7 @@ function buildTradingSignalGeometry(
       relativeZeroY: (PRICE_TOP + PRICE_BOTTOM) / 2,
       relativeLatest: null as number | null,
       volumeProfile: buildVolumeProfile([], { currentPrice: null }),
+      rangeExtrema: null,
       priceTicks: [],
       timeTicks: [],
       latestIndicators: null,
@@ -3283,6 +3333,28 @@ function buildTradingSignalGeometry(
   const xOf = (index: number) => PLOT_LEFT + (index / Math.max(visible.length - 1, 1)) * (PLOT_RIGHT - PLOT_LEFT);
   const yOf = (price?: number | null) =>
     PRICE_BOTTOM - ((Number(price || minPrice) - minPrice) / priceSpan) * (PRICE_BOTTOM - PRICE_TOP);
+  const visibleExtrema = buildVisiblePriceExtrema(visible);
+  const rangeExtrema = visibleExtrema
+    ? {
+        ...visibleExtrema,
+        highX: xOf(visibleExtrema.highIndex),
+        highY: yOf(visibleExtrema.high),
+        highLabelX: clampNumber(
+          xOf(visibleExtrema.highIndex) + (visibleExtrema.highIndex > visible.length / 2 ? -12 : 12),
+          PLOT_LEFT + 8,
+          PLOT_RIGHT - 8,
+        ),
+        highAnchor: visibleExtrema.highIndex > visible.length / 2 ? ("end" as const) : ("start" as const),
+        lowX: xOf(visibleExtrema.lowIndex),
+        lowY: yOf(visibleExtrema.low),
+        lowLabelX: clampNumber(
+          xOf(visibleExtrema.lowIndex) + (visibleExtrema.lowIndex > visible.length / 2 ? -12 : 12),
+          PLOT_LEFT + 8,
+          PLOT_RIGHT - 8,
+        ),
+        lowAnchor: visibleExtrema.lowIndex > visible.length / 2 ? ("end" as const) : ("start" as const),
+      }
+    : null;
   const priceTicks = [
     { label: "high", value: maxPrice, y: yOf(maxPrice) },
     { label: "mid", value: minPrice + priceSpan / 2, y: yOf(minPrice + priceSpan / 2) },
@@ -3630,6 +3702,7 @@ function buildTradingSignalGeometry(
     relativeZeroY: relativeY(0),
     relativeLatest: relativeValues[relativeValues.length - 1] ?? null,
     volumeProfile,
+    rangeExtrema,
     priceTicks,
     timeTicks,
     latestIndicators: candles[candles.length - 1]?.indicators || null,

@@ -3,6 +3,7 @@ import {
   buildIndicatorSectionLayout,
   buildMomentumIndicators,
   buildTrendOverlayIndicators,
+  buildVisiblePriceExtrema,
   buildVolumeMomentumIndicators,
   buildVolumeProfile,
 } from "./TradingSignalKline.helpers.js";
@@ -203,6 +204,25 @@ function testVolumeMomentumIndicatorsNeedEnoughSamples() {
   assertEqual(latest?.trma, null, "TRMA is missing before enough TRIX samples");
 }
 
+function testBuildsVisiblePriceExtrema() {
+  const extrema = buildVisiblePriceExtrema(trendOverlayBars);
+
+  assertOk(extrema, "visible extrema exists for usable bars");
+  assertApprox(extrema?.high, 13.8, 0.001, "highest price is captured");
+  assertEqual(extrema?.highDate, "2026-05-18", "highest price keeps its date");
+  assertEqual(extrema?.highIndex, 5, "highest price keeps its visible index");
+  assertApprox(extrema?.low, 9.8, 0.001, "lowest price is captured");
+  assertEqual(extrema?.lowDate, "2026-05-11", "lowest price keeps its date");
+  assertEqual(extrema?.lowIndex, 0, "lowest price keeps its visible index");
+  assertApprox(extrema?.rangePct, 40.8163, 0.001, "rangePct reports high-low spread from the low");
+}
+
+function testVisiblePriceExtremaNeedUsableBars() {
+  const extrema = buildVisiblePriceExtrema([]);
+
+  assertEqual(extrema, null, "empty input has no fake visible extrema");
+}
+
 testBuildsVisibleVolumeDistribution();
 testHandlesMissingBarsExplicitly();
 testBuildsFutuStyleAdvancedIndicators();
@@ -215,3 +235,5 @@ testBuildsTrendOverlayIndicators();
 testTrendOverlayIndicatorsNeedEnoughSamples();
 testBuildsVolumeMomentumIndicators();
 testVolumeMomentumIndicatorsNeedEnoughSamples();
+testBuildsVisiblePriceExtrema();
+testVisiblePriceExtremaNeedUsableBars();

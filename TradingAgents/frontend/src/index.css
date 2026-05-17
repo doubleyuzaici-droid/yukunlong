@@ -3933,6 +3933,50 @@ label {
   background: rgba(255, 255, 255, 0.025);
 }
 
+.price-extrema-layer {
+  pointer-events: none;
+}
+
+.price-extrema-marker line {
+  stroke: rgba(238, 242, 247, 0.55);
+  stroke-dasharray: 3 3;
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.price-extrema-marker circle {
+  fill: #0b0f14;
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+}
+
+.price-extrema-marker.high circle {
+  stroke: #ff8c84;
+}
+
+.price-extrema-marker.low circle {
+  stroke: #7ee0a3;
+}
+
+.price-extrema-marker text {
+  fill: rgba(238, 242, 247, 0.92) !important;
+  font-size: 11px !important;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(11, 15, 20, 0.9);
+  stroke-width: 2px;
+}
+
+.price-extrema-marker.high text {
+  fill: #ffb3ad !important;
+}
+
+.price-extrema-marker.low text {
+  fill: #9cf2bc !important;
+}
+
 .trade-signal-marker {
   cursor: pointer;
   outline: none;
@@ -4845,6 +4889,16 @@ label {
 
 .legend-line.profile {
   background: linear-gradient(90deg, rgba(5, 177, 105, 0.86) 0 34%, rgba(244, 176, 0, 0.9) 34% 66%, rgba(93, 168, 255, 0.86) 66% 100%);
+}
+
+.legend-extrema {
+  position: relative;
+  display: inline-block;
+  width: 18px;
+  height: 8px !important;
+  border-top: 2px dashed rgba(255, 179, 173, 0.9);
+  border-bottom: 2px dashed rgba(156, 242, 188, 0.9);
+  border-radius: 0 !important;
 }
 
 .symbol-signal-panel {

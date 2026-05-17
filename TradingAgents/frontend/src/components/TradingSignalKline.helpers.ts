@@ -9,6 +9,23 @@ export interface VolumeProfileBarLike {
   amount?: number | null;
 }
 
+export interface PriceExtremaBarLike extends VolumeProfileBarLike {
+  date?: string | null;
+  period_label?: string | null;
+}
+
+export interface VisiblePriceExtremaSnapshot {
+  high: number;
+  highDate: string;
+  highLabel: string;
+  highIndex: number;
+  low: number;
+  lowDate: string;
+  lowLabel: string;
+  lowIndex: number;
+  rangePct: number | null;
+}
+
 export interface VolumeProfileBin {
   index: number;
   low: number;
@@ -318,6 +335,28 @@ export function buildVolumeMomentumIndicators(
   }));
 }
 
+export function buildVisiblePriceExtrema(bars: PriceExtremaBarLike[]): VisiblePriceExtremaSnapshot | null {
+  const usableBars = bars
+    .map(normalizePriceExtremaBar)
+    .filter((bar): bar is NonNullable<ReturnType<typeof normalizePriceExtremaBar>> => Boolean(bar));
+  if (usableBars.length === 0) return null;
+
+  const highBar = usableBars.reduce((winner, bar) => (bar.high > winner.high ? bar : winner), usableBars[0]);
+  const lowBar = usableBars.reduce((winner, bar) => (bar.low < winner.low ? bar : winner), usableBars[0]);
+
+  return {
+    high: highBar.high,
+    highDate: highBar.date,
+    highLabel: highBar.label,
+    highIndex: highBar.index,
+    low: lowBar.low,
+    lowDate: lowBar.date,
+    lowLabel: lowBar.label,
+    lowIndex: lowBar.index,
+    rangePct: lowBar.low > 0 ? ((highBar.high - lowBar.low) / lowBar.low) * 100 : null,
+  };
+}
+
 export function buildVolumeProfile(
   bars: VolumeProfileBarLike[],
   options: { binCount?: number; currentPrice?: number | null } = {},
@@ -430,6 +469,22 @@ function normalizeVolumeProfileBar(bar: VolumeProfileBarLike) {
     close,
     volume,
     amount,
+  };
+}
+
+function normalizePriceExtremaBar(bar: PriceExtremaBarLike, index: number) {
+  const close = Number(bar.close ?? bar.open ?? bar.high ?? bar.low);
+  const open = Number(bar.open ?? close);
+  const high = Number(bar.high ?? Math.max(open, close));
+  const low = Number(bar.low ?? Math.min(open, close));
+  if (![open, high, low, close].every(isFiniteNumber)) return null;
+  const date = String(bar.date || index);
+  return {
+    index,
+    date,
+    label: String(bar.period_label || bar.date || index),
+    high: Math.max(high, low, open, close),
+    low: Math.min(high, low, open, close),
   };
 }
 
