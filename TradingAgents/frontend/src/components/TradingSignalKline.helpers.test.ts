@@ -9,6 +9,7 @@ import {
   buildIndicatorPanelReadouts,
   buildIndicatorAxisTicks,
   buildIndicatorThresholdGuides,
+  buildIndicatorThresholdZones,
   buildIndicatorBandAreaPath,
   buildOverlayPriceLabels,
   buildIndicatorValueLabels,
@@ -810,6 +811,53 @@ function testBuildsIndicatorThresholdGuides() {
   assertEqual(guides[0]?.tone, "risk", "threshold guide preserves tone for styling");
 }
 
+function testBuildsIndicatorThresholdZones() {
+  const zones = buildIndicatorThresholdZones([
+    {
+      key: "rsi-overbought",
+      section: "oscillator",
+      label: "RSI超买",
+      fromValue: 70,
+      toValue: 100,
+      min: 0,
+      max: 100,
+      top: 100,
+      bottom: 200,
+      tone: "risk",
+    },
+    {
+      key: "rsi-oversold",
+      section: "oscillator",
+      label: "RSI超卖",
+      fromValue: 0,
+      toValue: 30,
+      min: 0,
+      max: 100,
+      top: 100,
+      bottom: 200,
+      tone: "good",
+    },
+    {
+      key: "hidden",
+      section: "momentum",
+      label: "hidden",
+      fromValue: 240,
+      toValue: 280,
+      min: -200,
+      max: 200,
+      top: 300,
+      bottom: 420,
+    },
+  ]);
+
+  assertEqual(zones.length, 2, "threshold zones omit ranges outside the visible indicator domain");
+  assertApprox(zones[0]?.y, 100, 0.001, "overbought zone starts at the top of the section");
+  assertApprox(zones[0]?.height, 30, 0.001, "overbought zone height follows the threshold range");
+  assertApprox(zones[1]?.y, 170, 0.001, "oversold zone maps to the lower part of the section");
+  assertApprox(zones[1]?.height, 30, 0.001, "oversold zone height follows the threshold range");
+  assertEqual(zones[1]?.tone, "good", "threshold zone preserves tone for styling");
+}
+
 function testBuildsIndicatorBandAreaPath() {
   const path = buildIndicatorBandAreaPath([
     { x: 10, upperY: 20, lowerY: 80 },
@@ -1411,6 +1459,7 @@ testSplitIndicatorLayoutCreatesSeparateSubCharts();
 testBuildsIndicatorAxisTicks();
 testBuildsCompactIndicatorAxisTickLabels();
 testBuildsIndicatorThresholdGuides();
+testBuildsIndicatorThresholdZones();
 testBuildsIndicatorBandAreaPath();
 testBuildsOverlayPriceLabelsWithoutOverlap();
 testBuildsIndicatorValueLabelsBySection();

@@ -859,6 +859,30 @@ export interface IndicatorThresholdGuide {
   tone: IndicatorThresholdGuideTone;
 }
 
+export interface IndicatorThresholdZoneDefinition {
+  key: string;
+  section: string;
+  label: string;
+  fromValue?: number | null;
+  toValue?: number | null;
+  min: number;
+  max: number;
+  top: number;
+  bottom: number;
+  tone?: IndicatorThresholdGuideTone;
+}
+
+export interface IndicatorThresholdZone {
+  key: string;
+  section: string;
+  label: string;
+  fromValue: number;
+  toValue: number;
+  y: number;
+  height: number;
+  tone: IndicatorThresholdGuideTone;
+}
+
 export type OverlayPriceLabelTone = "good" | "risk" | "neutral" | "info";
 
 export interface OverlayPriceLabelDefinition {
@@ -1109,6 +1133,50 @@ export function buildIndicatorThresholdGuides(
       value: definition.value,
       y: clampNumber(y, top, bottom),
       labelY: clampNumber(y - 4, top + 12, bottom - 4),
+      tone: definition.tone ?? "neutral",
+    }];
+  });
+}
+
+export function buildIndicatorThresholdZones(
+  definitions: IndicatorThresholdZoneDefinition[],
+): IndicatorThresholdZone[] {
+  return definitions.flatMap((definition) => {
+    if (
+      !isFiniteNumber(definition.fromValue) ||
+      !isFiniteNumber(definition.toValue) ||
+      !isFiniteNumber(definition.min) ||
+      !isFiniteNumber(definition.max) ||
+      !isFiniteNumber(definition.top) ||
+      !isFiniteNumber(definition.bottom) ||
+      definition.max === definition.min
+    ) {
+      return [];
+    }
+    const valueMin = Math.min(definition.fromValue, definition.toValue);
+    const valueMax = Math.max(definition.fromValue, definition.toValue);
+    const clippedMin = clampNumber(valueMin, definition.min, definition.max);
+    const clippedMax = clampNumber(valueMax, definition.min, definition.max);
+    if (clippedMin >= clippedMax || valueMax < definition.min || valueMin > definition.max) return [];
+    const yOf = (value: number) =>
+      definition.bottom -
+      ((value - definition.min) / (definition.max - definition.min)) *
+      (definition.bottom - definition.top);
+    const y1 = yOf(clippedMax);
+    const y2 = yOf(clippedMin);
+    const top = Math.min(definition.top, definition.bottom);
+    const bottom = Math.max(definition.top, definition.bottom);
+    const y = clampNumber(Math.min(y1, y2), top, bottom);
+    const height = clampNumber(Math.max(y1, y2), top, bottom) - y;
+    if (height <= 0) return [];
+    return [{
+      key: definition.key,
+      section: definition.section,
+      label: definition.label,
+      fromValue: definition.fromValue,
+      toValue: definition.toValue,
+      y,
+      height,
       tone: definition.tone ?? "neutral",
     }];
   });

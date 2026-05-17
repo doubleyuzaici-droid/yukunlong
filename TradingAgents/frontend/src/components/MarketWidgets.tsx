@@ -23,6 +23,7 @@ import {
   buildIndicatorAxisTicks,
   buildIndicatorSectionLayout,
   buildIndicatorThresholdGuides,
+  buildIndicatorThresholdZones,
   buildIndicatorValueLabels,
   buildIchimokuIndicators,
   buildKlineEventSummary,
@@ -1441,6 +1442,13 @@ export function TradingSignalKlinePanel({
     if (guide.section === "momentum") return chartPrefs.momentum || chartPrefs.biasDma || chartPrefs.volumeMomentum;
     return true;
   });
+  const visibleIndicatorThresholdZones = chart.indicatorThresholdZones.filter((zone) => {
+    if (!chartPrefs.subCharts && zone.section !== "oscillator") return false;
+    if (zone.section === "oscillator") return chartPrefs.rsi || chartPrefs.kdj;
+    if (zone.section === "advanced") return chartPrefs.advanced || chartPrefs.volumeMomentum;
+    if (zone.section === "momentum") return chartPrefs.momentum || chartPrefs.biasDma || chartPrefs.volumeMomentum;
+    return true;
+  });
   const visibleOverlayPriceLabels = buildOverlayPriceLabels(
     (chart.overlayPriceLabels || []).filter((label: OverlayPriceLabelDefinition) => {
       if (label.group === "ma") return chartPrefs.ma;
@@ -2190,6 +2198,12 @@ export function TradingSignalKlinePanel({
                 {label.label} {formatIndicatorValueLabel(label)}
               </text>
               <title>{label.label} {formatIndicatorValueLabel(label)}</title>
+            </g>
+          ))}
+          {visibleIndicatorThresholdZones.map((zone) => (
+            <g className={`indicator-threshold-zone ${zone.section} ${zone.tone}`} key={zone.key}>
+              <rect height={zone.height} width={chart.plotRight - chart.plotLeft} x={chart.plotLeft} y={zone.y} />
+              <title>{zone.label}</title>
             </g>
           ))}
           {visibleIndicatorThresholdGuides.map((guide) => (
@@ -4073,6 +4087,7 @@ function buildTradingSignalGeometry(
       volumeSignalEvents: [],
       fundFlowOverlay: buildFundFlowOverlayGeometry([], [], { top: VOLUME_TOP, bottom: VOLUME_BOTTOM }),
       indicatorThresholdGuides: [],
+      indicatorThresholdZones: [],
       overlayPriceLabels: [],
       indicatorValueLabels: [],
       rangeNavigator: null,
@@ -4632,6 +4647,80 @@ function buildTradingSignalGeometry(
       tone: "good",
     },
   ]);
+  const indicatorThresholdZones = buildIndicatorThresholdZones([
+    {
+      key: "rsi-overbought-zone",
+      section: "oscillator",
+      label: "RSI超买区",
+      fromValue: 70,
+      toValue: 100,
+      min: 0,
+      max: 100,
+      top: RSI_TOP,
+      bottom: RSI_BOTTOM,
+      tone: "risk",
+    },
+    {
+      key: "rsi-oversold-zone",
+      section: "oscillator",
+      label: "RSI超卖区",
+      fromValue: 0,
+      toValue: 30,
+      min: 0,
+      max: 100,
+      top: RSI_TOP,
+      bottom: RSI_BOTTOM,
+      tone: "good",
+    },
+    {
+      key: "mfi-overbought-zone",
+      section: "advanced",
+      label: "MFI超买区",
+      fromValue: 80,
+      toValue: moneyFlowMax,
+      min: moneyFlowMin,
+      max: moneyFlowMax,
+      top: ADVANCED_TOP,
+      bottom: ADVANCED_BOTTOM,
+      tone: "risk",
+    },
+    {
+      key: "mfi-oversold-zone",
+      section: "advanced",
+      label: "MFI超卖区",
+      fromValue: moneyFlowMin,
+      toValue: 20,
+      min: moneyFlowMin,
+      max: moneyFlowMax,
+      top: ADVANCED_TOP,
+      bottom: ADVANCED_BOTTOM,
+      tone: "good",
+    },
+    {
+      key: "cci-overbought-zone",
+      section: "momentum",
+      label: "CCI强势区",
+      fromValue: 100,
+      toValue: momentumMax,
+      min: momentumMin,
+      max: momentumMax,
+      top: MOMENTUM_TOP,
+      bottom: MOMENTUM_BOTTOM,
+      tone: "risk",
+    },
+    {
+      key: "cci-oversold-zone",
+      section: "momentum",
+      label: "CCI弱势区",
+      fromValue: momentumMin,
+      toValue: -100,
+      min: momentumMin,
+      max: momentumMax,
+      top: MOMENTUM_TOP,
+      bottom: MOMENTUM_BOTTOM,
+      tone: "good",
+    },
+  ]);
 
   const candles = visible.map((bar, index) => {
     const open = Number(bar.open ?? bar.close ?? 0);
@@ -5173,6 +5262,7 @@ function buildTradingSignalGeometry(
     priceTicks,
     indicatorAxisTicks,
     indicatorThresholdGuides,
+    indicatorThresholdZones,
     overlayPriceLabels,
     indicatorValueLabels,
     rangeNavigator,
