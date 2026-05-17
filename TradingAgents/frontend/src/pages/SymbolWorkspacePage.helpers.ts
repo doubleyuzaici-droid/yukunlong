@@ -573,6 +573,9 @@ export function buildOverviewTechnicalCharts(bars: MarketBarLike[]): MarketAnaly
       missingTechnicalChart("rsi", "RSI14"),
       missingTechnicalChart("kdj-j", "KDJ J"),
       missingTechnicalChart("boll-position", "BOLL %B"),
+      missingTechnicalChart("dmi-adx", "DMI ADX"),
+      missingTechnicalChart("cci", "CCI20"),
+      missingTechnicalChart("williams-r", "W%R14"),
       missingTechnicalChart("atr-volatility", "ATR 波动"),
       missingTechnicalChart("obv-trend", "OBV 趋势"),
     ];
@@ -636,6 +639,33 @@ export function buildOverviewTechnicalCharts(bars: MarketBarLike[]): MarketAnaly
       tone: volatilityPct >= 0.06 ? "warn" as MarketAnalysisTone : volatilityPct <= 0.018 ? "neutral" as MarketAnalysisTone : "opportunity" as MarketAnalysisTone,
     }];
   }).slice(-32);
+  const adxPoints = adxSeries(highs, lows, closes, 14).flatMap((value, index) => {
+    if (value == null) return [];
+    const bounded = Math.max(0, Math.min(100, value));
+    return [{
+      date: orderedBars[index].date,
+      value: bounded,
+      tone: adxIndicatorTone(bounded),
+    }];
+  }).slice(-32);
+  const cciPoints = cciSeries(highs, lows, closes, 20).flatMap((value, index) => {
+    if (value == null) return [];
+    const bounded = Math.max(-250, Math.min(250, value));
+    return [{
+      date: orderedBars[index].date,
+      value: bounded,
+      tone: cciIndicatorTone(value),
+    }];
+  }).slice(-32);
+  const williamsRPoints = williamsRSeries(highs, lows, closes, 14).flatMap((value, index) => {
+    if (value == null) return [];
+    const bounded = Math.max(-100, Math.min(0, value));
+    return [{
+      date: orderedBars[index].date,
+      value: bounded,
+      tone: williamsRTone(bounded),
+    }];
+  }).slice(-32);
   const obvPoints = obvSeries(closes, volumes).map((value, index) => ({
     date: orderedBars[index].date,
     value,
@@ -648,6 +678,9 @@ export function buildOverviewTechnicalCharts(bars: MarketBarLike[]): MarketAnaly
   const latestKdjJ = kdjPoints[kdjPoints.length - 1]?.value ?? null;
   const latestBollPosition = bollPositionPoints[bollPositionPoints.length - 1]?.value ?? null;
   const latestAtrVolatility = atrVolatilityPoints[atrVolatilityPoints.length - 1]?.value ?? null;
+  const latestAdx = adxPoints[adxPoints.length - 1]?.value ?? null;
+  const latestCci = cciPoints[cciPoints.length - 1]?.value ?? null;
+  const latestWilliamsR = williamsRPoints[williamsRPoints.length - 1]?.value ?? null;
   const latestObv = obvPoints[obvPoints.length - 1]?.value ?? null;
 
   return [
@@ -696,6 +729,36 @@ export function buildOverviewTechnicalCharts(bars: MarketBarLike[]): MarketAnaly
       points: bollPositionPoints,
       scaleMin: 0,
       scaleMax: 100,
+    },
+    {
+      key: "dmi-adx",
+      label: "DMI ADX",
+      value: formatNumber(latestAdx, 1),
+      detail: "ADX 衡量趋势强度，25 上方说明趋势更清晰，需结合 +DI/-DI 方向。",
+      tone: adxIndicatorTone(latestAdx),
+      points: adxPoints,
+      scaleMin: 0,
+      scaleMax: 60,
+    },
+    {
+      key: "cci",
+      label: "CCI20",
+      value: formatNumber(latestCci, 1),
+      detail: "CCI ±100 用于识别顺势强弱和过热/过冷区间。",
+      tone: cciIndicatorTone(latestCci),
+      points: cciPoints,
+      scaleMin: -200,
+      scaleMax: 200,
+    },
+    {
+      key: "williams-r",
+      label: "W%R14",
+      value: formatNumber(latestWilliamsR, 1),
+      detail: "W%R -20/-80 为超买超卖参考，适合和趋势信号联用。",
+      tone: williamsRTone(latestWilliamsR),
+      points: williamsRPoints,
+      scaleMin: -100,
+      scaleMax: 0,
     },
     {
       key: "atr-volatility",
@@ -910,6 +973,10 @@ function averageNumbers(values: number[]) {
   return usable.reduce((sum, value) => sum + value, 0) / usable.length;
 }
 
+function sumNumbers(values: number[]) {
+  return values.filter((value) => Number.isFinite(value)).reduce((sum, value) => sum + value, 0);
+}
+
 function movingAverageSeries(values: number[], period: number): (number | null)[] {
   return values.map((_, index) => {
     if (index + 1 < period) return null;
@@ -956,6 +1023,65 @@ function atrSeries(highs: number[], lows: number[], closes: number[], period: nu
   return trueRanges.map((_, index) => {
     if (index + 1 < period) return null;
     return averageNumbers(trueRanges.slice(index - period + 1, index + 1));
+  });
+}
+
+function adxSeries(highs: number[], lows: number[], closes: number[], period: number): (number | null)[] {
+  const trueRanges = highs.map((high, index) => {
+    if (index === 0) return high - lows[index];
+    const previousClose = closes[index - 1];
+    return Math.max(high - lows[index], Math.abs(high - previousClose), Math.abs(lows[index] - previousClose));
+  });
+  const plusDm = highs.map((high, index) => {
+    if (index === 0) return 0;
+    const upward = high - highs[index - 1];
+    const downward = lows[index - 1] - lows[index];
+    return upward > downward && upward > 0 ? upward : 0;
+  });
+  const minusDm = lows.map((low, index) => {
+    if (index === 0) return 0;
+    const upward = highs[index] - highs[index - 1];
+    const downward = lows[index - 1] - low;
+    return downward > upward && downward > 0 ? downward : 0;
+  });
+  const dxValues = closes.map((_, index) => {
+    if (index + 1 < period) return null;
+    const trSum = sumNumbers(trueRanges.slice(index - period + 1, index + 1));
+    if (!trSum) return null;
+    const plusDi = (sumNumbers(plusDm.slice(index - period + 1, index + 1)) / trSum) * 100;
+    const minusDi = (sumNumbers(minusDm.slice(index - period + 1, index + 1)) / trSum) * 100;
+    const totalDi = plusDi + minusDi;
+    return totalDi === 0 ? 0 : (Math.abs(plusDi - minusDi) / totalDi) * 100;
+  });
+  return dxValues.map((_, index) => {
+    if (index + 1 < period * 2) return null;
+    const recent = dxValues
+      .slice(index - period + 1, index + 1)
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    return recent.length === period ? averageNumbers(recent) : null;
+  });
+}
+
+function cciSeries(highs: number[], lows: number[], closes: number[], period: number): (number | null)[] {
+  const typicalPrices = closes.map((close, index) => (highs[index] + lows[index] + close) / 3);
+  return typicalPrices.map((typicalPrice, index) => {
+    if (index + 1 < period) return null;
+    const window = typicalPrices.slice(index - period + 1, index + 1);
+    const average = averageNumbers(window);
+    if (average == null) return null;
+    const meanDeviation = averageNumbers(window.map((value) => Math.abs(value - average)));
+    if (!meanDeviation) return 0;
+    return (typicalPrice - average) / (0.015 * meanDeviation);
+  });
+}
+
+function williamsRSeries(highs: number[], lows: number[], closes: number[], period: number): (number | null)[] {
+  return closes.map((close, index) => {
+    if (index + 1 < period) return null;
+    const high = Math.max(...highs.slice(index - period + 1, index + 1));
+    const low = Math.min(...lows.slice(index - period + 1, index + 1));
+    if (high === low) return -50;
+    return -100 * ((high - close) / (high - low));
   });
 }
 
@@ -1066,6 +1192,26 @@ function kdjIndicatorTone(value?: number | null): MarketAnalysisTone {
   if (value >= 95) return "risk";
   if (value >= 80 || value <= 20) return "warn";
   if (value > 50) return "opportunity";
+  return "neutral";
+}
+
+function adxIndicatorTone(value?: number | null): MarketAnalysisTone {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "missing";
+  if (value >= 30) return "opportunity";
+  if (value < 15) return "warn";
+  return "neutral";
+}
+
+function cciIndicatorTone(value?: number | null): MarketAnalysisTone {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "missing";
+  if (value >= 200 || value <= -200) return "risk";
+  if (value >= 100 || value <= -100) return "warn";
+  return "neutral";
+}
+
+function williamsRTone(value?: number | null): MarketAnalysisTone {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "missing";
+  if (value >= -20 || value <= -80) return "warn";
   return "neutral";
 }
 

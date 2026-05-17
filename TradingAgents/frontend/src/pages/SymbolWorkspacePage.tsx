@@ -1605,6 +1605,21 @@ function OverviewTechnicalChartCard({ chart }: { chart: MarketAnalysisTechnicalC
             <line className="threshold good" x1="4" x2="116" y1={yOf(30)} y2={yOf(30)} />
           </>
         )}
+        {chart.key === "dmi-adx" && (
+          <line className="threshold good" x1="4" x2="116" y1={yOf(25)} y2={yOf(25)} />
+        )}
+        {chart.key === "cci" && (
+          <>
+            <line className="threshold risk" x1="4" x2="116" y1={yOf(100)} y2={yOf(100)} />
+            <line className="threshold good" x1="4" x2="116" y1={yOf(-100)} y2={yOf(-100)} />
+          </>
+        )}
+        {chart.key === "williams-r" && (
+          <>
+            <line className="threshold risk" x1="4" x2="116" y1={yOf(-20)} y2={yOf(-20)} />
+            <line className="threshold good" x1="4" x2="116" y1={yOf(-80)} y2={yOf(-80)} />
+          </>
+        )}
         <line className="baseline" x1="4" x2="116" y1={zeroY} y2={zeroY} />
         {chart.key === "macd" ? points.map((point, index) => {
           const x = xOf(index);
