@@ -14,6 +14,22 @@ export interface PriceExtremaBarLike extends VolumeProfileBarLike {
   period_label?: string | null;
 }
 
+export type PriceGapDirection = "up" | "down";
+
+export interface PriceGapAnnotation {
+  key: string;
+  direction: PriceGapDirection;
+  startIndex: number;
+  endIndex: number;
+  startDate: string;
+  endDate: string;
+  startLabel: string;
+  endLabel: string;
+  lowPrice: number;
+  highPrice: number;
+  gapPct: number | null;
+}
+
 export interface VisiblePriceExtremaSnapshot {
   high: number;
   highDate: string;
@@ -510,6 +526,44 @@ export function buildVolumeProfileLevelAnnotations(profile: VolumeProfileModel):
   });
 }
 
+export function buildPriceGapAnnotations(
+  bars: PriceExtremaBarLike[],
+  options: { minGapPct?: number } = {},
+): PriceGapAnnotation[] {
+  const normalized = bars.map(normalizePriceGapBar);
+  const minGapPct = Math.max(0, Number(options.minGapPct ?? 0));
+  return normalized.flatMap((bar, index) => {
+    if (!bar || index === 0) return [];
+    const previous = normalized[index - 1];
+    if (!previous) return [];
+
+    const gap =
+      bar.low > previous.high
+        ? { direction: "up" as const, lowPrice: previous.high, highPrice: bar.low }
+        : bar.high < previous.low
+          ? { direction: "down" as const, lowPrice: bar.high, highPrice: previous.low }
+          : null;
+    if (!gap) return [];
+
+    const gapPct = previous.close > 0 ? ((gap.highPrice - gap.lowPrice) / previous.close) * 100 : null;
+    if (gapPct != null && Math.abs(gapPct) < minGapPct) return [];
+
+    return [{
+      key: `${gap.direction}-${index}`,
+      direction: gap.direction,
+      startIndex: previous.index,
+      endIndex: bar.index,
+      startDate: previous.date,
+      endDate: bar.date,
+      startLabel: previous.label,
+      endLabel: bar.label,
+      lowPrice: gap.lowPrice,
+      highPrice: gap.highPrice,
+      gapPct,
+    }];
+  });
+}
+
 export function buildVolumeProfile(
   bars: VolumeProfileBarLike[],
   options: { binCount?: number; currentPrice?: number | null } = {},
@@ -638,6 +692,23 @@ function normalizePriceExtremaBar(bar: PriceExtremaBarLike, index: number) {
     label: String(bar.period_label || bar.date || index),
     high: Math.max(high, low, open, close),
     low: Math.min(high, low, open, close),
+  };
+}
+
+function normalizePriceGapBar(bar: PriceExtremaBarLike, index: number) {
+  const close = Number(bar.close ?? bar.open ?? bar.high ?? bar.low);
+  const open = Number(bar.open ?? close);
+  const high = Number(bar.high ?? Math.max(open, close));
+  const low = Number(bar.low ?? Math.min(open, close));
+  if (![open, high, low, close].every(isFiniteNumber)) return null;
+  const date = String(bar.date || index);
+  return {
+    index,
+    date,
+    label: String(bar.period_label || bar.date || index),
+    high: Math.max(high, low, open, close),
+    low: Math.min(high, low, open, close),
+    close,
   };
 }
 

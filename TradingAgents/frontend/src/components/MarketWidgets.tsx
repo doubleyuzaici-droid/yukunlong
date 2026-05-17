@@ -12,6 +12,7 @@ import {
   buildIndicatorPanelReadouts,
   buildIndicatorSectionLayout,
   buildMomentumIndicators,
+  buildPriceGapAnnotations,
   buildTrendOverlayIndicators,
   buildVisiblePriceExtrema,
   buildVolumeProfileLevelAnnotations,
@@ -1747,6 +1748,20 @@ export function TradingSignalKlinePanel({
           {chartPrefs.profile && chart.volumeProfile.bins.length > 0 && (
             <VolumeProfileLayer chart={chart} profile={chart.volumeProfile} />
           )}
+          {chart.priceGaps.map((gap) => (
+            <g className={`price-gap-layer ${gap.direction}`} key={gap.key}>
+              <rect height={gap.height} width={gap.width} x={gap.x} y={gap.y} />
+              <line x1={gap.x} x2={chart.plotRight} y1={gap.y} y2={gap.y} />
+              <line x1={gap.x} x2={chart.plotRight} y1={gap.y + gap.height} y2={gap.y + gap.height} />
+              <text x={gap.labelX} y={gap.labelY}>
+                {gap.direction === "up" ? "向上缺口" : "向下缺口"} {formatNumber(gap.gapPct, 2)}%
+              </text>
+              <title>
+                {gap.startLabel}→{gap.endLabel} {gap.direction === "up" ? "向上缺口" : "向下缺口"}{" "}
+                {formatNumber(gap.lowPrice, 2)}-{formatNumber(gap.highPrice, 2)}
+              </title>
+            </g>
+          ))}
           {chart.timeTicks.map((tick) => (
             <text className="time-axis-label" key={`${tick.label}-${tick.x}`} x={tick.x} y={chart.timeAxisY}>
               {tick.label}
@@ -2141,6 +2156,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line profile" />筹码分布</span>
         <span><i className="legend-line profile-level" />筹码价位</span>
         <span><i className="legend-extrema" />窗口高低</span>
+        <span><i className="legend-gap" />跳空缺口</span>
         <span><i className="legend-marker" />信号日至入场日</span>
         <span><i className="legend-event" />证据事件</span>
       </div>
@@ -3242,6 +3258,7 @@ function buildTradingSignalGeometry(
       markers: [],
       eventMarkers: [],
       entryLinks: [],
+      priceGaps: [],
       ma5: "",
       ma20: "",
       ma60: "",
@@ -3393,6 +3410,23 @@ function buildTradingSignalGeometry(
         lowAnchor: visibleExtrema.lowIndex > visible.length / 2 ? ("end" as const) : ("start" as const),
       }
     : null;
+  const priceGaps = buildPriceGapAnnotations(visible, { minGapPct: 0.5 }).map((gap) => {
+    const startX = clampNumber(xOf(gap.endIndex) - candleWidth / 2, PLOT_LEFT, PLOT_RIGHT);
+    const endX = PLOT_RIGHT;
+    const lowY = yOf(gap.lowPrice);
+    const highY = yOf(gap.highPrice);
+    const topY = Math.min(lowY, highY);
+    const bottomY = Math.max(lowY, highY);
+    return {
+      ...gap,
+      x: startX,
+      width: Math.max(10, endX - startX),
+      y: topY,
+      height: Math.max(2, bottomY - topY),
+      labelX: clampNumber(startX + 8, PLOT_LEFT + 8, PLOT_RIGHT - 96),
+      labelY: clampNumber(topY - 5, PRICE_TOP + 28, PRICE_BOTTOM - 8),
+    };
+  });
   const priceTicks = [
     { label: "high", value: maxPrice, y: yOf(maxPrice) },
     { label: "mid", value: minPrice + priceSpan / 2, y: yOf(minPrice + priceSpan / 2) },
@@ -3698,6 +3732,7 @@ function buildTradingSignalGeometry(
     markers,
     eventMarkers,
     entryLinks,
+    priceGaps,
     ma5: maPoints("ma5"),
     ma20: maPoints("ma20"),
     ma60: maPoints("ma60"),

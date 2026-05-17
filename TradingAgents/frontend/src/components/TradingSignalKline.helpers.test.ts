@@ -3,6 +3,7 @@ import {
   buildIndicatorSectionLayout,
   buildIndicatorPanelReadouts,
   buildMomentumIndicators,
+  buildPriceGapAnnotations,
   buildTrendOverlayIndicators,
   buildVisiblePriceExtrema,
   buildVolumeProfileLevelAnnotations,
@@ -45,6 +46,13 @@ const mixedTrendBars = [
 const trendOverlayBars = [
   ...mixedTrendBars,
   { date: "2026-05-20", open: 12, high: 12.4, low: 10.8, close: 11.1, volume: 760, amount: 8_436 },
+];
+
+const gapBars = [
+  { date: "2026-05-11", open: 10, high: 10.5, low: 9.8, close: 10.2, volume: 100, amount: 1_020 },
+  { date: "2026-05-12", open: 11.4, high: 12, low: 11.2, close: 11.8, volume: 320, amount: 3_776 },
+  { date: "2026-05-13", open: 11.7, high: 11.9, low: 11, close: 11.2, volume: 280, amount: 3_136 },
+  { date: "2026-05-14", open: 10, high: 10.4, low: 9.7, close: 10, volume: 460, amount: 4_600 },
 ];
 
 function testBuildsVisibleVolumeDistribution() {
@@ -286,6 +294,27 @@ function testVisiblePriceExtremaNeedUsableBars() {
   assertEqual(extrema, null, "empty input has no fake visible extrema");
 }
 
+function testBuildsPriceGapAnnotations() {
+  const gaps = buildPriceGapAnnotations(gapBars, { minGapPct: 1 });
+
+  assertEqual(gaps.length, 2, "strict gaps are detected across adjacent bars");
+  assertEqual(gaps[0]?.direction, "up", "first gap is an upward gap");
+  assertEqual(gaps[0]?.startIndex, 0, "up gap anchors to previous bar");
+  assertEqual(gaps[0]?.endIndex, 1, "up gap anchors to current bar");
+  assertApprox(gaps[0]?.lowPrice, 10.5, 0.001, "up gap lower bound uses previous high");
+  assertApprox(gaps[0]?.highPrice, 11.2, 0.001, "up gap upper bound uses current low");
+  assertApprox(gaps[0]?.gapPct, 6.8627, 0.001, "up gap percent uses previous close");
+  assertEqual(gaps[1]?.direction, "down", "second gap is a downward gap");
+  assertApprox(gaps[1]?.lowPrice, 10.4, 0.001, "down gap lower bound uses current high");
+  assertApprox(gaps[1]?.highPrice, 11, 0.001, "down gap upper bound uses previous low");
+}
+
+function testPriceGapAnnotationsRespectThreshold() {
+  const gaps = buildPriceGapAnnotations(gapBars, { minGapPct: 7 });
+
+  assertEqual(gaps.length, 0, "threshold filters smaller gaps");
+}
+
 testBuildsVisibleVolumeDistribution();
 testHandlesMissingBarsExplicitly();
 testBuildsVolumeProfileLevelAnnotations();
@@ -303,3 +332,5 @@ testBuildsVolumeMomentumIndicators();
 testVolumeMomentumIndicatorsNeedEnoughSamples();
 testBuildsVisiblePriceExtrema();
 testVisiblePriceExtremaNeedUsableBars();
+testBuildsPriceGapAnnotations();
+testPriceGapAnnotationsRespectThreshold();

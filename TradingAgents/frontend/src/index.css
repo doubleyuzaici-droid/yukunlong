@@ -3977,6 +3977,57 @@ label {
   fill: #9cf2bc !important;
 }
 
+.price-gap-layer {
+  pointer-events: none;
+}
+
+.price-gap-layer rect {
+  stroke-width: 0.55;
+  vector-effect: non-scaling-stroke;
+}
+
+.price-gap-layer line {
+  stroke-dasharray: 5 4;
+  stroke-width: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+
+.price-gap-layer text {
+  font-size: 10.5px !important;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(11, 15, 20, 0.92);
+  stroke-width: 2px;
+}
+
+.price-gap-layer.up rect {
+  fill: rgba(5, 177, 105, 0.08);
+  stroke: rgba(5, 177, 105, 0.32);
+}
+
+.price-gap-layer.up line {
+  stroke: rgba(126, 224, 163, 0.48);
+}
+
+.price-gap-layer.up text {
+  fill: #9cf2bc !important;
+}
+
+.price-gap-layer.down rect {
+  fill: rgba(207, 32, 47, 0.08);
+  stroke: rgba(207, 32, 47, 0.34);
+}
+
+.price-gap-layer.down line {
+  stroke: rgba(255, 140, 132, 0.5);
+}
+
+.price-gap-layer.down text {
+  fill: #ffb3ad !important;
+}
+
 .trade-signal-marker {
   cursor: pointer;
   outline: none;
@@ -4974,6 +5025,15 @@ label {
   border-top: 2px dashed rgba(255, 179, 173, 0.9);
   border-bottom: 2px dashed rgba(156, 242, 188, 0.9);
   border-radius: 0 !important;
+}
+
+.legend-gap {
+  display: inline-block;
+  width: 18px;
+  height: 8px !important;
+  border: 1px dashed rgba(244, 176, 0, 0.74);
+  border-radius: 2px !important;
+  background: linear-gradient(90deg, rgba(5, 177, 105, 0.16), rgba(207, 32, 47, 0.16));
 }
 
 .symbol-signal-panel {
