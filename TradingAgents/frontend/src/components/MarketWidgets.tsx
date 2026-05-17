@@ -24,6 +24,7 @@ import {
   buildIndicatorSectionLayout,
   buildIndicatorThresholdGuides,
   buildIchimokuIndicators,
+  buildKlineEventSummary,
   buildKlineHoverMetrics,
   buildLimitPriceLines,
   buildManualDrawingGeometry,
@@ -1420,6 +1421,14 @@ export function TradingSignalKlinePanel({
   const activeIndicators = activeMarker?.indicators || chart.latestIndicators;
   const readoutIndicators = indicatorReadoutSnapshot;
   const readoutFundFlow = crosshair?.candle?.fundFlow || chart.fundFlowOverlay.latest;
+  const klineEventSummary = buildKlineEventSummary({
+    divergenceEvents: chart.technicalDivergenceEvents,
+    gaps: chart.priceGaps,
+    patterns: chart.candlestickPatterns,
+    technicalEvents: chart.technicalIndicatorEvents,
+    trendBands: chart.trendRegimeBands,
+    volumeEvents: chart.volumeSignalEvents,
+  });
   const visibleIndicatorThresholdGuides = chart.indicatorThresholdGuides.filter((guide) => {
     if (!chartPrefs.subCharts && guide.section !== "oscillator") return false;
     if (guide.section === "oscillator") return chartPrefs.rsi || chartPrefs.kdj;
@@ -2024,6 +2033,18 @@ export function TradingSignalKlinePanel({
 
       {strategyAnalysis && <StrategyKlineTrace analysis={strategyAnalysis} />}
       {chartPrefs.profile && <VolumeProfileSummary profile={chart.volumeProfile} />}
+      {klineEventSummary.length > 0 && (
+        <div className="kline-event-radar" aria-label="K线异动雷达">
+          <span className="kline-event-radar-title">异动雷达</span>
+          {klineEventSummary.map((item) => (
+            <div className={`kline-event-card ${item.tone}`} key={item.key}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              <em>{item.detail}</em>
+            </div>
+          ))}
+        </div>
+      )}
       {chartDiagnostics.length > 0 && <ChartDiagnosticsStrip diagnostics={chartDiagnostics} />}
       {strategyAnalysis && strategyControls && (
         <StrategyWorkbenchControls analysis={strategyAnalysis} controls={strategyControls} />

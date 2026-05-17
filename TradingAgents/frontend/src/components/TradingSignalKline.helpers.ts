@@ -146,6 +146,27 @@ export interface TrendRegimeBand {
   bars: number;
 }
 
+export type KlineEventSummaryTone = "good" | "risk" | "neutral";
+export type KlineEventSummaryKey = "technical" | "divergence" | "volume" | "pattern" | "gap" | "trend";
+
+export interface KlineEventSummaryItem {
+  key: KlineEventSummaryKey;
+  label: string;
+  value: string;
+  detail: string;
+  tone: KlineEventSummaryTone;
+  count: number;
+}
+
+export interface KlineEventSummaryInput {
+  technicalEvents?: TechnicalIndicatorAnnotation[];
+  divergenceEvents?: TechnicalDivergenceAnnotation[];
+  volumeEvents?: VolumeSignalAnnotation[];
+  patterns?: CandlestickPatternAnnotation[];
+  gaps?: PriceGapAnnotation[];
+  trendBands?: TrendRegimeBand[];
+}
+
 export interface PriceStructureTrendLine {
   key: string;
   type: PriceStructureTrendLineType;
@@ -2468,6 +2489,80 @@ export function buildTrendRegimeBands(bars: TrendRegimeBarLike[]): TrendRegimeBa
   }, []);
 }
 
+export function buildKlineEventSummary(input: KlineEventSummaryInput): KlineEventSummaryItem[] {
+  const latestTechnical = latestIndexedEvent(input.technicalEvents ?? []);
+  const latestDivergence = latestIndexedEvent(input.divergenceEvents ?? []);
+  const latestVolume = latestIndexedEvent(input.volumeEvents ?? []);
+  const latestPattern = latestIndexedEvent(input.patterns ?? []);
+  const latestGap = latestGapEvent(input.gaps ?? []);
+  const latestTrend = latestTrendBand(input.trendBands ?? []);
+  const items: KlineEventSummaryItem[] = [];
+
+  if (latestTechnical) {
+    items.push({
+      key: "technical",
+      label: "技术信号",
+      value: `${input.technicalEvents?.length ?? 0}个`,
+      detail: `最近 ${latestTechnical.dateLabel} ${latestTechnical.label}`,
+      tone: latestTechnical.tone,
+      count: input.technicalEvents?.length ?? 0,
+    });
+  }
+  if (latestDivergence) {
+    items.push({
+      key: "divergence",
+      label: "指标背离",
+      value: `${input.divergenceEvents?.length ?? 0}个`,
+      detail: `最近 ${latestDivergence.dateLabel} ${latestDivergence.label}`,
+      tone: latestDivergence.tone,
+      count: input.divergenceEvents?.length ?? 0,
+    });
+  }
+  if (latestVolume) {
+    items.push({
+      key: "volume",
+      label: "量价异动",
+      value: `${input.volumeEvents?.length ?? 0}个`,
+      detail: `最近 ${latestVolume.dateLabel} ${latestVolume.label}`,
+      tone: latestVolume.tone,
+      count: input.volumeEvents?.length ?? 0,
+    });
+  }
+  if (latestPattern) {
+    items.push({
+      key: "pattern",
+      label: "K线形态",
+      value: `${input.patterns?.length ?? 0}个`,
+      detail: `最近 ${latestPattern.dateLabel} ${latestPattern.label}`,
+      tone: latestPattern.tone,
+      count: input.patterns?.length ?? 0,
+    });
+  }
+  if (latestGap) {
+    const label = latestGap.direction === "up" ? "向上缺口" : "向下缺口";
+    items.push({
+      key: "gap",
+      label: "跳空缺口",
+      value: `${input.gaps?.length ?? 0}个`,
+      detail: `最近 ${latestGap.endLabel} ${label}`,
+      tone: latestGap.direction === "up" ? "good" : "risk",
+      count: input.gaps?.length ?? 0,
+    });
+  }
+  if (latestTrend) {
+    items.push({
+      key: "trend",
+      label: "趋势状态",
+      value: latestTrend.label,
+      detail: `${latestTrend.startLabel}→${latestTrend.endLabel} ${latestTrend.bars}根`,
+      tone: latestTrend.tone,
+      count: latestTrend.bars,
+    });
+  }
+
+  return items;
+}
+
 export function buildPriceStructureTrendLines(
   bars: PriceExtremaBarLike[],
   options: {
@@ -3379,6 +3474,18 @@ function buildRateOfChangeAt(values: Array<number | null>, period: number, index
   return isFiniteNumber(current) && isFiniteNumber(previous) && previous !== 0
     ? ((current - previous) / previous) * 100
     : null;
+}
+
+function latestIndexedEvent<T extends { index: number; label: string; dateLabel: string; tone: KlineEventSummaryTone }>(events: T[]) {
+  return [...events].sort((left, right) => right.index - left.index)[0] ?? null;
+}
+
+function latestGapEvent(gaps: PriceGapAnnotation[]) {
+  return [...gaps].sort((left, right) => right.endIndex - left.endIndex)[0] ?? null;
+}
+
+function latestTrendBand(bands: TrendRegimeBand[]) {
+  return [...bands].sort((left, right) => right.endIndex - left.endIndex)[0] ?? null;
 }
 
 function buildTrixValues(values: Array<number | null>, period: number) {

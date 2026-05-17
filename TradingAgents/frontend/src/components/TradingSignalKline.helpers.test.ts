@@ -11,6 +11,7 @@ import {
   buildIndicatorThresholdGuides,
   buildIndicatorBandAreaPath,
   buildOverlayPriceLabels,
+  buildKlineEventSummary,
   buildTrendRibbonAreaSegments,
   buildIchimokuIndicators,
   buildFundFlowOverlayGeometry,
@@ -1267,6 +1268,41 @@ function testPriceGapAnnotationsRespectThreshold() {
   assertEqual(gaps.length, 0, "threshold filters smaller gaps");
 }
 
+function testBuildsKlineEventSummary() {
+  const technicalEvents = buildTechnicalIndicatorAnnotations(technicalSignalBars);
+  const divergenceEvents = buildTechnicalDivergenceAnnotations(divergenceBars, {
+    swingWindow: 1,
+    minPriceMovePct: 0,
+    minIndicatorMove: 0,
+  });
+  const volumeEvents = buildVolumeSignalAnnotations(volumeSignalBars, {
+    period: 3,
+    surgeRatio: 1.8,
+    dryUpRatio: 0.35,
+    minMovePct: 1,
+    quietMovePct: 0.8,
+  });
+  const patterns = buildCandlestickPatternAnnotations(patternBars);
+  const gaps = buildPriceGapAnnotations(gapBars, { minGapPct: 1 });
+  const trendBands = buildTrendRegimeBands(trendRegimeBars);
+  const summary = buildKlineEventSummary({
+    technicalEvents,
+    divergenceEvents,
+    volumeEvents,
+    patterns,
+    gaps,
+    trendBands,
+  });
+
+  assertEqual(summary.length, 6, "event summary keeps one compact item per signal family");
+  assertEqual(summary.map((item) => item.key).join(","), "technical,divergence,volume,pattern,gap,trend", "event summary uses stable display order");
+  assertEqual(summary[0]?.value, "6个", "technical item reports total event count");
+  assertEqual(summary[0]?.detail, "最近 2026-05-07 下破BOLL", "technical item highlights the latest event");
+  assertEqual(summary[1]?.tone, "risk", "latest bearish divergence keeps risk tone");
+  assertEqual(summary[2]?.detail, "最近 2026-05-07 缩量整理", "volume item highlights latest volume event");
+  assertEqual(summary[5]?.value, "空头排列", "trend item reports latest regime label");
+}
+
 testBuildsVisibleVolumeDistribution();
 testBuildsLimitPriceLinesFromFinitePrices();
 testMapsClientPointToSplitChartViewBox();
@@ -1337,3 +1373,4 @@ testBuildsPriceStructureTrendLines();
 testPriceStructureTrendLinesNeedTwoPivots();
 testBuildsPriceGapAnnotations();
 testPriceGapAnnotationsRespectThreshold();
+testBuildsKlineEventSummary();

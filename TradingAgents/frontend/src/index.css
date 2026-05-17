@@ -3222,6 +3222,78 @@ label {
   color: var(--price-down);
 }
 
+.kline-event-radar {
+  display: grid;
+  grid-template-columns: 112px repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+  align-items: stretch;
+  margin: -4px 0 14px;
+}
+
+.kline-event-radar-title,
+.kline-event-card {
+  min-height: 60px;
+  border: 1px solid rgba(222, 225, 230, 0.12);
+  border-radius: 8px;
+  background: rgba(8, 12, 17, 0.58);
+}
+
+.kline-event-radar-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(238, 242, 247, 0.88);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.kline-event-card {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.kline-event-card span,
+.kline-event-card em {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kline-event-card strong {
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.15;
+}
+
+.kline-event-card.good {
+  border-color: rgba(126, 224, 163, 0.28);
+  background: linear-gradient(135deg, rgba(126, 224, 163, 0.1), rgba(8, 12, 17, 0.5) 68%);
+}
+
+.kline-event-card.risk {
+  border-color: rgba(255, 140, 132, 0.32);
+  background: linear-gradient(135deg, rgba(255, 140, 132, 0.1), rgba(8, 12, 17, 0.5) 68%);
+}
+
+.kline-event-card.neutral {
+  border-color: rgba(143, 179, 255, 0.24);
+  background: linear-gradient(135deg, rgba(143, 179, 255, 0.08), rgba(8, 12, 17, 0.5) 68%);
+}
+
+.kline-event-card.good strong {
+  color: var(--price-up);
+}
+
+.kline-event-card.risk strong {
+  color: var(--price-down);
+}
+
 .volume-profile-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -7110,6 +7182,7 @@ label {
   .signal-workbench-layout,
   .realtime-grid,
   .trade-signal-readout,
+  .kline-event-radar,
   .volume-profile-summary,
   .strategy-kline-trace,
   .strategy-trace-metrics,
