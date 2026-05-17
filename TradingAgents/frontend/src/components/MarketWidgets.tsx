@@ -18,6 +18,7 @@ import {
   buildSupportResistanceLevels,
   buildTechnicalIndicatorAnnotations,
   buildTrendOverlayIndicators,
+  buildTrendRegimeBands,
   buildVisiblePriceExtrema,
   buildVolumeProfileLevelAnnotations,
   buildVolumeSignalAnnotations,
@@ -193,6 +194,7 @@ interface TradingChartPreferences {
   patterns: boolean;
   indicatorSignals: boolean;
   volumeSignals: boolean;
+  trendRegime: boolean;
   sar: boolean;
   bbi: boolean;
   volume: boolean;
@@ -372,6 +374,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   patterns: true,
   indicatorSignals: true,
   volumeSignals: true,
+  trendRegime: true,
   sar: true,
   bbi: true,
   volume: true,
@@ -438,6 +441,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     patterns: typeof next.patterns === "boolean" ? next.patterns : DEFAULT_TRADING_CHART_PREFS.patterns,
     indicatorSignals: typeof next.indicatorSignals === "boolean" ? next.indicatorSignals : DEFAULT_TRADING_CHART_PREFS.indicatorSignals,
     volumeSignals: typeof next.volumeSignals === "boolean" ? next.volumeSignals : DEFAULT_TRADING_CHART_PREFS.volumeSignals,
+    trendRegime: typeof next.trendRegime === "boolean" ? next.trendRegime : DEFAULT_TRADING_CHART_PREFS.trendRegime,
     sar: typeof next.sar === "boolean" ? next.sar : DEFAULT_TRADING_CHART_PREFS.sar,
     bbi: typeof next.bbi === "boolean" ? next.bbi : DEFAULT_TRADING_CHART_PREFS.bbi,
     volume: typeof next.volume === "boolean" ? next.volume : DEFAULT_TRADING_CHART_PREFS.volume,
@@ -1504,6 +1508,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.signals ? "active" : ""} onClick={() => toggleChartPref("signals")} type="button">信号</button>
         <button className={chartPrefs.events ? "active" : ""} onClick={() => toggleChartPref("events")} type="button">事件</button>
         <button className={chartPrefs.relative ? "active" : ""} onClick={() => toggleChartPref("relative")} type="button">相对</button>
+        <button className={chartPrefs.trendRegime ? "active" : ""} onClick={() => toggleChartPref("trendRegime")} type="button">趋势带</button>
         <button className={chartPrefs.profile ? "active" : ""} onClick={() => toggleChartPref("profile")} type="button">筹码</button>
         <button className={chartPrefs.fibonacci ? "active" : ""} onClick={() => toggleChartPref("fibonacci")} type="button">斐波</button>
         <button className={chartPrefs.supportResistance ? "active" : ""} onClick={() => toggleChartPref("supportResistance")} type="button">支阻</button>
@@ -1704,6 +1709,17 @@ export function TradingSignalKlinePanel({
           preserveAspectRatio="none"
           viewBox={`0 0 1000 ${chart.viewBoxHeight}`}
         >
+          {chartPrefs.trendRegime && chart.trendRegimeBands.map((band) => (
+            <g className={`trend-regime-band ${band.tone}`} key={band.key}>
+              <rect height={chart.priceBottom - chart.priceTop} width={band.width} x={band.x} y={chart.priceTop} />
+              {band.showLabel && (
+                <text x={band.labelX} y={band.labelY}>{band.label}</text>
+              )}
+              <title>
+                {band.startLabel}→{band.endLabel} {band.label} · {band.bars}根
+              </title>
+            </g>
+          ))}
           {chart.sections.map((section) => (
             <g key={section.key}>
               <line className="indicator-section-line" x1={chart.plotLeft} x2={chart.plotRight} y1={section.bottom} y2={section.bottom} />
@@ -2231,6 +2247,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line ma60" />MA60</span>
         <span><i className="legend-line ma120" />MA120</span>
         <span><i className="legend-line vwap" />VWAP/EMA</span>
+        <span><i className="legend-trend-regime" />趋势背景</span>
         <span><i className="legend-line trend" />SAR/BBI</span>
         <span><i className="legend-line macd" />MACD/RSI</span>
         <span><i className="legend-line advanced" />CR/ARBR/EMV</span>
@@ -3354,6 +3371,7 @@ function buildTradingSignalGeometry(
       candlestickPatterns: [],
       technicalIndicatorEvents: [],
       volumeSignalEvents: [],
+      trendRegimeBands: [],
       fibonacciLevels: [],
       supportResistanceLevels: [],
       ma5: "",
@@ -3840,6 +3858,26 @@ function buildTradingSignalGeometry(
       labelY: clampNumber(markerY - 7, VOLUME_TOP + 10, VOLUME_BOTTOM - 6),
     };
   });
+  const trendRegimeBands = buildTrendRegimeBands(candles.map((candle) => ({
+    date: candle.date,
+    period_label: candle.periodLabel,
+    close: candle.close,
+    maFast: candle.ma5,
+    maMid: candle.ma20,
+    maSlow: candle.ma60,
+  }))).map((band) => {
+    const startX = clampNumber(xOf(band.startIndex) - candleWidth / 2, PLOT_LEFT, PLOT_RIGHT);
+    const endX = clampNumber(xOf(band.endIndex) + candleWidth / 2, PLOT_LEFT, PLOT_RIGHT);
+    const width = Math.max(2, endX - startX);
+    return {
+      ...band,
+      x: startX,
+      width,
+      labelX: clampNumber(startX + 10, PLOT_LEFT + 8, PLOT_RIGHT - 74),
+      labelY: PRICE_TOP + 28,
+      showLabel: width >= 78,
+    };
+  });
   const maPoints = (key: "ma5" | "ma20" | "ma60" | "ma120") =>
     candles
       .filter((candle) => typeof candle[key] === "number")
@@ -3948,6 +3986,7 @@ function buildTradingSignalGeometry(
     candlestickPatterns,
     technicalIndicatorEvents,
     volumeSignalEvents,
+    trendRegimeBands,
     fibonacciLevels,
     supportResistanceLevels,
     ma5: maPoints("ma5"),

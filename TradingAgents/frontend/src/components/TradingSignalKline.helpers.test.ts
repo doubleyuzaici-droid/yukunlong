@@ -9,6 +9,7 @@ import {
   buildSupportResistanceLevels,
   buildTechnicalIndicatorAnnotations,
   buildTrendOverlayIndicators,
+  buildTrendRegimeBands,
   buildVisiblePriceExtrema,
   buildVolumeProfileLevelAnnotations,
   buildVolumeSignalAnnotations,
@@ -104,6 +105,16 @@ const volumeSignalBars = [
   { date: "2026-05-05", open: 10.5, high: 10.7, low: 10.3, close: 10.55, volume: 120, amount: 1_266 },
   { date: "2026-05-06", open: 10.4, high: 10.6, low: 9.9, close: 10, volume: 310, amount: 3_100 },
   { date: "2026-05-07", open: 10, high: 10.1, low: 9.95, close: 10.03, volume: 40, amount: 401.2 },
+];
+
+const trendRegimeBars = [
+  { date: "2026-05-01", close: 11, maFast: 11, maMid: 10, maSlow: 9 },
+  { date: "2026-05-02", close: 12, maFast: 11.6, maMid: 10.5, maSlow: 9.5 },
+  { date: "2026-05-03", close: 10.8, maFast: 10.7, maMid: 10.8, maSlow: 10.1 },
+  { date: "2026-05-04", close: 10.2, maFast: 10.1, maMid: 10.6, maSlow: 10.2 },
+  { date: "2026-05-05", close: 9.5, maFast: 9.8, maMid: 10.2, maSlow: 10.8 },
+  { date: "2026-05-06", close: 9, maFast: 9.4, maMid: 10, maSlow: 10.5 },
+  { date: "2026-05-07", close: 8.8, maFast: 9.1, maMid: 9.8, maSlow: 10.2 },
 ];
 
 function testBuildsVisibleVolumeDistribution() {
@@ -491,6 +502,27 @@ function testVolumeSignalAnnotationsNeedEnoughVolumeHistory() {
   assertEqual(events.length, 0, "volume events wait for enough previous samples");
 }
 
+function testBuildsTrendRegimeBands() {
+  const bands = buildTrendRegimeBands(trendRegimeBars);
+
+  assertEqual(bands.length, 3, "trend regimes merge contiguous market stages");
+  assertEqual(bands.map((band) => band.type).join(","), "bullish,neutral,bearish", "trend regimes keep chronological order");
+  assertEqual(bands.map((band) => band.label).join(","), "多头排列,震荡过渡,空头排列", "trend regimes expose Chinese labels");
+  assertEqual(bands.map((band) => `${band.startIndex}-${band.endIndex}`).join(","), "0-1,2-3,4-6", "trend regimes keep original visible indexes");
+  assertEqual(bands.map((band) => band.tone).join(","), "good,neutral,risk", "trend regimes carry chart tone");
+  assertEqual(bands[0]?.startLabel, "2026-05-01", "trend regime keeps start label");
+  assertEqual(bands[2]?.endLabel, "2026-05-07", "trend regime keeps end label");
+}
+
+function testTrendRegimeBandsNeedComparableAverages() {
+  const bands = buildTrendRegimeBands([
+    { date: "2026-05-01", close: 10 },
+    { date: "2026-05-02", close: 10.2 },
+  ]);
+
+  assertEqual(bands.length, 0, "missing moving averages have no trend regime bands");
+}
+
 function testBuildsPriceGapAnnotations() {
   const gaps = buildPriceGapAnnotations(gapBars, { minGapPct: 1 });
 
@@ -541,5 +573,7 @@ testBuildsTechnicalIndicatorAnnotations();
 testTechnicalIndicatorAnnotationsNeedComparableValues();
 testBuildsVolumeSignalAnnotations();
 testVolumeSignalAnnotationsNeedEnoughVolumeHistory();
+testBuildsTrendRegimeBands();
+testTrendRegimeBandsNeedComparableAverages();
 testBuildsPriceGapAnnotations();
 testPriceGapAnnotationsRespectThreshold();

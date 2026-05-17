@@ -27,6 +27,8 @@ export type TechnicalIndicatorEventType =
   | "boll-breakout-down";
 export type VolumeSignalTone = "good" | "risk" | "neutral";
 export type VolumeSignalType = "volume-surge-up" | "volume-surge-down" | "volume-dry-up";
+export type TrendRegimeTone = "good" | "risk" | "neutral";
+export type TrendRegimeType = "bullish" | "bearish" | "neutral";
 
 export interface TechnicalIndicatorBarLike extends PriceExtremaBarLike {
   maFast?: number | null;
@@ -86,6 +88,26 @@ export interface VolumeSignalAnnotation {
   averageVolume: number;
   volumeRatio: number;
   changePct: number | null;
+}
+
+export interface TrendRegimeBarLike extends PriceExtremaBarLike {
+  maFast?: number | null;
+  maMid?: number | null;
+  maSlow?: number | null;
+}
+
+export interface TrendRegimeBand {
+  key: string;
+  type: TrendRegimeType;
+  label: string;
+  tone: TrendRegimeTone;
+  startIndex: number;
+  endIndex: number;
+  startDate: string;
+  endDate: string;
+  startLabel: string;
+  endLabel: string;
+  bars: number;
 }
 
 export interface VisiblePriceExtremaSnapshot {
@@ -895,6 +917,45 @@ export function buildVolumeSignalAnnotations(
   });
 }
 
+export function buildTrendRegimeBands(bars: TrendRegimeBarLike[]): TrendRegimeBand[] {
+  const normalized = bars
+    .map(normalizeTrendRegimeBar)
+    .filter((bar): bar is NonNullable<ReturnType<typeof normalizeTrendRegimeBar>> => Boolean(bar));
+  if (normalized.length === 0) return [];
+
+  const classified = normalized.map((bar) => ({
+    ...bar,
+    type: classifyTrendRegime(bar),
+  }));
+  return classified.reduce<TrendRegimeBand[]>((bands, bar) => {
+    const existing = bands[bands.length - 1];
+    if (existing && existing.type === bar.type && existing.endIndex === bar.index - 1) {
+      existing.endIndex = bar.index;
+      existing.endDate = bar.date;
+      existing.endLabel = bar.label;
+      existing.bars += 1;
+      existing.key = `${existing.type}-${existing.startIndex}-${existing.endIndex}`;
+      return bands;
+    }
+
+    const meta = trendRegimeMeta(bar.type);
+    bands.push({
+      key: `${bar.type}-${bar.index}-${bar.index}`,
+      type: bar.type,
+      label: meta.label,
+      tone: meta.tone,
+      startIndex: bar.index,
+      endIndex: bar.index,
+      startDate: bar.date,
+      endDate: bar.date,
+      startLabel: bar.label,
+      endLabel: bar.label,
+      bars: 1,
+    });
+    return bands;
+  }, []);
+}
+
 export function buildSupportResistanceLevels(
   bars: PriceExtremaBarLike[],
   options: {
@@ -1288,6 +1349,24 @@ function normalizeVolumeSignalBar(bar: PriceExtremaBarLike, index: number) {
   };
 }
 
+function normalizeTrendRegimeBar(bar: TrendRegimeBarLike, index: number) {
+  const close = Number(bar.close ?? bar.open ?? bar.high ?? bar.low);
+  const maFast = normalizeOptionalNumber(bar.maFast);
+  const maMid = normalizeOptionalNumber(bar.maMid);
+  const maSlow = normalizeOptionalNumber(bar.maSlow);
+  if (!isFiniteNumber(close) || maFast == null || maMid == null || maSlow == null) return null;
+  const date = String(bar.date || index);
+  return {
+    index,
+    date,
+    label: String(bar.period_label || bar.date || index),
+    close,
+    maFast,
+    maMid,
+    maSlow,
+  };
+}
+
 function normalizeSupportResistanceBar(bar: PriceExtremaBarLike, index: number) {
   const close = Number(bar.close ?? bar.open ?? bar.high ?? bar.low);
   const open = Number(bar.open ?? close);
@@ -1365,6 +1444,18 @@ function crossedBelow(
     return false;
   }
   return previousLeft >= previousRight && currentLeft < currentRight;
+}
+
+function classifyTrendRegime(bar: NonNullable<ReturnType<typeof normalizeTrendRegimeBar>>): TrendRegimeType {
+  if (bar.maFast > bar.maMid && bar.maMid > bar.maSlow && bar.close >= bar.maMid) return "bullish";
+  if (bar.maFast < bar.maMid && bar.maMid < bar.maSlow && bar.close <= bar.maMid) return "bearish";
+  return "neutral";
+}
+
+function trendRegimeMeta(type: TrendRegimeType) {
+  if (type === "bullish") return { label: "多头排列", tone: "good" as const };
+  if (type === "bearish") return { label: "空头排列", tone: "risk" as const };
+  return { label: "震荡过渡", tone: "neutral" as const };
 }
 
 function buildCciWrSnapshot(

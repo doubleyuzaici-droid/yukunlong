@@ -4202,6 +4202,47 @@ label {
   fill: #b9cdfd !important;
 }
 
+.trend-regime-band {
+  pointer-events: none;
+}
+
+.trend-regime-band rect {
+  stroke: transparent;
+}
+
+.trend-regime-band text {
+  font-size: 10.5px !important;
+  font-weight: 850;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(11, 15, 20, 0.92);
+  stroke-width: 2px;
+}
+
+.trend-regime-band.good rect {
+  fill: rgba(5, 177, 105, 0.055);
+}
+
+.trend-regime-band.good text {
+  fill: rgba(156, 242, 188, 0.72) !important;
+}
+
+.trend-regime-band.risk rect {
+  fill: rgba(207, 32, 47, 0.055);
+}
+
+.trend-regime-band.risk text {
+  fill: rgba(255, 179, 173, 0.74) !important;
+}
+
+.trend-regime-band.neutral rect {
+  fill: rgba(143, 179, 255, 0.042);
+}
+
+.trend-regime-band.neutral text {
+  fill: rgba(185, 205, 253, 0.68) !important;
+}
+
 .fibonacci-level {
   pointer-events: none;
 }
@@ -5335,6 +5376,15 @@ label {
   clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
   background: linear-gradient(90deg, #5eead4 0 48%, #ff8c84 52% 100%);
   box-shadow: 0 0 0 1px rgba(238, 242, 247, 0.24);
+}
+
+.legend-trend-regime {
+  display: inline-block;
+  width: 18px;
+  height: 9px !important;
+  border-radius: 2px !important;
+  background: linear-gradient(90deg, rgba(5, 177, 105, 0.5) 0 33%, rgba(143, 179, 255, 0.42) 33% 66%, rgba(207, 32, 47, 0.48) 66% 100%);
+  box-shadow: 0 0 0 1px rgba(238, 242, 247, 0.18);
 }
 
 .legend-volume-signal {
