@@ -62,6 +62,18 @@ export interface ChartSignalMarker {
   max_adverse_20d?: number | null;
 }
 
+export interface ChartEvidenceEvent {
+  id: string;
+  date: string;
+  original_date?: string;
+  kind: "evidence" | "risk" | "invalid" | "review" | "readiness" | "strategy" | "market";
+  tone: "good" | "warn" | "risk" | "neutral";
+  label: string;
+  title: string;
+  detail: string;
+  signal_id?: string | null;
+}
+
 type QuoteSortKey = "symbol" | "price" | "change_pct" | "volume" | "freshness";
 type SortDirection = "asc" | "desc";
 type CandleRange = "60" | "120" | "260" | "520" | "780" | "all";
@@ -162,6 +174,7 @@ interface TradingChartPreferences {
   vwap: boolean;
   levels: boolean;
   signals: boolean;
+  events: boolean;
   relative: boolean;
   profile: boolean;
   sar: boolean;
@@ -334,6 +347,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   vwap: false,
   levels: true,
   signals: true,
+  events: true,
   relative: false,
   profile: true,
   sar: true,
@@ -393,6 +407,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     vwap: typeof next.vwap === "boolean" ? next.vwap : DEFAULT_TRADING_CHART_PREFS.vwap,
     levels: typeof next.levels === "boolean" ? next.levels : DEFAULT_TRADING_CHART_PREFS.levels,
     signals: typeof next.signals === "boolean" ? next.signals : DEFAULT_TRADING_CHART_PREFS.signals,
+    events: typeof next.events === "boolean" ? next.events : DEFAULT_TRADING_CHART_PREFS.events,
     relative: typeof next.relative === "boolean" ? next.relative : DEFAULT_TRADING_CHART_PREFS.relative,
     profile: typeof next.profile === "boolean" ? next.profile : DEFAULT_TRADING_CHART_PREFS.profile,
     sar: typeof next.sar === "boolean" ? next.sar : DEFAULT_TRADING_CHART_PREFS.sar,
@@ -1121,6 +1136,7 @@ export function PriceHistoryChart({
 export function TradingSignalKlinePanel({
   bars,
   signals = [],
+  evidenceEvents = [],
   strategyAnalysis,
   strategyControls,
   selectedSignalId,
@@ -1128,6 +1144,7 @@ export function TradingSignalKlinePanel({
 }: {
   bars: MarketHistoryBar[];
   signals?: ChartSignalMarker[];
+  evidenceEvents?: ChartEvidenceEvent[];
   strategyAnalysis?: StrategyKlineAnalysis | null;
   strategyControls?: StrategyKlineControls;
   selectedSignalId?: string | null;
@@ -1156,6 +1173,7 @@ export function TradingSignalKlinePanel({
   const [expanded, setExpanded] = useState(false);
   const [paramsOpen, setParamsOpen] = useState(false);
   const [hoveredSignalId, setHoveredSignalId] = useState<string | null>(null);
+  const [hoveredEvidenceEventId, setHoveredEvidenceEventId] = useState<string | null>(null);
   const [hoveredTradePlanLevelKey, setHoveredTradePlanLevelKey] = useState<string | null>(null);
   const [rightOffset, setRightOffset] = useState(0);
   const [measureStartIndex, setMeasureStartIndex] = useState<number | null>(null);
@@ -1170,6 +1188,7 @@ export function TradingSignalKlinePanel({
   } | null>(null);
   const safeBars = Array.isArray(bars) ? bars : [];
   const safeSignals = Array.isArray(signals) ? signals : [];
+  const safeEvidenceEvents = Array.isArray(evidenceEvents) ? evidenceEvents : [];
   const strategySignal = useMemo(
     () => buildStrategyChartSignal(strategyAnalysis, safeBars),
     [safeBars, strategyAnalysis],
@@ -1178,7 +1197,10 @@ export function TradingSignalKlinePanel({
     () => mergeStrategySignals(safeSignals, strategySignal),
     [safeSignals, strategySignal],
   );
-  const periodData = useMemo(() => preparePeriodChartData(safeBars, mergedSignals, period), [safeBars, mergedSignals, period]);
+  const periodData = useMemo(
+    () => preparePeriodChartData(safeBars, mergedSignals, period, safeEvidenceEvents),
+    [safeBars, mergedSignals, period, safeEvidenceEvents],
+  );
   const strategyLevelPrices = useMemo(() => extractStrategyLevelPrices(strategyAnalysis), [strategyAnalysis]);
   const chart = useMemo(
     () => buildTradingSignalGeometry(
@@ -1189,10 +1211,12 @@ export function TradingSignalKlinePanel({
       chartParams,
       strategyLevelPrices,
       chartPrefs.subCharts,
+      periodData.events,
     ),
     [chartParams, chartPrefs.subCharts, periodData, range, rightOffset, strategyLevelPrices],
   );
   const chartMarkers = chart.markers || [];
+  const evidenceEventMarkers = chart.eventMarkers || [];
   const tradePlanLevels = useMemo(
     () => buildTradePlanLevels(strategyAnalysis, chart),
     [chart, strategyAnalysis],
@@ -1210,6 +1234,9 @@ export function TradingSignalKlinePanel({
   const hoveredTradePlanLevel =
     tradePlanLevels.find((level) => level.key === hoveredTradePlanLevelKey) ||
     null;
+  const hoveredEvidenceEvent =
+    evidenceEventMarkers.find((marker) => marker.event.id === hoveredEvidenceEventId) ||
+    null;
   const activeMarker =
     hoveredMarker ||
     selectedMarker ||
@@ -1220,6 +1247,9 @@ export function TradingSignalKlinePanel({
   const hoverSignalTooltip = tooltipMarker ? buildSignalHoverTooltip(tooltipMarker, period, chart) : null;
   const tradePlanTooltip = hoveredTradePlanLevel
     ? buildTradePlanLevelTooltip(hoveredTradePlanLevel, chart, strategyAnalysis)
+    : null;
+  const evidenceEventTooltip = hoveredEvidenceEvent
+    ? buildEvidenceEventTooltip(hoveredEvidenceEvent, chart)
     : null;
   const activeSignal =
     activeMarker?.signal ||
@@ -1313,6 +1343,13 @@ export function TradingSignalKlinePanel({
       chooseSignal(signalId);
     }
   };
+  const handleEvidenceEventKey = (event: KeyboardEvent<SVGGElement>, item: ChartEvidenceEvent) => {
+    if (!item.signal_id) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      chooseSignal(item.signal_id);
+    }
+  };
   const nearestChartPoint = (event: MouseEvent<SVGSVGElement>) => {
     if (chart.candles.length === 0) return;
     const rect = event.currentTarget.getBoundingClientRect();
@@ -1383,6 +1420,7 @@ export function TradingSignalKlinePanel({
                     setPeriod(item.key);
                     setRightOffset(0);
                     setHoveredSignalId(null);
+                    setHoveredEvidenceEventId(null);
                     setHoveredTradePlanLevelKey(null);
                     setCrosshair(null);
                   }}
@@ -1427,6 +1465,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.vwap ? "active" : ""} onClick={() => toggleChartPref("vwap")} type="button">VWAP</button>
         <button className={chartPrefs.levels ? "active" : ""} onClick={() => toggleChartPref("levels")} type="button">价位线</button>
         <button className={chartPrefs.signals ? "active" : ""} onClick={() => toggleChartPref("signals")} type="button">信号</button>
+        <button className={chartPrefs.events ? "active" : ""} onClick={() => toggleChartPref("events")} type="button">事件</button>
         <button className={chartPrefs.relative ? "active" : ""} onClick={() => toggleChartPref("relative")} type="button">相对</button>
         <button className={chartPrefs.profile ? "active" : ""} onClick={() => toggleChartPref("profile")} type="button">筹码</button>
         <button className={chartPrefs.sar ? "active" : ""} onClick={() => toggleChartPref("sar")} type="button">SAR</button>
@@ -1602,6 +1641,7 @@ export function TradingSignalKlinePanel({
             dragStart.current = null;
             setCrosshair(null);
             setHoveredSignalId(null);
+            setHoveredEvidenceEventId(null);
             setHoveredTradePlanLevelKey(null);
           }}
           onMouseMove={handleChartPointer}
@@ -1769,6 +1809,26 @@ export function TradingSignalKlinePanel({
               <circle cx={link.entryX} cy={link.entryY} r="4" />
             </g>
           ))}
+          {chartPrefs.events && evidenceEventMarkers.map((marker) => (
+            <g
+              aria-label={`${marker.event.title} ${evidenceEventDateLabel(marker.event)}`}
+              className={`evidence-event-marker ${marker.tone} ${marker.event.id === hoveredEvidenceEventId ? "active" : ""}`}
+              key={marker.event.id}
+              onClick={() => {
+                if (marker.event.signal_id) chooseSignal(marker.event.signal_id);
+              }}
+              onKeyDown={(event) => handleEvidenceEventKey(event, marker.event)}
+              onMouseEnter={() => setHoveredEvidenceEventId(marker.event.id)}
+              onMouseLeave={() => setHoveredEvidenceEventId(null)}
+              role={marker.event.signal_id ? "button" : "img"}
+              tabIndex={marker.event.signal_id ? 0 : undefined}
+            >
+              <line className="event-guide" x1={marker.x} x2={marker.x} y1={chart.sections[0].top} y2={chart.signalLaneY} />
+              <path d={`M ${marker.x} ${marker.y - 7} L ${marker.x + 7} ${marker.y} L ${marker.x} ${marker.y + 7} L ${marker.x - 7} ${marker.y} Z`} />
+              <text x={marker.x} y={marker.y + 3}>{marker.label}</text>
+              <title>{marker.event.title} · {marker.event.detail}</title>
+            </g>
+          ))}
           {chartPrefs.signals && chartMarkers.map((marker) => {
             const hovered = marker.signal.signal_id === hoveredSignalId;
             const active =
@@ -1844,6 +1904,23 @@ export function TradingSignalKlinePanel({
               ))}
             </g>
           )}
+          {evidenceEventTooltip && (
+            <g className={`signal-hover-tooltip evidence-event-tooltip ${evidenceEventTooltip.tone}`}>
+              <rect x={evidenceEventTooltip.x} y={evidenceEventTooltip.y} width={evidenceEventTooltip.width} height={evidenceEventTooltip.height} rx="8" />
+              <text className="signal-tooltip-title" x={evidenceEventTooltip.x + 12} y={evidenceEventTooltip.y + 22}>
+                {evidenceEventTooltip.title}
+              </text>
+              <text className="signal-tooltip-subtitle" x={evidenceEventTooltip.x + 12} y={evidenceEventTooltip.y + 42}>
+                {evidenceEventTooltip.subtitle}
+              </text>
+              {evidenceEventTooltip.rows.map((row, index) => (
+                <text className="signal-tooltip-row" key={row.label} x={evidenceEventTooltip.x + 12} y={evidenceEventTooltip.y + 66 + index * 18}>
+                  <tspan>{row.label}</tspan>
+                  <tspan dx="10">{row.value}</tspan>
+                </text>
+              ))}
+            </g>
+          )}
           {measuredRange && (
             <g className={`chart-measure ${measuredRange.tone}`}>
               <line x1={measuredRange.start.x} x2={measuredRange.end.x} y1={measuredRange.start.closeY} y2={measuredRange.end.closeY} />
@@ -1860,7 +1937,7 @@ export function TradingSignalKlinePanel({
               </text>
             </g>
           )}
-          {crosshair && !hoverSignalTooltip && !tradePlanTooltip && (
+          {crosshair && !hoverSignalTooltip && !tradePlanTooltip && !evidenceEventTooltip && (
             <g className="chart-crosshair">
               <line x1={crosshair.x} x2={crosshair.x} y1={chart.sections[0].top} y2={chart.signalLaneY} />
               <line x1={chart.plotLeft} x2={chart.plotRight} y1={crosshair.y} y2={crosshair.y} />
@@ -1995,6 +2072,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line volume-momentum" />VR/MFI/TRIX</span>
         <span><i className="legend-line profile" />筹码分布</span>
         <span><i className="legend-marker" />信号日至入场日</span>
+        <span><i className="legend-event" />证据事件</span>
       </div>
     </div>
   );
@@ -2838,13 +2916,14 @@ function preparePeriodChartData(
   bars: MarketHistoryBar[],
   signals: ChartSignalMarker[],
   period: CandlePeriod,
+  evidenceEvents: ChartEvidenceEvent[] = [],
 ) {
   const unit = CANDLE_PERIODS.find((item) => item.key === period)?.unit || "日线";
   const orderedBars = [...bars]
     .filter((bar) => bar.date && typeof bar.close === "number")
     .sort((left, right) => left.date.localeCompare(right.date));
   if (period === "daily") {
-    return { bars: orderedBars as PeriodMarketBar[], signals, unit };
+    return { bars: orderedBars as PeriodMarketBar[], signals, events: evidenceEvents, unit };
   }
 
   const buckets = new Map<string, PeriodMarketBar[]>();
@@ -2896,8 +2975,13 @@ function preparePeriodChartData(
     date: mapSignalDate(signal.date) || signal.date,
     entry_date: mapSignalDate(signal.entry_date) || signal.entry_date,
   }));
+  const periodEvents = evidenceEvents.map((event) => ({
+    ...event,
+    original_date: event.original_date || event.date,
+    date: mapSignalDate(event.date) || event.date,
+  }));
 
-  return { bars: periodBars, signals: periodSignals, unit };
+  return { bars: periodBars, signals: periodSignals, events: periodEvents, unit };
 }
 
 function signalDateLabel(signal: ChartSignalMarker) {
@@ -2909,6 +2993,13 @@ function signalDateLabel(signal: ChartSignalMarker) {
 
 function signalShortDate(signal: ChartSignalMarker) {
   return (signal.original_date || signal.date).slice(5);
+}
+
+function evidenceEventDateLabel(event: ChartEvidenceEvent) {
+  if (event.original_date && event.original_date !== event.date) {
+    return `${event.original_date}→${event.date}`;
+  }
+  return event.date;
 }
 
 function buildCandleGeometry(
@@ -3037,6 +3128,7 @@ function buildTradingSignalGeometry(
   params: TradingChartParameters = DEFAULT_TRADING_CHART_PARAMS,
   levelPrices: number[] = [],
   splitSubCharts = DEFAULT_TRADING_CHART_PREFS.subCharts,
+  evidenceEvents: ChartEvidenceEvent[] = [],
 ) {
   const PLOT_LEFT = 48;
   const PLOT_RIGHT = 925;
@@ -3061,6 +3153,7 @@ function buildTradingSignalGeometry(
     return {
       candles: [],
       markers: [],
+      eventMarkers: [],
       entryLinks: [],
       ma5: "",
       ma20: "",
@@ -3469,6 +3562,22 @@ function buildTradingSignalGeometry(
       },
     ];
   });
+  const eventDateRanks = new Map<string, number>();
+  const eventMarkers = evidenceEvents.flatMap((event) => {
+    const index = dateIndex.get(event.date);
+    if (index == null) return [];
+    const rank = eventDateRanks.get(event.date) || 0;
+    eventDateRanks.set(event.date, rank + 1);
+    return [
+      {
+        event,
+        x: xOf(index),
+        y: SIGNAL_LANE_Y - 18 - Math.min(rank, 3) * 16,
+        tone: event.tone,
+        label: event.label,
+      },
+    ];
+  });
   const timeTicks = buildTimeTicks(candles.map((candle) => ({
     x: candle.x,
     label: candle.periodLabel || candle.date,
@@ -3477,6 +3586,7 @@ function buildTradingSignalGeometry(
   return {
     candles,
     markers,
+    eventMarkers,
     entryLinks,
     ma5: maPoints("ma5"),
     ma20: maPoints("ma20"),
@@ -3799,6 +3909,57 @@ function buildTradePlanLevelTooltip(
     rows,
     tone,
   };
+}
+
+function buildEvidenceEventTooltip(marker: Record<string, any>, chart: Record<string, any>) {
+  const event = marker.event as ChartEvidenceEvent;
+  const rows = [
+    { label: "日期", value: event.original_date && event.original_date !== event.date ? `${event.original_date}→${event.date}` : event.date },
+    { label: "类型", value: evidenceEventKindLabel(event.kind) },
+    { label: "状态", value: evidenceEventToneLabel(event.tone) },
+    { label: "详情", value: event.detail },
+  ];
+  const width = 276;
+  const height = 58 + rows.length * 18;
+  const x = clampNumber(
+    Number(marker.x || 0) > Number(chart.plotRight || 0) - width - 24
+      ? Number(marker.x || 0) - width - 18
+      : Number(marker.x || 0) + 18,
+    Number(chart.plotLeft || 0) + 8,
+    Number(chart.plotRight || width) - width - 8,
+  );
+  const y = clampNumber(
+    Number(marker.y || 0) - height - 14,
+    Number(chart.priceTop || 0) + 8,
+    Number(chart.signalLaneY || height) - height - 10,
+  );
+  return {
+    x,
+    y,
+    width,
+    height,
+    title: event.title,
+    subtitle: `${evidenceEventKindLabel(event.kind)} · ${event.label}`,
+    rows,
+    tone: event.tone === "risk" ? "risk" : event.tone === "good" ? "opportunity" : "neutral",
+  };
+}
+
+function evidenceEventKindLabel(kind: ChartEvidenceEvent["kind"]) {
+  if (kind === "evidence") return "信号证据";
+  if (kind === "risk") return "风险证据";
+  if (kind === "invalid") return "失效条件";
+  if (kind === "review") return "Agent审查";
+  if (kind === "readiness") return "分析完整度";
+  if (kind === "strategy") return "策略数据";
+  return "大盘过滤";
+}
+
+function evidenceEventToneLabel(tone: ChartEvidenceEvent["tone"]) {
+  if (tone === "risk") return "风险";
+  if (tone === "warn") return "待确认";
+  if (tone === "good") return "已覆盖";
+  return "观察";
 }
 
 function buildChartDiagnostics(

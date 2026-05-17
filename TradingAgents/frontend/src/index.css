@@ -4647,6 +4647,62 @@ label {
   stroke-width: 0.32;
 }
 
+.evidence-event-marker {
+  cursor: pointer;
+  pointer-events: auto;
+  outline: none;
+}
+
+.evidence-event-marker .event-guide {
+  opacity: 0;
+  stroke: rgba(238, 242, 247, 0.24);
+  stroke-dasharray: 2 5;
+  stroke-width: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+
+.evidence-event-marker path {
+  fill: rgba(93, 168, 255, 0.9);
+  stroke: rgba(11, 15, 20, 0.86);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.evidence-event-marker text {
+  fill: #0b0f14 !important;
+  font-size: 8px !important;
+  font-weight: 900;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.evidence-event-marker.good path {
+  fill: #7ee0a3;
+}
+
+.evidence-event-marker.warn path {
+  fill: #f4b000;
+}
+
+.evidence-event-marker.risk path {
+  fill: #ff8c84;
+}
+
+.evidence-event-marker.neutral path {
+  fill: #8fb3ff;
+}
+
+.evidence-event-marker.active .event-guide,
+.evidence-event-marker:focus-visible .event-guide {
+  opacity: 1;
+}
+
+.evidence-event-marker.active path,
+.evidence-event-marker:focus-visible path {
+  stroke: rgba(255, 255, 255, 0.9);
+  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.52));
+}
+
 .signal-badge-tape {
   display: flex;
   flex-wrap: wrap;
@@ -4726,6 +4782,14 @@ label {
 .legend-marker {
   border-radius: 999px;
   background: var(--action-primary);
+}
+
+.legend-event {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  transform: rotate(45deg);
+  background: linear-gradient(135deg, #7ee0a3, #f4b000 48%, #ff8c84 52%, #8fb3ff);
 }
 
 .legend-line {

@@ -9,7 +9,9 @@ import {
 import FundamentalsPage from "./FundamentalsPage";
 import NewsEvidencePage from "./NewsEvidencePage";
 import {
+  buildKlineEvidenceEvents,
   buildMarketAnalysisOverview as buildMarketAnalysisOverviewModel,
+  type KlineEvidenceEvent,
   type MarketAnalysisItem as OverviewItem,
   type MarketAnalysisOverviewModel as OverviewModel,
 } from "./SymbolWorkspacePage.helpers";
@@ -512,6 +514,16 @@ export default function SymbolWorkspacePage({
       }),
     [context, history, readiness, signals, strategyAnalysis],
   );
+  const chartEvidenceEvents = useMemo<KlineEvidenceEvent[]>(
+    () =>
+      buildKlineEvidenceEvents({
+        history,
+        signals,
+        readiness,
+        strategyAnalysis,
+      }),
+    [history, readiness, signals, strategyAnalysis],
+  );
   const quote = history?.quote;
   const displayName =
     history?.display_name ||
@@ -670,6 +682,7 @@ export default function SymbolWorkspacePage({
               <RealtimeMarketPanel symbol={symbol} />
               <TradingSignalKlinePanel
                 bars={history?.bars || []}
+                evidenceEvents={chartEvidenceEvents}
                 signals={chartSignals}
                 strategyAnalysis={strategyAnalysis}
                 strategyControls={{

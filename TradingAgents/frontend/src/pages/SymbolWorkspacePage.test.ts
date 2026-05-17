@@ -1,4 +1,5 @@
 import {
+  buildKlineEvidenceEvents,
   buildMarketAnalysisOverview,
   classifyIndicatorTone,
 } from "./SymbolWorkspacePage.helpers.js";
@@ -191,6 +192,55 @@ function testMissingDataStaysVisible() {
   assertIncludes(overview.nextSteps[0], "同步", "missing overview gives sync next step");
 }
 
+function testBuildsKlineEvidenceEvents() {
+  const events = buildKlineEvidenceEvents({
+    history: {
+      bar_count: 90,
+      bars: sampleBars(),
+    },
+    signals: [
+      {
+        signal_id: "sig-1",
+        date: "2026-05-11",
+        signal_name: "趋势增强",
+        direction: "opportunity",
+        signal_level: "A",
+        score: 82,
+        review_count: 2,
+        evidence_json: JSON.stringify(["MACD金叉", "成交额放大"]),
+        risk_json: JSON.stringify(["距离压力位较近"]),
+        invalid_json: "跌破MA20",
+      } as any,
+    ],
+    readiness: {
+      date: "2026-05-12",
+      score: 0.62,
+      level: "partial",
+      summary: { ready_count: 6, warn_count: 2, blocker_count: 1 },
+      categories: [
+        { key: "news", label: "新闻证据", status: "warn", next_step: "同步公告和新闻" },
+        { key: "fundamental", label: "财务快照", status: "blocker", next_step: "补齐财务指标" },
+      ],
+      next_actions: [],
+    } as any,
+    strategyAnalysis: {
+      latest_bar: { date: "2026-05-12", close: 118 },
+      decision: { action: "watch", label: "等待确认", tone: "neutral" },
+      market_filter: { passed: false, status: "benchmark weak", benchmark_symbol: "000300.SH" },
+      data_quality: { warnings: ["资金流缺失"], blocking_reasons: ["基准行情不足"] },
+    } as any,
+  });
+
+  assertEqual(events[0]?.date, "2026-05-11", "events are sorted by chart date");
+  assertOk(events.some((event) => event.kind === "evidence" && event.detail.includes("MACD金叉")), "signal evidence creates an event");
+  assertOk(events.some((event) => event.kind === "risk" && event.tone === "risk"), "signal risk creates a risk event");
+  assertOk(events.some((event) => event.kind === "review" && event.detail.includes("2 次审查")), "review count creates a review event");
+  assertOk(events.some((event) => event.kind === "readiness" && event.tone === "risk"), "readiness blocker creates a risk event");
+  assertOk(events.some((event) => event.kind === "strategy" && event.detail.includes("基准行情不足")), "strategy blocking reason creates an event");
+  assertOk(events.some((event) => event.kind === "market" && event.detail.includes("000300.SH")), "failed market filter creates an event");
+}
+
 testClassifiesIndicatorTones();
 testBuildsBullishOverview();
 testMissingDataStaysVisible();
+testBuildsKlineEvidenceEvents();
