@@ -4281,6 +4281,19 @@ label {
   stroke-dasharray: 4 4;
 }
 
+.indicator-line.bias {
+  stroke: #f4d37e;
+}
+
+.indicator-line.dma {
+  stroke: #5eead4;
+}
+
+.indicator-line.ama {
+  stroke: rgba(238, 242, 247, 0.76);
+  stroke-dasharray: 5 4;
+}
+
 .boll-line {
   fill: none;
   stroke-linecap: round;
@@ -4334,7 +4347,9 @@ label {
 }
 
 .ema-line,
-.vwap-line {
+.vwap-line,
+.sar-line,
+.bbi-line {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -4355,6 +4370,17 @@ label {
   stroke: rgba(94, 234, 212, 0.82);
   stroke-dasharray: 6 4;
   stroke-width: 1.15;
+}
+
+.sar-line {
+  stroke: #ff8c84;
+  stroke-dasharray: 2 5;
+  stroke-width: 1.35;
+}
+
+.bbi-line {
+  stroke: #c792ea;
+  stroke-width: 1.22;
 }
 
 .prev-close-level line {
@@ -4702,6 +4728,10 @@ label {
   background: linear-gradient(90deg, rgba(94, 234, 212, 0.9) 0 48%, rgba(244, 211, 126, 0.9) 52% 100%);
 }
 
+.legend-line.trend {
+  background: linear-gradient(90deg, #ff8c84 0 48%, #c792ea 52% 100%);
+}
+
 .legend-line.macd {
   background: linear-gradient(90deg, #f4b000 0 48%, #8fb3ff 52% 100%);
 }
@@ -4712,6 +4742,10 @@ label {
 
 .legend-line.momentum {
   background: linear-gradient(90deg, #5eead4 0 20%, #ff8c84 20% 40%, #f4b000 40% 60%, #c792ea 60% 80%, #8fb3ff 80% 100%);
+}
+
+.legend-line.bias-dma {
+  background: linear-gradient(90deg, #f4d37e 0 33%, #5eead4 33% 66%, rgba(238, 242, 247, 0.86) 66% 100%);
 }
 
 .legend-line.profile {

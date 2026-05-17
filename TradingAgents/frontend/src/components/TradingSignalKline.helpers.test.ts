@@ -2,6 +2,7 @@ import {
   buildAdvancedIndicators,
   buildIndicatorSectionLayout,
   buildMomentumIndicators,
+  buildTrendOverlayIndicators,
   buildVolumeProfile,
 } from "./TradingSignalKline.helpers.js";
 
@@ -35,6 +36,11 @@ const mixedTrendBars = [
   { date: "2026-05-15", open: 12.7, high: 13.2, low: 12.1, close: 12.3, volume: 450, amount: 5_535 },
   { date: "2026-05-18", open: 12.3, high: 13.8, low: 12.2, close: 13.5, volume: 650, amount: 8_775 },
   { date: "2026-05-19", open: 13.5, high: 13.6, low: 11.8, close: 12, volume: 700, amount: 8_400 },
+];
+
+const trendOverlayBars = [
+  ...mixedTrendBars,
+  { date: "2026-05-20", open: 12, high: 12.4, low: 10.8, close: 11.1, volume: 760, amount: 8_436 },
 ];
 
 function testBuildsVisibleVolumeDistribution() {
@@ -126,6 +132,42 @@ function testSplitIndicatorLayoutCreatesSeparateSubCharts() {
   assertOk(layout.signalLaneY > layout.momentum.bottom, "signal lane remains below all sub charts");
 }
 
+function testBuildsTrendOverlayIndicators() {
+  const indicators = buildTrendOverlayIndicators(trendOverlayBars, {
+    bbiPeriods: [2, 3, 4, 5],
+    biasPeriod: 3,
+    dmaFast: 2,
+    dmaSlow: 5,
+    dmaSignal: 3,
+  });
+  const latest = indicators[indicators.length - 1];
+
+  assertEqual(indicators.length, trendOverlayBars.length, "trend overlays preserve bar count");
+  assertOk(latest, "latest trend overlay exists");
+  assertApprox(latest?.sar, 13.8, 0.001, "SAR flips to prior extreme after downside reversal");
+  assertApprox(latest?.bbi, 12.07375, 0.001, "BBI averages the configured moving averages");
+  assertApprox(latest?.bias, -9.0164, 0.001, "BIAS reports close distance from the moving average");
+  assertApprox(latest?.dma, -0.77, 0.001, "DMA reports short MA minus long MA");
+  assertApprox(latest?.ama, 0.0667, 0.001, "AMA smooths DMA over the signal period");
+}
+
+function testTrendOverlayIndicatorsNeedEnoughSamples() {
+  const indicators = buildTrendOverlayIndicators(trendOverlayBars.slice(0, 2), {
+    bbiPeriods: [2, 3, 4, 5],
+    biasPeriod: 3,
+    dmaFast: 2,
+    dmaSlow: 5,
+    dmaSignal: 3,
+  });
+  const latest = indicators[indicators.length - 1];
+
+  assertOk(typeof latest?.sar === "number", "SAR is available from the first bars");
+  assertEqual(latest?.bbi, null, "BBI is missing before all moving averages are ready");
+  assertEqual(latest?.bias, null, "BIAS is missing before moving average is ready");
+  assertEqual(latest?.dma, null, "DMA is missing before long moving average is ready");
+  assertEqual(latest?.ama, null, "AMA is missing before enough DMA samples are ready");
+}
+
 testBuildsVisibleVolumeDistribution();
 testHandlesMissingBarsExplicitly();
 testBuildsFutuStyleAdvancedIndicators();
@@ -134,3 +176,5 @@ testBuildsMomentumIndicatorSet();
 testMomentumIndicatorsNeedEnoughSamples();
 testCompactIndicatorLayoutKeepsLegacyBands();
 testSplitIndicatorLayoutCreatesSeparateSubCharts();
+testBuildsTrendOverlayIndicators();
+testTrendOverlayIndicatorsNeedEnoughSamples();

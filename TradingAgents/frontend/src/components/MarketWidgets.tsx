@@ -11,6 +11,7 @@ import {
   buildAdvancedIndicators,
   buildIndicatorSectionLayout,
   buildMomentumIndicators,
+  buildTrendOverlayIndicators,
   buildVolumeProfile,
   type VolumeProfileModel,
 } from "./TradingSignalKline.helpers";
@@ -101,6 +102,11 @@ interface TradingIndicatorSnapshot {
   bollUpper?: number | null;
   bollMid?: number | null;
   bollLower?: number | null;
+  sar?: number | null;
+  bbi?: number | null;
+  bias?: number | null;
+  dma?: number | null;
+  ama?: number | null;
   cr?: number | null;
   ar?: number | null;
   br?: number | null;
@@ -152,12 +158,15 @@ interface TradingChartPreferences {
   signals: boolean;
   relative: boolean;
   profile: boolean;
+  sar: boolean;
+  bbi: boolean;
   volume: boolean;
   macd: boolean;
   rsi: boolean;
   kdj: boolean;
   advanced: boolean;
   momentum: boolean;
+  biasDma: boolean;
   subCharts: boolean;
   measure: boolean;
 }
@@ -176,6 +185,10 @@ interface TradingChartParameters {
   crPeriod: number;
   emvPeriod: number;
   momentumPeriod: number;
+  biasPeriod: number;
+  dmaFast: number;
+  dmaSlow: number;
+  dmaSignal: number;
   atrPeriod: number;
 }
 
@@ -312,12 +325,15 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   signals: true,
   relative: false,
   profile: true,
+  sar: true,
+  bbi: true,
   volume: true,
   macd: true,
   rsi: true,
   kdj: true,
   advanced: true,
   momentum: true,
+  biasDma: true,
   subCharts: true,
   measure: false,
 };
@@ -336,6 +352,10 @@ const DEFAULT_TRADING_CHART_PARAMS: TradingChartParameters = {
   crPeriod: 26,
   emvPeriod: 14,
   momentumPeriod: 14,
+  biasPeriod: 6,
+  dmaFast: 10,
+  dmaSlow: 50,
+  dmaSignal: 10,
   atrPeriod: 14,
 };
 
@@ -359,12 +379,15 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     signals: typeof next.signals === "boolean" ? next.signals : DEFAULT_TRADING_CHART_PREFS.signals,
     relative: typeof next.relative === "boolean" ? next.relative : DEFAULT_TRADING_CHART_PREFS.relative,
     profile: typeof next.profile === "boolean" ? next.profile : DEFAULT_TRADING_CHART_PREFS.profile,
+    sar: typeof next.sar === "boolean" ? next.sar : DEFAULT_TRADING_CHART_PREFS.sar,
+    bbi: typeof next.bbi === "boolean" ? next.bbi : DEFAULT_TRADING_CHART_PREFS.bbi,
     volume: typeof next.volume === "boolean" ? next.volume : DEFAULT_TRADING_CHART_PREFS.volume,
     macd: typeof next.macd === "boolean" ? next.macd : DEFAULT_TRADING_CHART_PREFS.macd,
     rsi: typeof next.rsi === "boolean" ? next.rsi : DEFAULT_TRADING_CHART_PREFS.rsi,
     kdj: typeof next.kdj === "boolean" ? next.kdj : DEFAULT_TRADING_CHART_PREFS.kdj,
     advanced: typeof next.advanced === "boolean" ? next.advanced : DEFAULT_TRADING_CHART_PREFS.advanced,
     momentum: typeof next.momentum === "boolean" ? next.momentum : DEFAULT_TRADING_CHART_PREFS.momentum,
+    biasDma: typeof next.biasDma === "boolean" ? next.biasDma : DEFAULT_TRADING_CHART_PREFS.biasDma,
     subCharts: typeof next.subCharts === "boolean" ? next.subCharts : DEFAULT_TRADING_CHART_PREFS.subCharts,
     measure: typeof next.measure === "boolean" ? next.measure : DEFAULT_TRADING_CHART_PREFS.measure,
   };
@@ -387,6 +410,10 @@ function normalizeTradingChartParams(value: unknown): TradingChartParameters {
     crPeriod: boundedInteger(next.crPeriod, 5, 80, DEFAULT_TRADING_CHART_PARAMS.crPeriod),
     emvPeriod: boundedInteger(next.emvPeriod, 5, 60, DEFAULT_TRADING_CHART_PARAMS.emvPeriod),
     momentumPeriod: boundedInteger(next.momentumPeriod, 5, 60, DEFAULT_TRADING_CHART_PARAMS.momentumPeriod),
+    biasPeriod: boundedInteger(next.biasPeriod, 3, 40, DEFAULT_TRADING_CHART_PARAMS.biasPeriod),
+    dmaFast: boundedInteger(next.dmaFast, 3, 40, DEFAULT_TRADING_CHART_PARAMS.dmaFast),
+    dmaSlow: boundedInteger(next.dmaSlow, 8, 160, DEFAULT_TRADING_CHART_PARAMS.dmaSlow),
+    dmaSignal: boundedInteger(next.dmaSignal, 3, 40, DEFAULT_TRADING_CHART_PARAMS.dmaSignal),
     atrPeriod: boundedInteger(next.atrPeriod, 5, 40, DEFAULT_TRADING_CHART_PARAMS.atrPeriod),
   };
 }
@@ -1381,6 +1408,8 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.signals ? "active" : ""} onClick={() => toggleChartPref("signals")} type="button">信号</button>
         <button className={chartPrefs.relative ? "active" : ""} onClick={() => toggleChartPref("relative")} type="button">相对</button>
         <button className={chartPrefs.profile ? "active" : ""} onClick={() => toggleChartPref("profile")} type="button">筹码</button>
+        <button className={chartPrefs.sar ? "active" : ""} onClick={() => toggleChartPref("sar")} type="button">SAR</button>
+        <button className={chartPrefs.bbi ? "active" : ""} onClick={() => toggleChartPref("bbi")} type="button">BBI</button>
         <span>指标·副图</span>
         <button className={chartPrefs.volume ? "active" : ""} onClick={() => toggleChartPref("volume")} type="button">VOL</button>
         <button className={chartPrefs.macd ? "active" : ""} onClick={() => toggleChartPref("macd")} type="button">MACD</button>
@@ -1388,6 +1417,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.kdj ? "active" : ""} onClick={() => toggleChartPref("kdj")} type="button">KDJ</button>
         <button className={chartPrefs.advanced ? "active" : ""} onClick={() => toggleChartPref("advanced")} type="button">CR/ARBR/EMV</button>
         <button className={chartPrefs.momentum ? "active" : ""} onClick={() => toggleChartPref("momentum")} type="button">DMI/CCI/WR</button>
+        <button className={chartPrefs.biasDma ? "active" : ""} onClick={() => toggleChartPref("biasDma")} type="button">BIAS/DMA</button>
         <button className={chartPrefs.subCharts ? "active" : ""} onClick={() => toggleChartPref("subCharts")} type="button">分屏</button>
         <button className={chartPrefs.measure ? "active measure" : "measure"} onClick={() => toggleChartPref("measure")} type="button">测距</button>
         <button className={paramsOpen ? "active" : ""} onClick={() => setParamsOpen((value) => !value)} type="button">参数</button>
@@ -1409,6 +1439,10 @@ export function TradingSignalKlinePanel({
           <ChartParamInput label="CR/ARBR" value={chartParams.crPeriod} onChange={updateChartParam("crPeriod")} />
           <ChartParamInput label="EMV均线" value={chartParams.emvPeriod} onChange={updateChartParam("emvPeriod")} />
           <ChartParamInput label="DMI/CCI/WR" value={chartParams.momentumPeriod} onChange={updateChartParam("momentumPeriod")} />
+          <ChartParamInput label="BIAS" value={chartParams.biasPeriod} onChange={updateChartParam("biasPeriod")} />
+          <ChartParamInput label="DMA快" value={chartParams.dmaFast} onChange={updateChartParam("dmaFast")} />
+          <ChartParamInput label="DMA慢" value={chartParams.dmaSlow} onChange={updateChartParam("dmaSlow")} />
+          <ChartParamInput label="AMA" value={chartParams.dmaSignal} onChange={updateChartParam("dmaSignal")} />
           <ChartParamInput label="ATR" value={chartParams.atrPeriod} onChange={updateChartParam("atrPeriod")} />
         </div>
       )}
@@ -1457,6 +1491,12 @@ export function TradingSignalKlinePanel({
           sub={`上 ${formatNumber(readoutIndicators?.bollUpper, 2)} / 下 ${formatNumber(readoutIndicators?.bollLower, 2)}`}
         />
         <MarketReadoutStat
+          label="SAR / BBI"
+          value={`${formatNumber(readoutIndicators?.sar, 2)} / ${formatNumber(readoutIndicators?.bbi, 2)}`}
+          sub="主图趋势与多空均衡线"
+          tone={quoteTone((readoutIndicators?.close || 0) - (readoutIndicators?.sar || 0))}
+        />
+        <MarketReadoutStat
           label="KDJ"
           value={`${formatNumber(readoutIndicators?.kdjK, 1)} / ${formatNumber(readoutIndicators?.kdjD, 1)}`}
           sub={`J ${formatNumber(readoutIndicators?.kdjJ, 1)}`}
@@ -1485,6 +1525,12 @@ export function TradingSignalKlinePanel({
           value={formatNumber(readoutIndicators?.cci, 1)}
           sub={`WR ${formatNumber(readoutIndicators?.wr, 1)}`}
           tone={quoteTone(readoutIndicators?.cci)}
+        />
+        <MarketReadoutStat
+          label={`BIAS${chartParams.biasPeriod} / DMA`}
+          value={formatNumber(readoutIndicators?.bias, 2)}
+          sub={`DMA ${formatNumber(readoutIndicators?.dma, 2)} · AMA ${formatNumber(readoutIndicators?.ama, 2)}`}
+          tone={quoteTone(readoutIndicators?.bias)}
         />
         <MarketReadoutStat
           label={`ATR${chartParams.atrPeriod} / OBV`}
@@ -1631,12 +1677,17 @@ export function TradingSignalKlinePanel({
           {chartPrefs.momentum && chart.adxLine && <polyline className="indicator-line adx" points={chart.adxLine} />}
           {chartPrefs.momentum && chart.cciLine && <polyline className="indicator-line cci" points={chart.cciLine} />}
           {chartPrefs.momentum && chart.wrLine && <polyline className="indicator-line wr" points={chart.wrLine} />}
+          {chartPrefs.biasDma && chart.biasLine && <polyline className="indicator-line bias" points={chart.biasLine} />}
+          {chartPrefs.biasDma && chart.dmaLine && <polyline className="indicator-line dma" points={chart.dmaLine} />}
+          {chartPrefs.biasDma && chart.amaLine && <polyline className="indicator-line ama" points={chart.amaLine} />}
           {chartPrefs.boll && chart.bollUpper && <polyline className="boll-line upper" points={chart.bollUpper} />}
           {chartPrefs.boll && chart.bollMid && <polyline className="boll-line mid" points={chart.bollMid} />}
           {chartPrefs.boll && chart.bollLower && <polyline className="boll-line lower" points={chart.bollLower} />}
           {chartPrefs.vwap && chart.vwapLine && <polyline className="vwap-line" points={chart.vwapLine} />}
           {chartPrefs.ema && chart.emaFastLine && <polyline className="ema-line fast" points={chart.emaFastLine} />}
           {chartPrefs.ema && chart.emaSlowLine && <polyline className="ema-line slow" points={chart.emaSlowLine} />}
+          {chartPrefs.sar && chart.sarLine && <polyline className="sar-line" points={chart.sarLine} />}
+          {chartPrefs.bbi && chart.bbiLine && <polyline className="bbi-line" points={chart.bbiLine} />}
           {chartPrefs.ma && chart.ma5 && <polyline className="ma-line ma5" points={chart.ma5} />}
           {chartPrefs.ma && chart.ma20 && <polyline className="ma-line ma20" points={chart.ma20} />}
           {chartPrefs.ma && chart.ma60 && <polyline className="ma-line ma60" points={chart.ma60} />}
@@ -1832,8 +1883,10 @@ export function TradingSignalKlinePanel({
                   <MiniChartStat label="量比" value={formatNumber(activeIndicators?.volumeRatio, 2)} />
                   <MiniChartStat label="BOLL中轨" value={formatNumber(activeIndicators?.bollMid, 2)} />
                   <MiniChartStat label="KDJ J" value={formatNumber(activeIndicators?.kdjJ, 1)} />
+                  <MiniChartStat label="SAR / BBI" value={`${formatNumber(activeIndicators?.sar, 2)} / ${formatNumber(activeIndicators?.bbi, 2)}`} />
                   <MiniChartStat label="DMI+/DMI-" value={`${formatNumber(activeIndicators?.pdi, 1)} / ${formatNumber(activeIndicators?.mdi, 1)}`} />
                   <MiniChartStat label="CCI / WR" value={`${formatNumber(activeIndicators?.cci, 1)} / ${formatNumber(activeIndicators?.wr, 1)}`} />
+                  <MiniChartStat label="BIAS / DMA" value={`${formatNumber(activeIndicators?.bias, 2)} / ${formatNumber(activeIndicators?.dma, 2)}`} />
                 </div>
               </div>
             </div>
@@ -1882,9 +1935,11 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line ma60" />MA60</span>
         <span><i className="legend-line ma120" />MA120</span>
         <span><i className="legend-line vwap" />VWAP/EMA</span>
+        <span><i className="legend-line trend" />SAR/BBI</span>
         <span><i className="legend-line macd" />MACD/RSI</span>
         <span><i className="legend-line advanced" />CR/ARBR/EMV</span>
         <span><i className="legend-line momentum" />DMI/CCI/WR</span>
+        <span><i className="legend-line bias-dma" />BIAS/DMA</span>
         <span><i className="legend-line profile" />筹码分布</span>
         <span><i className="legend-marker" />信号日至入场日</span>
       </div>
@@ -2961,6 +3016,8 @@ function buildTradingSignalGeometry(
       emaFastLine: "",
       emaSlowLine: "",
       vwapLine: "",
+      sarLine: "",
+      bbiLine: "",
       bollUpper: "",
       bollMid: "",
       bollLower: "",
@@ -2982,6 +3039,9 @@ function buildTradingSignalGeometry(
       adxLine: "",
       cciLine: "",
       wrLine: "",
+      biasLine: "",
+      dmaLine: "",
+      amaLine: "",
       relativeLine: "",
       relativeZeroY: (PRICE_TOP + PRICE_BOTTOM) / 2,
       relativeLatest: null as number | null,
@@ -3024,6 +3084,17 @@ function buildTradingSignalGeometry(
   const emaFastValues = emaNumberValues(closeValues, macdFast);
   const emaSlowValues = emaNumberValues(closeValues, macdSlow);
   const vwapValues = vwapNumberValues(visible);
+  const trendOverlayValues = buildTrendOverlayIndicators(visible, {
+    biasPeriod: params.biasPeriod,
+    dmaFast: params.dmaFast,
+    dmaSlow: params.dmaSlow,
+    dmaSignal: params.dmaSignal,
+  });
+  const sarValues = trendOverlayValues.map((value) => value.sar);
+  const bbiValues = trendOverlayValues.map((value) => value.bbi);
+  const biasValues = trendOverlayValues.map((value) => value.bias);
+  const dmaValues = trendOverlayValues.map((value) => value.dma);
+  const amaValues = trendOverlayValues.map((value) => value.ama);
   const bollDomainValues = bollValues.flatMap((value) =>
     value ? [value.upper, value.lower] : [],
   );
@@ -3033,6 +3104,8 @@ function buildTradingSignalGeometry(
     ...emaFastValues,
     ...emaSlowValues,
     ...vwapValues.filter(isFiniteNumber),
+    ...sarValues.filter(isFiniteNumber),
+    ...bbiValues.filter(isFiniteNumber),
     ...levelDomainValues,
   ];
   const minPrice = Math.min(...lowValues, ...overlayDomainValues);
@@ -3117,6 +3190,16 @@ function buildTradingSignalGeometry(
     MOMENTUM_BOTTOM - ((Number(value ?? 50) / 100) * (MOMENTUM_BOTTOM - MOMENTUM_TOP));
   const momentumY = (value?: number | null) =>
     MOMENTUM_BOTTOM - ((Number(value ?? 0) - momentumMin) / momentumSpan) * (MOMENTUM_BOTTOM - MOMENTUM_TOP);
+  const biasFiniteValues = [-20, 0, 20, ...biasValues].filter(isFiniteNumber);
+  const biasMin = Math.min(...biasFiniteValues);
+  const biasMax = Math.max(...biasFiniteValues);
+  const biasSpan = biasMax - biasMin || 1;
+  const biasY = (value?: number | null) =>
+    MOMENTUM_BOTTOM - ((Number(value ?? 0) - biasMin) / biasSpan) * (MOMENTUM_BOTTOM - MOMENTUM_TOP);
+  const maxDmaAbs = Math.max(0.000001, ...[...dmaValues, ...amaValues].filter(isFiniteNumber).map((value) => Math.abs(value)));
+  const dmaZeroY = (MOMENTUM_TOP + MOMENTUM_BOTTOM) / 2;
+  const dmaY = (value?: number | null) =>
+    dmaZeroY - (Number(value ?? 0) / maxDmaAbs) * ((MOMENTUM_BOTTOM - MOMENTUM_TOP) / 2 - 3);
   const relativeValues = closeValues.map((close) => (closeValues[0] ? close / closeValues[0] - 1 : 0));
   const maxRelativeAbs = Math.max(0.01, ...relativeValues.map(Math.abs));
   const relativeY = (value: number) =>
@@ -3146,6 +3229,7 @@ function buildTradingSignalGeometry(
     const volumeRatio = averageVolume20 ? Number(bar.volume || 0) / averageVolume20 : null;
     const advanced = advancedValues[index];
     const momentum = momentumValues[index];
+    const trendOverlay = trendOverlayValues[index];
     return {
       date: bar.date,
       periodLabel: bar.period_label,
@@ -3199,6 +3283,11 @@ function buildTradingSignalGeometry(
         bollUpper: bollValues[index]?.upper ?? null,
         bollMid: bollValues[index]?.mid ?? null,
         bollLower: bollValues[index]?.lower ?? null,
+        sar: trendOverlay?.sar ?? null,
+        bbi: trendOverlay?.bbi ?? null,
+        bias: trendOverlay?.bias ?? null,
+        dma: trendOverlay?.dma ?? null,
+        ama: trendOverlay?.ama ?? null,
         cr: advanced?.cr ?? null,
         ar: advanced?.ar ?? null,
         br: advanced?.br ?? null,
@@ -3309,6 +3398,8 @@ function buildTradingSignalGeometry(
     emaFastLine: indicatorPoints(emaFastValues, yOf),
     emaSlowLine: indicatorPoints(emaSlowValues, yOf),
     vwapLine: indicatorPoints(vwapValues, yOf),
+    sarLine: indicatorPoints(sarValues, yOf),
+    bbiLine: indicatorPoints(bbiValues, yOf),
     bollUpper: bollLine("upper"),
     bollMid: bollLine("mid"),
     bollLower: bollLine("lower"),
@@ -3330,6 +3421,9 @@ function buildTradingSignalGeometry(
     adxLine: indicatorPoints(adxValues, dmiY),
     cciLine: indicatorPoints(cciValues, momentumY),
     wrLine: indicatorPoints(wrValues, momentumY),
+    biasLine: indicatorPoints(biasValues, biasY),
+    dmaLine: indicatorPoints(dmaValues, dmaY),
+    amaLine: indicatorPoints(amaValues, dmaY),
     relativeLine,
     relativeZeroY: relativeY(0),
     relativeLatest: relativeValues[relativeValues.length - 1] ?? null,

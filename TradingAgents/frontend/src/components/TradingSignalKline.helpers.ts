@@ -55,6 +55,14 @@ export interface MomentumIndicatorSnapshot {
   wr: number | null;
 }
 
+export interface TrendOverlayIndicatorSnapshot {
+  sar: number | null;
+  bbi: number | null;
+  bias: number | null;
+  dma: number | null;
+  ama: number | null;
+}
+
 export type IndicatorSectionLayoutMode = "compact" | "split";
 
 export interface IndicatorChartBand {
@@ -97,10 +105,10 @@ export function buildIndicatorSectionLayout(mode: IndicatorSectionLayoutMode = "
   if (mode === "split") {
     sections.push(
       { key: "advanced", label: "CR / ARBR / EMV", ...advanced },
-      { key: "momentum", label: "DMI / CCI / WR", ...momentum },
+      { key: "momentum", label: "DMI / CCI / WR / BIAS / DMA", ...momentum },
     );
   } else {
-    sections[3] = { key: "oscillator", label: "RSI / KDJ / CR / DMI / CCI / WR", ...oscillator };
+    sections[3] = { key: "oscillator", label: "RSI / KDJ / CR / DMI / BIAS", ...oscillator };
   }
 
   return {
@@ -230,6 +238,48 @@ export function buildMomentumIndicators(
       adx: dxWindow.length === period ? averageNumbers(dxWindow) : null,
       cci: cciWr.cci,
       wr: cciWr.wr,
+    };
+  });
+}
+
+export function buildTrendOverlayIndicators(
+  bars: VolumeProfileBarLike[],
+  options: {
+    sarStep?: number;
+    sarMaxStep?: number;
+    bbiPeriods?: number[];
+    biasPeriod?: number;
+    dmaFast?: number;
+    dmaSlow?: number;
+    dmaSignal?: number;
+  } = {},
+): TrendOverlayIndicatorSnapshot[] {
+  const normalized = bars.map(normalizeAdvancedBar);
+  const closeValues = normalized.map((bar) => bar?.close ?? null);
+  const sarValues = buildSarValues(normalized, {
+    step: clampNumber(options.sarStep ?? 0.02, 0.005, 0.08),
+    maxStep: clampNumber(options.sarMaxStep ?? 0.2, 0.02, 0.4),
+  });
+  const bbiPeriods = normalizeBbiPeriods(options.bbiPeriods);
+  const biasPeriod = clampInteger(options.biasPeriod ?? 6, 2, 80);
+  const dmaFast = clampInteger(options.dmaFast ?? 10, 2, 80);
+  const dmaSlow = Math.max(clampInteger(options.dmaSlow ?? 50, 3, 160), dmaFast + 1);
+  const dmaSignal = clampInteger(options.dmaSignal ?? 10, 2, 80);
+  const dmaValues: Array<number | null> = [];
+
+  return normalized.map((bar, index) => {
+    const bbiParts = bbiPeriods.map((period) => movingAverageAt(closeValues, period, index));
+    const biasMa = movingAverageAt(closeValues, biasPeriod, index);
+    const fastMa = movingAverageAt(closeValues, dmaFast, index);
+    const slowMa = movingAverageAt(closeValues, dmaSlow, index);
+    const dma = fastMa != null && slowMa != null ? fastMa - slowMa : null;
+    dmaValues.push(dma);
+    return {
+      sar: sarValues[index] ?? null,
+      bbi: bbiParts.every(isFiniteNumber) ? averageNumbers(bbiParts) : null,
+      bias: bar && biasMa ? ((bar.close - biasMa) / biasMa) * 100 : null,
+      dma,
+      ama: movingAverageAt(dmaValues, dmaSignal, index),
     };
   });
 }
@@ -387,6 +437,71 @@ function buildCciWrSnapshot(
   };
 }
 
+function buildSarValues(
+  bars: Array<ReturnType<typeof normalizeAdvancedBar>>,
+  options: { step: number; maxStep: number },
+) {
+  if (bars.length === 0) return [];
+  const first = bars[0];
+  if (!first) return bars.map(() => null);
+
+  const values: Array<number | null> = [first.close >= first.open ? first.low : first.high];
+  let rising = first.close >= first.open;
+  let extreme = rising ? first.high : first.low;
+  let acceleration = options.step;
+
+  for (let index = 1; index < bars.length; index += 1) {
+    const current = bars[index];
+    const previous = bars[index - 1];
+    const previousSar = values[index - 1];
+    if (!current || !previous || previousSar == null) {
+      values.push(null);
+      continue;
+    }
+
+    let nextSar = previousSar + acceleration * (extreme - previousSar);
+    if (rising) {
+      nextSar = Math.min(nextSar, previous.low);
+      if (current.low < nextSar) {
+        rising = false;
+        nextSar = extreme;
+        extreme = current.low;
+        acceleration = options.step;
+      } else if (current.high > extreme) {
+        extreme = current.high;
+        acceleration = Math.min(options.maxStep, acceleration + options.step);
+      }
+    } else {
+      nextSar = Math.max(nextSar, previous.high);
+      if (current.high > nextSar) {
+        rising = true;
+        nextSar = extreme;
+        extreme = current.high;
+        acceleration = options.step;
+      } else if (current.low < extreme) {
+        extreme = current.low;
+        acceleration = Math.min(options.maxStep, acceleration + options.step);
+      }
+    }
+
+    values.push(nextSar);
+  }
+
+  return values;
+}
+
+function normalizeBbiPeriods(value: number[] | undefined) {
+  const periods = Array.isArray(value) && value.length >= 4 ? value.slice(0, 4) : [3, 6, 12, 24];
+  return periods.map((period, index) => clampInteger(period, index === 0 ? 2 : 3, 160));
+}
+
+function movingAverageAt(values: Array<number | null>, period: number, index: number) {
+  const start = index - period + 1;
+  if (start < 0) return null;
+  const window = values.slice(start, index + 1).filter(isFiniteNumber);
+  return window.length === period ? averageNumbers(window) : null;
+}
+
 function emptyVolumeProfile(currentPrice: number | null): VolumeProfileModel {
   return {
     bins: [],
@@ -412,6 +527,12 @@ function ratioPercent(numerator: number, denominator: number) {
 function averageNumbers(values: number[]) {
   if (values.length === 0) return null;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  const next = Number(value);
+  if (!Number.isFinite(next)) return min;
+  return Math.min(max, Math.max(min, next));
 }
 
 function clampInteger(value: number, min: number, max: number) {
