@@ -8,7 +8,9 @@ import type {
   RealtimeQuotePayload,
 } from "../types/market";
 import {
+  CHART_PARAMETER_PRESETS,
   CHART_PREFERENCE_PRESETS,
+  applyChartParameterPreset,
   applyChartPreferencePreset,
   buildAdvancedIndicators,
   buildCandlestickPatternAnnotations,
@@ -30,6 +32,7 @@ import {
   buildVolumeMomentumIndicators,
   buildVolatilityVolumeIndicators,
   buildVolumeProfile,
+  matchChartParameterPreset,
   matchChartPreferencePreset,
   type IndicatorPanelReadoutItem,
   type VolumeProfileModel,
@@ -1263,6 +1266,7 @@ export function TradingSignalKlinePanel({
   const chartMarkers = chart.markers || [];
   const evidenceEventMarkers = chart.eventMarkers || [];
   const activeChartPreset = useMemo(() => matchChartPreferencePreset(chartPrefs), [chartPrefs]);
+  const activeChartParameterPreset = useMemo(() => matchChartParameterPreset(chartParams), [chartParams]);
   const tradePlanLevels = useMemo(
     () => buildTradePlanLevels(strategyAnalysis, chart),
     [chart, strategyAnalysis],
@@ -1374,6 +1378,10 @@ export function TradingSignalKlinePanel({
 
   const applyChartPreset = (key: string) => {
     setChartPrefs((value) => applyChartPreferencePreset(value, key));
+  };
+
+  const applyChartParameterPresetValue = (key: string) => {
+    setChartParams((value) => applyChartParameterPreset(value, key));
   };
 
   const resetChartPrefs = () => {
@@ -1571,6 +1579,22 @@ export function TradingSignalKlinePanel({
 
       {paramsOpen && (
         <div className="chart-param-panel" aria-label="交易信号K线指标参数">
+          <div className="chart-param-preset-strip" aria-label="交易信号K线指标参数预设">
+            <span>参数预设</span>
+            {CHART_PARAMETER_PRESETS.map((preset) => (
+              <button
+                aria-pressed={activeChartParameterPreset === preset.key}
+                className={activeChartParameterPreset === preset.key ? "active" : ""}
+                key={preset.key}
+                onClick={() => applyChartParameterPresetValue(preset.key)}
+                title={preset.description}
+                type="button"
+              >
+                {preset.label}
+              </button>
+            ))}
+            <span>{activeChartParameterPreset ? "当前参数" : "自定义参数"}</span>
+          </div>
           <ChartParamInput label="MA快" value={chartParams.maFast} onChange={updateChartParam("maFast")} />
           <ChartParamInput label="MA中" value={chartParams.maMid} onChange={updateChartParam("maMid")} />
           <ChartParamInput label="MA慢" value={chartParams.maSlow} onChange={updateChartParam("maSlow")} />

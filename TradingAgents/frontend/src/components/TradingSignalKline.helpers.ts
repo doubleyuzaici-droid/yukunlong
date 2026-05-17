@@ -241,6 +241,38 @@ export interface ChartPreferencePreset {
   values: Record<ChartPreferenceName, boolean>;
 }
 
+export type ChartParameterPresetKey = "standard" | "short" | "swing" | "long";
+export type ChartParameterName =
+  | "maFast"
+  | "maMid"
+  | "maSlow"
+  | "bollPeriod"
+  | "bollMultiplier"
+  | "macdFast"
+  | "macdSlow"
+  | "macdSignal"
+  | "rsiPeriod"
+  | "kdjPeriod"
+  | "crPeriod"
+  | "emvPeriod"
+  | "momentumPeriod"
+  | "biasPeriod"
+  | "dmaFast"
+  | "dmaSlow"
+  | "dmaSignal"
+  | "volumeMomentumPeriod"
+  | "rocPeriod"
+  | "trixPeriod"
+  | "trixSignal"
+  | "atrPeriod";
+
+export interface ChartParameterPreset {
+  key: ChartParameterPresetKey;
+  label: string;
+  description: string;
+  values: Record<ChartParameterName, number>;
+}
+
 const BASE_CHART_PRESET_VALUES: Record<ChartPreferenceName, boolean> = {
   ma: true,
   ema: false,
@@ -418,6 +450,113 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
       relative: true,
       fibonacci: true,
       subCharts: true,
+    },
+  },
+];
+
+const STANDARD_CHART_PARAMETER_VALUES: Record<ChartParameterName, number> = {
+  maFast: 5,
+  maMid: 20,
+  maSlow: 60,
+  bollPeriod: 20,
+  bollMultiplier: 2,
+  macdFast: 12,
+  macdSlow: 26,
+  macdSignal: 9,
+  rsiPeriod: 14,
+  kdjPeriod: 9,
+  crPeriod: 26,
+  emvPeriod: 14,
+  momentumPeriod: 14,
+  biasPeriod: 6,
+  dmaFast: 10,
+  dmaSlow: 50,
+  dmaSignal: 10,
+  volumeMomentumPeriod: 26,
+  rocPeriod: 12,
+  trixPeriod: 12,
+  trixSignal: 9,
+  atrPeriod: 14,
+};
+
+export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
+  {
+    key: "standard",
+    label: "默认",
+    description: "经典行情软件参数，适合日常技术面复核。",
+    values: {
+      ...STANDARD_CHART_PARAMETER_VALUES,
+    },
+  },
+  {
+    key: "short",
+    label: "短线",
+    description: "更快的均线、MACD、RSI与量价周期，适合短线节奏。",
+    values: {
+      ...STANDARD_CHART_PARAMETER_VALUES,
+      maFast: 3,
+      maMid: 10,
+      maSlow: 30,
+      bollPeriod: 14,
+      macdFast: 6,
+      macdSlow: 13,
+      macdSignal: 5,
+      rsiPeriod: 7,
+      crPeriod: 13,
+      emvPeriod: 7,
+      momentumPeriod: 10,
+      biasPeriod: 5,
+      dmaFast: 5,
+      dmaSlow: 20,
+      dmaSignal: 5,
+      volumeMomentumPeriod: 13,
+      rocPeriod: 6,
+      trixPeriod: 6,
+      trixSignal: 5,
+      atrPeriod: 10,
+    },
+  },
+  {
+    key: "swing",
+    label: "波段",
+    description: "拉长均线与震荡周期，兼顾趋势确认和波段择时。",
+    values: {
+      ...STANDARD_CHART_PARAMETER_VALUES,
+      maFast: 10,
+      maMid: 30,
+      maSlow: 120,
+      bollMultiplier: 2.2,
+      kdjPeriod: 14,
+      momentumPeriod: 20,
+      biasPeriod: 10,
+    },
+  },
+  {
+    key: "long",
+    label: "长线",
+    description: "强调中长期趋势过滤，降低短期噪音。",
+    values: {
+      ...STANDARD_CHART_PARAMETER_VALUES,
+      maFast: 20,
+      maMid: 60,
+      maSlow: 120,
+      bollPeriod: 30,
+      macdFast: 19,
+      macdSlow: 39,
+      rsiPeriod: 21,
+      kdjPeriod: 14,
+      crPeriod: 42,
+      emvPeriod: 21,
+      momentumPeriod: 28,
+      biasPeriod: 24,
+      dmaFast: 20,
+      dmaSlow: 100,
+      dmaSignal: 20,
+      volumeMomentumPeriod: 42,
+      rocPeriod: 24,
+      trixPeriod: 18,
+      trixSignal: 12,
+      atrPeriod: 21,
     },
   },
 ];
@@ -659,6 +798,28 @@ export function matchChartPreferencePreset(
   const current = preferences as Record<string, unknown>;
   return CHART_PREFERENCE_PRESETS.find((preset) =>
     (Object.keys(preset.values) as ChartPreferenceName[]).every((key) => current[key] === preset.values[key]),
+  )?.key ?? null;
+}
+
+export function applyChartParameterPreset<T extends object>(
+  parameters: T,
+  presetKey: ChartParameterPresetKey | string,
+): T {
+  const preset = CHART_PARAMETER_PRESETS.find((item) => item.key === presetKey);
+  if (!preset) return parameters;
+  return {
+    ...parameters,
+    ...preset.values,
+  };
+}
+
+export function matchChartParameterPreset(
+  parameters: object | null | undefined,
+): ChartParameterPresetKey | null {
+  if (!parameters || typeof parameters !== "object") return null;
+  const current = parameters as Record<string, unknown>;
+  return CHART_PARAMETER_PRESETS.find((preset) =>
+    (Object.keys(preset.values) as ChartParameterName[]).every((key) => current[key] === preset.values[key]),
   )?.key ?? null;
 }
 

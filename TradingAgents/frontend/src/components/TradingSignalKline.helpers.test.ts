@@ -1,4 +1,5 @@
 import {
+  applyChartParameterPreset,
   applyChartPreferencePreset,
   buildAdvancedIndicators,
   buildCandlestickPatternAnnotations,
@@ -20,6 +21,7 @@ import {
   buildVolumeMomentumIndicators,
   buildVolatilityVolumeIndicators,
   buildVolumeProfile,
+  matchChartParameterPreset,
   matchChartPreferencePreset,
 } from "./TradingSignalKline.helpers.js";
 
@@ -79,6 +81,31 @@ const baseChartPrefs = {
   volatility: true,
   subCharts: true,
   measure: true,
+};
+
+const baseChartParams = {
+  maFast: 5,
+  maMid: 20,
+  maSlow: 60,
+  bollPeriod: 20,
+  bollMultiplier: 2,
+  macdFast: 12,
+  macdSlow: 26,
+  macdSignal: 9,
+  rsiPeriod: 14,
+  kdjPeriod: 9,
+  crPeriod: 26,
+  emvPeriod: 14,
+  momentumPeriod: 14,
+  biasPeriod: 6,
+  dmaFast: 10,
+  dmaSlow: 50,
+  dmaSignal: 10,
+  volumeMomentumPeriod: 26,
+  rocPeriod: 12,
+  trixPeriod: 12,
+  trixSignal: 9,
+  atrPeriod: 14,
 };
 
 const mixedTrendBars = [
@@ -223,6 +250,32 @@ function testUnknownChartPreferencePresetIsNoop() {
   const prefs = applyChartPreferencePreset(baseChartPrefs, "missing-preset");
 
   assertEqual(prefs, baseChartPrefs, "unknown preset keeps the original preferences object");
+}
+
+function testAppliesShortTermChartParameterPreset() {
+  const params = applyChartParameterPreset(baseChartParams, "short");
+
+  assertEqual(params.maFast, 3, "short preset uses faster MA fast period");
+  assertEqual(params.maMid, 10, "short preset uses faster MA mid period");
+  assertEqual(params.maSlow, 30, "short preset uses faster MA slow period");
+  assertEqual(params.macdFast, 6, "short preset uses faster MACD fast period");
+  assertEqual(params.macdSlow, 13, "short preset uses faster MACD slow period");
+  assertEqual(params.macdSignal, 5, "short preset uses faster MACD signal period");
+  assertEqual(params.rsiPeriod, 7, "short preset uses shorter RSI period");
+  assertEqual(params.atrPeriod, 10, "short preset uses shorter ATR period");
+}
+
+function testMatchesChartParameterPresetFromValues() {
+  const params = applyChartParameterPreset(baseChartParams, "swing");
+
+  assertEqual(matchChartParameterPreset(params), "swing", "parameter matcher identifies the current swing preset");
+  assertEqual(matchChartParameterPreset({ ...params, bollMultiplier: 2.3 }), null, "manual parameter edits make the preset custom");
+}
+
+function testUnknownChartParameterPresetIsNoop() {
+  const params = applyChartParameterPreset(baseChartParams, "missing-preset");
+
+  assertEqual(params, baseChartParams, "unknown parameter preset keeps the original parameter object");
 }
 
 function testBuildsMeasuredRangeStats() {
@@ -732,6 +785,9 @@ testBuildsVisibleVolumeDistribution();
 testAppliesTrendChartPreferencePreset();
 testMatchesChartPreferencePresetFromValues();
 testUnknownChartPreferencePresetIsNoop();
+testAppliesShortTermChartParameterPreset();
+testMatchesChartParameterPresetFromValues();
+testUnknownChartParameterPresetIsNoop();
 testBuildsMeasuredRangeStats();
 testMeasuredRangeStatsKeepSelectionDirection();
 testHandlesMissingBarsExplicitly();
