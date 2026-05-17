@@ -6,6 +6,7 @@ import {
   buildIndicatorPanelReadouts,
   buildMomentumIndicators,
   buildPriceGapAnnotations,
+  buildPriceStructureTrendLines,
   buildSupportResistanceLevels,
   buildTechnicalIndicatorAnnotations,
   buildTrendOverlayIndicators,
@@ -115,6 +116,21 @@ const trendRegimeBars = [
   { date: "2026-05-05", close: 9.5, maFast: 9.8, maMid: 10.2, maSlow: 10.8 },
   { date: "2026-05-06", close: 9, maFast: 9.4, maMid: 10, maSlow: 10.5 },
   { date: "2026-05-07", close: 8.8, maFast: 9.1, maMid: 9.8, maSlow: 10.2 },
+];
+
+const priceStructureTrendBars = [
+  { date: "2026-05-01", open: 10, high: 10.5, low: 9.8, close: 10.2 },
+  { date: "2026-05-02", open: 10.2, high: 11.4, low: 10.1, close: 11 },
+  { date: "2026-05-03", open: 11, high: 12.2, low: 10.8, close: 11.8 },
+  { date: "2026-05-04", open: 11.8, high: 11.6, low: 10.7, close: 10.9 },
+  { date: "2026-05-05", open: 10.9, high: 10.9, low: 9.9, close: 10.2 },
+  { date: "2026-05-06", open: 10.2, high: 10.8, low: 9.4, close: 9.8 },
+  { date: "2026-05-07", open: 9.8, high: 11.2, low: 9.7, close: 10.9 },
+  { date: "2026-05-08", open: 10.9, high: 12.1, low: 10.6, close: 11.7 },
+  { date: "2026-05-09", open: 11.7, high: 11.9, low: 10.8, close: 11.1 },
+  { date: "2026-05-10", open: 11.1, high: 11.3, low: 9.6, close: 10 },
+  { date: "2026-05-11", open: 10, high: 10.7, low: 9.7, close: 10.4 },
+  { date: "2026-05-12", open: 10.4, high: 11.8, low: 10.2, close: 11.5 },
 ];
 
 function testBuildsVisibleVolumeDistribution() {
@@ -523,6 +539,34 @@ function testTrendRegimeBandsNeedComparableAverages() {
   assertEqual(bands.length, 0, "missing moving averages have no trend regime bands");
 }
 
+function testBuildsPriceStructureTrendLines() {
+  const lines = buildPriceStructureTrendLines(priceStructureTrendBars, { swingWindow: 1, minSlopePct: 0 });
+
+  assertEqual(lines.length, 2, "trend lines expose latest support and resistance structure");
+  assertEqual(lines.map((line) => line.type).join(","), "ascending-support,descending-resistance", "trend lines keep stable display order");
+
+  const support = lines[0];
+  assertEqual(support?.label, "上升趋势线", "ascending lows become a support trend line");
+  assertEqual(`${support?.anchorStartIndex}-${support?.anchorEndIndex}`, "5-9", "support trend line uses latest rising swing lows");
+  assertEqual(`${support?.startIndex}-${support?.endIndex}`, "5-11", "support trend line extends to latest visible bar");
+  assertApprox(support?.startPrice, 9.4, 0.001, "support trend line starts at the first low pivot");
+  assertApprox(support?.endPrice, 9.7, 0.001, "support trend line projects to latest bar");
+  assertEqual(support?.tone, "good", "ascending support is a constructive structure");
+
+  const resistance = lines[1];
+  assertEqual(resistance?.label, "下降压力线", "descending highs become a resistance trend line");
+  assertEqual(`${resistance?.anchorStartIndex}-${resistance?.anchorEndIndex}`, "2-7", "resistance trend line uses latest falling swing highs");
+  assertApprox(resistance?.startPrice, 12.2, 0.001, "resistance trend line starts at the first high pivot");
+  assertApprox(resistance?.endPrice, 12.02, 0.001, "resistance trend line projects to latest bar");
+  assertEqual(resistance?.tone, "risk", "descending resistance is a pressure structure");
+}
+
+function testPriceStructureTrendLinesNeedTwoPivots() {
+  const lines = buildPriceStructureTrendLines(bars, { swingWindow: 2 });
+
+  assertEqual(lines.length, 0, "trend lines wait for at least two comparable pivots");
+}
+
 function testBuildsPriceGapAnnotations() {
   const gaps = buildPriceGapAnnotations(gapBars, { minGapPct: 1 });
 
@@ -575,5 +619,7 @@ testBuildsVolumeSignalAnnotations();
 testVolumeSignalAnnotationsNeedEnoughVolumeHistory();
 testBuildsTrendRegimeBands();
 testTrendRegimeBandsNeedComparableAverages();
+testBuildsPriceStructureTrendLines();
+testPriceStructureTrendLinesNeedTwoPivots();
 testBuildsPriceGapAnnotations();
 testPriceGapAnnotationsRespectThreshold();

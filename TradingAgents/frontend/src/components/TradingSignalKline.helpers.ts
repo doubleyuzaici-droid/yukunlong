@@ -29,6 +29,8 @@ export type VolumeSignalTone = "good" | "risk" | "neutral";
 export type VolumeSignalType = "volume-surge-up" | "volume-surge-down" | "volume-dry-up";
 export type TrendRegimeTone = "good" | "risk" | "neutral";
 export type TrendRegimeType = "bullish" | "bearish" | "neutral";
+export type PriceStructureTrendLineTone = "good" | "risk";
+export type PriceStructureTrendLineType = "ascending-support" | "descending-resistance";
 
 export interface TechnicalIndicatorBarLike extends PriceExtremaBarLike {
   maFast?: number | null;
@@ -108,6 +110,24 @@ export interface TrendRegimeBand {
   startLabel: string;
   endLabel: string;
   bars: number;
+}
+
+export interface PriceStructureTrendLine {
+  key: string;
+  type: PriceStructureTrendLineType;
+  label: string;
+  tone: PriceStructureTrendLineTone;
+  startIndex: number;
+  endIndex: number;
+  startPrice: number;
+  endPrice: number;
+  anchorStartIndex: number;
+  anchorEndIndex: number;
+  anchorStartPrice: number;
+  anchorEndPrice: number;
+  anchorStartLabel: string;
+  anchorEndLabel: string;
+  slopePct: number;
 }
 
 export interface VisiblePriceExtremaSnapshot {
@@ -956,6 +976,69 @@ export function buildTrendRegimeBands(bars: TrendRegimeBarLike[]): TrendRegimeBa
   }, []);
 }
 
+export function buildPriceStructureTrendLines(
+  bars: PriceExtremaBarLike[],
+  options: {
+    swingWindow?: number;
+    minSlopePct?: number;
+    maxLinesPerType?: number;
+    extendToLatest?: boolean;
+  } = {},
+): PriceStructureTrendLine[] {
+  const normalized = bars
+    .map(normalizeSupportResistanceBar)
+    .filter((bar): bar is NonNullable<ReturnType<typeof normalizeSupportResistanceBar>> => Boolean(bar));
+  const swingWindow = clampInteger(options.swingWindow ?? 2, 1, 8);
+  if (normalized.length < swingWindow * 2 + 3) return [];
+
+  const minSlopePct = Math.max(0, Number(options.minSlopePct ?? 0.15));
+  const maxLinesPerType = clampInteger(options.maxLinesPerType ?? 1, 1, 3);
+  const extendToLatest = options.extendToLatest !== false;
+  const latestIndex = normalized[normalized.length - 1]?.index ?? 0;
+  const pivots: Array<{
+    type: "high" | "low";
+    index: number;
+    price: number;
+    label: string;
+  }> = [];
+
+  normalized.forEach((bar, index) => {
+    if (index < swingWindow || index > normalized.length - swingWindow - 1) return;
+    const neighbours = [
+      ...normalized.slice(index - swingWindow, index),
+      ...normalized.slice(index + 1, index + swingWindow + 1),
+    ];
+    if (neighbours.length !== swingWindow * 2) return;
+    if (neighbours.every((item) => bar.high > item.high)) {
+      pivots.push({ type: "high", index: bar.index, price: bar.high, label: bar.label });
+    }
+    if (neighbours.every((item) => bar.low < item.low)) {
+      pivots.push({ type: "low", index: bar.index, price: bar.low, label: bar.label });
+    }
+  });
+
+  const supportLines = buildPriceStructureLineCandidates({
+    pivots: pivots.filter((pivot) => pivot.type === "low"),
+    type: "ascending-support",
+    label: "上升趋势线",
+    tone: "good",
+    minSlopePct,
+    latestIndex,
+    extendToLatest,
+  }).slice(0, maxLinesPerType);
+  const resistanceLines = buildPriceStructureLineCandidates({
+    pivots: pivots.filter((pivot) => pivot.type === "high"),
+    type: "descending-resistance",
+    label: "下降压力线",
+    tone: "risk",
+    minSlopePct,
+    latestIndex,
+    extendToLatest,
+  }).slice(0, maxLinesPerType);
+
+  return [...supportLines, ...resistanceLines];
+}
+
 export function buildSupportResistanceLevels(
   bars: PriceExtremaBarLike[],
   options: {
@@ -1456,6 +1539,61 @@ function trendRegimeMeta(type: TrendRegimeType) {
   if (type === "bullish") return { label: "多头排列", tone: "good" as const };
   if (type === "bearish") return { label: "空头排列", tone: "risk" as const };
   return { label: "震荡过渡", tone: "neutral" as const };
+}
+
+function buildPriceStructureLineCandidates({
+  pivots,
+  type,
+  label,
+  tone,
+  minSlopePct,
+  latestIndex,
+  extendToLatest,
+}: {
+  pivots: Array<{ index: number; price: number; label: string }>;
+  type: PriceStructureTrendLineType;
+  label: string;
+  tone: PriceStructureTrendLineTone;
+  minSlopePct: number;
+  latestIndex: number;
+  extendToLatest: boolean;
+}): PriceStructureTrendLine[] {
+  const expectsRising = type === "ascending-support";
+  return pivots
+    .slice(1)
+    .flatMap<PriceStructureTrendLine>((pivot, cursor) => {
+      const previous = pivots[cursor];
+      const span = pivot.index - previous.index;
+      if (span <= 0 || previous.price <= 0) return [];
+      const priceDelta = pivot.price - previous.price;
+      if (expectsRising ? priceDelta <= 0 : priceDelta >= 0) return [];
+      const slopePct = Math.abs(priceDelta / previous.price) * 100;
+      if (slopePct < minSlopePct) return [];
+      const slopePerBar = priceDelta / span;
+      const endIndex = extendToLatest ? Math.max(pivot.index, latestIndex) : pivot.index;
+      const endPrice = previous.price + slopePerBar * (endIndex - previous.index);
+      return [{
+        key: `${type}-${previous.index}-${pivot.index}-${endIndex}`,
+        type,
+        label,
+        tone,
+        startIndex: previous.index,
+        endIndex,
+        startPrice: previous.price,
+        endPrice,
+        anchorStartIndex: previous.index,
+        anchorEndIndex: pivot.index,
+        anchorStartPrice: previous.price,
+        anchorEndPrice: pivot.price,
+        anchorStartLabel: previous.label,
+        anchorEndLabel: pivot.label,
+        slopePct,
+      }];
+    })
+    .sort((left, right) =>
+      right.anchorEndIndex - left.anchorEndIndex ||
+      right.slopePct - left.slopePct,
+    );
 }
 
 function buildCciWrSnapshot(

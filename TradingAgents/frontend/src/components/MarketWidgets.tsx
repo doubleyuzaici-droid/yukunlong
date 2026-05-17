@@ -15,6 +15,7 @@ import {
   buildIndicatorSectionLayout,
   buildMomentumIndicators,
   buildPriceGapAnnotations,
+  buildPriceStructureTrendLines,
   buildSupportResistanceLevels,
   buildTechnicalIndicatorAnnotations,
   buildTrendOverlayIndicators,
@@ -191,6 +192,7 @@ interface TradingChartPreferences {
   profile: boolean;
   fibonacci: boolean;
   supportResistance: boolean;
+  trendLines: boolean;
   patterns: boolean;
   indicatorSignals: boolean;
   volumeSignals: boolean;
@@ -371,6 +373,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   profile: true,
   fibonacci: false,
   supportResistance: true,
+  trendLines: true,
   patterns: true,
   indicatorSignals: true,
   volumeSignals: true,
@@ -438,6 +441,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     profile: typeof next.profile === "boolean" ? next.profile : DEFAULT_TRADING_CHART_PREFS.profile,
     fibonacci: typeof next.fibonacci === "boolean" ? next.fibonacci : DEFAULT_TRADING_CHART_PREFS.fibonacci,
     supportResistance: typeof next.supportResistance === "boolean" ? next.supportResistance : DEFAULT_TRADING_CHART_PREFS.supportResistance,
+    trendLines: typeof next.trendLines === "boolean" ? next.trendLines : DEFAULT_TRADING_CHART_PREFS.trendLines,
     patterns: typeof next.patterns === "boolean" ? next.patterns : DEFAULT_TRADING_CHART_PREFS.patterns,
     indicatorSignals: typeof next.indicatorSignals === "boolean" ? next.indicatorSignals : DEFAULT_TRADING_CHART_PREFS.indicatorSignals,
     volumeSignals: typeof next.volumeSignals === "boolean" ? next.volumeSignals : DEFAULT_TRADING_CHART_PREFS.volumeSignals,
@@ -1512,6 +1516,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.profile ? "active" : ""} onClick={() => toggleChartPref("profile")} type="button">筹码</button>
         <button className={chartPrefs.fibonacci ? "active" : ""} onClick={() => toggleChartPref("fibonacci")} type="button">斐波</button>
         <button className={chartPrefs.supportResistance ? "active" : ""} onClick={() => toggleChartPref("supportResistance")} type="button">支阻</button>
+        <button className={chartPrefs.trendLines ? "active" : ""} onClick={() => toggleChartPref("trendLines")} type="button">趋势线</button>
         <button className={chartPrefs.patterns ? "active" : ""} onClick={() => toggleChartPref("patterns")} type="button">形态</button>
         <button className={chartPrefs.indicatorSignals ? "active" : ""} onClick={() => toggleChartPref("indicatorSignals")} type="button">技信</button>
         <button className={chartPrefs.sar ? "active" : ""} onClick={() => toggleChartPref("sar")} type="button">SAR</button>
@@ -1812,6 +1817,19 @@ export function TradingSignalKlinePanel({
               </text>
               <title>
                 {level.label} {formatNumber(level.price, 2)} · 最近触达 {level.lastLabel} · 距现价 {formatSignedNumber(level.distancePct, 2)}%
+              </title>
+            </g>
+          ))}
+          {chartPrefs.trendLines && chart.priceStructureTrendLines.map((line) => (
+            <g className={`price-structure-trend-line ${line.tone}`} key={line.key}>
+              <line x1={line.x1} x2={line.x2} y1={line.y1} y2={line.y2} />
+              <circle cx={line.anchorStartX} cy={line.anchorStartY} r="3" />
+              <circle cx={line.anchorEndX} cy={line.anchorEndY} r="3" />
+              <text x={line.labelX} y={line.labelY}>
+                {line.label}
+              </text>
+              <title>
+                {line.label} {line.anchorStartLabel}→{line.anchorEndLabel} · {formatNumber(line.anchorStartPrice, 2)}→{formatNumber(line.anchorEndPrice, 2)}
               </title>
             </g>
           ))}
@@ -2259,6 +2277,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-line profile-level" />筹码价位</span>
         <span><i className="legend-line fibonacci" />斐波回撤</span>
         <span><i className="legend-support-resistance" />自动支阻</span>
+        <span><i className="legend-trend-line" />结构趋势线</span>
         <span><i className="legend-extrema" />窗口高低</span>
         <span><i className="legend-gap" />跳空缺口</span>
         <span><i className="legend-pattern" />K线形态</span>
@@ -3374,6 +3393,7 @@ function buildTradingSignalGeometry(
       trendRegimeBands: [],
       fibonacciLevels: [],
       supportResistanceLevels: [],
+      priceStructureTrendLines: [],
       ma5: "",
       ma20: "",
       ma60: "",
@@ -3491,6 +3511,18 @@ function buildTradingSignalGeometry(
     value ? [value.upper, value.lower] : [],
   );
   const levelDomainValues = levelPrices.filter(isFiniteNumber);
+  const rawPriceStructureTrendLines = buildPriceStructureTrendLines(visible, {
+    swingWindow: 2,
+    minSlopePct: 0.12,
+    maxLinesPerType: 1,
+    extendToLatest: true,
+  });
+  const trendLineDomainValues = rawPriceStructureTrendLines.flatMap((line) => [
+    line.startPrice,
+    line.endPrice,
+    line.anchorStartPrice,
+    line.anchorEndPrice,
+  ]);
   const overlayDomainValues = [
     ...bollDomainValues,
     ...emaFastValues,
@@ -3499,6 +3531,7 @@ function buildTradingSignalGeometry(
     ...sarValues.filter(isFiniteNumber),
     ...bbiValues.filter(isFiniteNumber),
     ...levelDomainValues,
+    ...trendLineDomainValues,
   ];
   const minPrice = Math.min(...lowValues, ...overlayDomainValues);
   const maxPrice = Math.max(...highValues, ...overlayDomainValues);
@@ -3554,6 +3587,32 @@ function buildTradingSignalGeometry(
       y,
       labelX: level.type === "support" ? PLOT_LEFT + 8 : PLOT_RIGHT - 128,
       labelY: clampNumber(y - 6, PRICE_TOP + 22 + index * 2, PRICE_BOTTOM - 8),
+    };
+  });
+  const priceStructureTrendLines = rawPriceStructureTrendLines.map((line, index) => {
+    const x1 = clampNumber(xOf(line.startIndex), PLOT_LEFT, PLOT_RIGHT);
+    const x2 = clampNumber(xOf(line.endIndex), PLOT_LEFT, PLOT_RIGHT);
+    const y1 = clampNumber(yOf(line.startPrice), PRICE_TOP, PRICE_BOTTOM);
+    const y2 = clampNumber(yOf(line.endPrice), PRICE_TOP, PRICE_BOTTOM);
+    const anchorStartX = clampNumber(xOf(line.anchorStartIndex), PLOT_LEFT, PLOT_RIGHT);
+    const anchorEndX = clampNumber(xOf(line.anchorEndIndex), PLOT_LEFT, PLOT_RIGHT);
+    const anchorStartY = clampNumber(yOf(line.anchorStartPrice), PRICE_TOP, PRICE_BOTTOM);
+    const anchorEndY = clampNumber(yOf(line.anchorEndPrice), PRICE_TOP, PRICE_BOTTOM);
+    const labelOnRight = x2 > PLOT_RIGHT - 130;
+    const labelX = clampNumber(x2 + (labelOnRight ? -94 : 10), PLOT_LEFT + 8, PLOT_RIGHT - 90);
+    const labelBaseY = line.tone === "risk" ? Math.min(y2 - 7, y1 - 7) : Math.max(y2 + 14, y1 + 14);
+    return {
+      ...line,
+      x1,
+      x2,
+      y1,
+      y2,
+      anchorStartX,
+      anchorStartY,
+      anchorEndX,
+      anchorEndY,
+      labelX,
+      labelY: clampNumber(labelBaseY + index * 10, PRICE_TOP + 16, PRICE_BOTTOM - 6),
     };
   });
   const priceGaps = buildPriceGapAnnotations(visible, { minGapPct: 0.5 }).map((gap) => {
@@ -3989,6 +4048,7 @@ function buildTradingSignalGeometry(
     trendRegimeBands,
     fibonacciLevels,
     supportResistanceLevels,
+    priceStructureTrendLines,
     ma5: maPoints("ma5"),
     ma20: maPoints("ma20"),
     ma60: maPoints("ma60"),

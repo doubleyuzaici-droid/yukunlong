@@ -4319,6 +4319,55 @@ label {
   fill: #ffb3ad !important;
 }
 
+.price-structure-trend-line {
+  pointer-events: none;
+}
+
+.price-structure-trend-line line {
+  stroke-width: 1.35;
+  stroke-dasharray: 10 5;
+  vector-effect: non-scaling-stroke;
+}
+
+.price-structure-trend-line circle {
+  stroke: rgba(11, 15, 20, 0.76);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.price-structure-trend-line text {
+  font-size: 10.5px !important;
+  font-weight: 850;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(11, 15, 20, 0.92);
+  stroke-width: 2px;
+}
+
+.price-structure-trend-line.good line {
+  stroke: rgba(126, 224, 163, 0.72);
+}
+
+.price-structure-trend-line.good circle {
+  fill: #7ee0a3;
+}
+
+.price-structure-trend-line.good text {
+  fill: #9cf2bc !important;
+}
+
+.price-structure-trend-line.risk line {
+  stroke: rgba(255, 140, 132, 0.72);
+}
+
+.price-structure-trend-line.risk circle {
+  fill: #ff8c84;
+}
+
+.price-structure-trend-line.risk text {
+  fill: #ffb3ad !important;
+}
+
 .trade-signal-marker {
   cursor: pointer;
   outline: none;
@@ -5339,6 +5388,17 @@ label {
   border-top: 2px dashed rgba(255, 140, 132, 0.88);
   border-bottom: 2px dashed rgba(126, 224, 163, 0.88);
   border-radius: 0 !important;
+}
+
+.legend-trend-line {
+  display: inline-block;
+  width: 18px;
+  height: 9px !important;
+  border-radius: 0 !important;
+  background:
+    linear-gradient(154deg, transparent 0 43%, rgba(126, 224, 163, 0.92) 44% 50%, transparent 51% 100%),
+    linear-gradient(26deg, transparent 0 43%, rgba(255, 140, 132, 0.9) 44% 50%, transparent 51% 100%);
+  box-shadow: 0 0 0 1px rgba(238, 242, 247, 0.12);
 }
 
 .legend-extrema {
