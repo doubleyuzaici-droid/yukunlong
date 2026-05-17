@@ -4818,6 +4818,30 @@ function buildTradingSignalGeometry(
       bottom: MOMENTUM_BOTTOM,
       tone: "good",
     },
+    {
+      key: "wr-overbought-zone",
+      section: "momentum",
+      label: "WR超买区",
+      fromValue: -20,
+      toValue: momentumMax,
+      min: momentumMin,
+      max: momentumMax,
+      top: MOMENTUM_TOP,
+      bottom: MOMENTUM_BOTTOM,
+      tone: "risk",
+    },
+    {
+      key: "wr-oversold-zone",
+      section: "momentum",
+      label: "WR超卖区",
+      fromValue: momentumMin,
+      toValue: -80,
+      min: momentumMin,
+      max: momentumMax,
+      top: MOMENTUM_TOP,
+      bottom: MOMENTUM_BOTTOM,
+      tone: "good",
+    },
   ]);
 
   const candles = visible.map((bar, index) => {
