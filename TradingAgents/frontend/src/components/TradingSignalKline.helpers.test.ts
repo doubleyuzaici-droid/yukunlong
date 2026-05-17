@@ -7,6 +7,7 @@ import {
   buildFibonacciRetracementLevels,
   buildIndicatorSectionLayout,
   buildIndicatorPanelReadouts,
+  buildIndicatorAxisTicks,
   buildManualDrawingGeometry,
   buildPriceAxisScale,
   buildPriceAdjustedBars,
@@ -613,6 +614,36 @@ function testSplitIndicatorLayoutCreatesSeparateSubCharts() {
   assertOk(layout.signalLaneY > layout.volatility.bottom, "signal lane remains below all sub charts");
 }
 
+function testBuildsIndicatorAxisTicks() {
+  const ticks = buildIndicatorAxisTicks({
+    bottom: 220,
+    max: 10,
+    min: -10,
+    precision: 1,
+    top: 100,
+  });
+
+  assertEqual(ticks.length, 3, "axis ticks default to high, mid and low");
+  assertEqual(ticks[0]?.label, "10", "axis tick trims unnecessary decimals");
+  assertApprox(ticks[0]?.y, 100, 0.001, "max tick maps to top");
+  assertApprox(ticks[1]?.value, 0, 0.001, "mid tick uses the domain midpoint");
+  assertApprox(ticks[1]?.y, 160, 0.001, "mid tick maps to the middle of the band");
+  assertApprox(ticks[2]?.y, 220, 0.001, "min tick maps to bottom");
+}
+
+function testBuildsCompactIndicatorAxisTickLabels() {
+  const ticks = buildIndicatorAxisTicks({
+    bottom: 220,
+    compact: true,
+    max: 2_000_000,
+    min: 0,
+    top: 100,
+  });
+
+  assertEqual(ticks[0]?.label, "2M", "large compact axis values use M suffix");
+  assertEqual(ticks[1]?.label, "1M", "mid compact axis values use compact suffix");
+}
+
 function testBuildsSplitIndicatorPanelReadouts() {
   const readouts = buildIndicatorPanelReadouts({
     close: 13.5,
@@ -1032,6 +1063,8 @@ testBuildsMomentumIndicatorSet();
 testMomentumIndicatorsNeedEnoughSamples();
 testCompactIndicatorLayoutKeepsLegacyBands();
 testSplitIndicatorLayoutCreatesSeparateSubCharts();
+testBuildsIndicatorAxisTicks();
+testBuildsCompactIndicatorAxisTickLabels();
 testBuildsSplitIndicatorPanelReadouts();
 testCompactIndicatorPanelReadoutsFoldExtraIndicators();
 testSelectsCursorIndicatorReadoutSnapshot();

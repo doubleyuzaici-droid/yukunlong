@@ -17,6 +17,7 @@ import {
   buildCandlestickPatternAnnotations,
   buildFibonacciRetracementLevels,
   buildIndicatorPanelReadouts,
+  buildIndicatorAxisTicks,
   buildIndicatorSectionLayout,
   buildManualDrawingGeometry,
   buildPriceAdjustedBars,
@@ -47,6 +48,7 @@ import {
   priceAxisValueFromPrice,
   priceAxisYOf,
   selectIndicatorReadoutSnapshot,
+  type IndicatorAxisTick,
   type IndicatorPanelReadoutItem,
   type ManualDrawing,
   type ManualDrawingAnchor,
@@ -1975,6 +1977,12 @@ export function TradingSignalKlinePanel({
             <g key={section.key}>
               <line className="indicator-section-line" x1={chart.plotLeft} x2={chart.plotRight} y1={section.bottom} y2={section.bottom} />
               <text className="indicator-label" x={chart.plotLeft} y={section.top + 16}>{section.label}</text>
+              {chartIndicatorAxisTicks(chart, section.key).map((tick) => (
+                <g className="indicator-axis-tick" key={`${section.key}-${tick.label}-${tick.y.toFixed(1)}`}>
+                  <line x1={chart.plotRight + 4} x2={chart.plotRight + 11} y1={tick.y} y2={tick.y} />
+                  <text x={chart.axisX + 23} y={tick.y + 4}>{tick.label}</text>
+                </g>
+              ))}
               {indicatorPanelReadoutMap.get(section.key) && (
                 <text className="indicator-section-readout" x={chart.plotLeft + 170} y={section.top + 16}>
                   <tspan>{indicatorReadoutLabel}</tspan>
@@ -3773,6 +3781,7 @@ function buildTradingSignalGeometry(
       volumeProfile: buildVolumeProfile([], { currentPrice: null }),
       rangeExtrema: null,
       priceTicks: [],
+      indicatorAxisTicks: {},
       timeTicks: [],
       latestIndicators: null,
       prevCloseY: null as number | null,
@@ -4108,6 +4117,52 @@ function buildTradingSignalGeometry(
     binCount: 24,
     currentPrice: closeValues[closeValues.length - 1],
   });
+  const indicatorAxisTicks = {
+    volume: buildIndicatorAxisTicks({
+      bottom: VOLUME_BOTTOM,
+      compact: true,
+      max: maxVolume,
+      min: 0,
+      top: VOLUME_TOP,
+    }),
+    macd: buildIndicatorAxisTicks({
+      bottom: MACD_BOTTOM,
+      max: maxMacdAbs,
+      min: -maxMacdAbs,
+      precision: 2,
+      top: MACD_TOP,
+      values: [maxMacdAbs, 0, -maxMacdAbs],
+    }),
+    oscillator: buildIndicatorAxisTicks({
+      bottom: RSI_BOTTOM,
+      max: 100,
+      min: 0,
+      precision: 0,
+      top: RSI_TOP,
+      values: [80, 50, 20],
+    }),
+    advanced: buildIndicatorAxisTicks({
+      bottom: ADVANCED_BOTTOM,
+      max: advancedMax,
+      min: advancedMin,
+      precision: 0,
+      top: ADVANCED_TOP,
+    }),
+    momentum: buildIndicatorAxisTicks({
+      bottom: MOMENTUM_BOTTOM,
+      max: momentumMax,
+      min: momentumMin,
+      precision: 0,
+      top: MOMENTUM_TOP,
+    }),
+    volatility: buildIndicatorAxisTicks({
+      bottom: VOLATILITY_BOTTOM,
+      max: atrMax,
+      min: atrMin,
+      precision: 2,
+      top: VOLATILITY_TOP,
+    }),
+  };
 
   const candles = visible.map((bar, index) => {
     const open = Number(bar.open ?? bar.close ?? 0);
@@ -4481,6 +4536,7 @@ function buildTradingSignalGeometry(
     volumeProfile,
     rangeExtrema,
     priceTicks,
+    indicatorAxisTicks,
     timeTicks,
     latestIndicators: candles[candles.length - 1]?.indicators || null,
     prevCloseY: isFiniteNumber(candles[candles.length - 1]?.prevClose)
@@ -4662,6 +4718,11 @@ function chartPriceAxisScale(chart: Record<string, any>) {
     top: chart.priceTop,
     bottom: chart.priceBottom,
   };
+}
+
+function chartIndicatorAxisTicks(chart: Record<string, any>, key: string): IndicatorAxisTick[] {
+  const ticks = chart.indicatorAxisTicks as Record<string, IndicatorAxisTick[] | undefined> | undefined;
+  return ticks?.[key] ?? [];
 }
 
 function chartAxisValueFromPrice(chart: Record<string, any>, price?: number | null) {

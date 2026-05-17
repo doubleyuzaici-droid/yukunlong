@@ -800,6 +800,12 @@ export interface IndicatorPanelReadoutGroup {
   items: IndicatorPanelReadoutItem[];
 }
 
+export interface IndicatorAxisTick {
+  value: number;
+  y: number;
+  label: string;
+}
+
 export interface IndicatorChartBand {
   top: number;
   bottom: number;
@@ -1250,6 +1256,51 @@ export function buildIndicatorPanelReadouts(
   ];
 
   return groups.filter((value): value is IndicatorPanelReadoutGroup => Boolean(value));
+}
+
+export function buildIndicatorAxisTicks(options: {
+  min: number;
+  max: number;
+  top: number;
+  bottom: number;
+  precision?: number;
+  compact?: boolean;
+  values?: number[];
+}): IndicatorAxisTick[] {
+  if (
+    !isFiniteNumber(options.min) ||
+    !isFiniteNumber(options.max) ||
+    !isFiniteNumber(options.top) ||
+    !isFiniteNumber(options.bottom)
+  ) {
+    return [];
+  }
+  const min = options.min;
+  const max = options.max === min ? min + 1 : options.max;
+  const span = max - min || 1;
+  const precision = options.precision ?? 2;
+  const values = options.values ?? [max, min + span / 2, min];
+  return values
+    .filter(isFiniteNumber)
+    .map((value) => ({
+      value,
+      y: options.bottom - ((value - min) / span) * (options.bottom - options.top),
+      label: formatIndicatorAxisTickLabel(value, precision, Boolean(options.compact)),
+    }));
+}
+
+function formatIndicatorAxisTickLabel(value: number, precision: number, compact: boolean) {
+  if (compact) {
+    const abs = Math.abs(value);
+    if (abs >= 1_000_000_000) return `${trimFixed(value / 1_000_000_000, 1)}B`;
+    if (abs >= 1_000_000) return `${trimFixed(value / 1_000_000, 1)}M`;
+    if (abs >= 1_000) return `${trimFixed(value / 1_000, 1)}K`;
+  }
+  return trimFixed(value, precision);
+}
+
+function trimFixed(value: number, precision: number) {
+  return value.toFixed(precision).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
 }
 
 export function selectIndicatorReadoutSnapshot<T>(

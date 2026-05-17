@@ -4652,6 +4652,24 @@ label {
   stroke-width: 0.8;
 }
 
+.indicator-axis-tick line {
+  stroke: rgba(148, 163, 184, 0.32);
+  stroke-width: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+
+.indicator-axis-tick text {
+  fill: rgba(203, 213, 225, 0.62) !important;
+  font-size: 10.5px !important;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(5, 10, 16, 0.66);
+  stroke-width: 1.6px;
+  text-anchor: middle;
+}
+
 .price-axis-panel {
   fill: rgba(8, 12, 17, 0.76);
   stroke: rgba(148, 163, 184, 0.22);
