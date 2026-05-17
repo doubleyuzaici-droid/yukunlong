@@ -28,7 +28,18 @@ export type TechnicalIndicatorEventType =
   | "macd-golden-cross"
   | "macd-death-cross"
   | "boll-breakout-up"
-  | "boll-breakout-down";
+  | "boll-breakout-down"
+  | "rsi-overbought"
+  | "rsi-oversold-rebound"
+  | "kdj-golden-cross"
+  | "kdj-death-cross"
+  | "dmi-golden-cross"
+  | "dmi-death-cross"
+  | "cci-breakout-up"
+  | "cci-breakout-down"
+  | "cci-oversold-rebound"
+  | "wr-overbought"
+  | "wr-oversold-rebound";
 export type TechnicalDivergenceTone = "good" | "risk";
 export type TechnicalDivergenceIndicator = "rsi" | "macd";
 export type TechnicalDivergenceType =
@@ -50,6 +61,13 @@ export interface TechnicalIndicatorBarLike extends PriceExtremaBarLike {
   dea?: number | null;
   bollUpper?: number | null;
   bollLower?: number | null;
+  rsi14?: number | null;
+  kdjK?: number | null;
+  kdjD?: number | null;
+  pdi?: number | null;
+  mdi?: number | null;
+  cci?: number | null;
+  wr?: number | null;
 }
 
 export interface TechnicalDivergenceBarLike extends PriceExtremaBarLike {
@@ -2918,6 +2936,39 @@ export function buildTechnicalIndicatorAnnotations(
     ) {
       pushEvent("boll-breakout-down", "下破BOLL", "risk");
     }
+    if (crossedAbove(previous.rsi14, 30, bar.rsi14, 30)) {
+      pushEvent("rsi-oversold-rebound", "RSI修复", "good");
+    }
+    if (crossedAbove(previous.rsi14, 70, bar.rsi14, 70)) {
+      pushEvent("rsi-overbought", "RSI超买", "risk");
+    }
+    if (crossedAbove(previous.kdjK, previous.kdjD, bar.kdjK, bar.kdjD)) {
+      pushEvent("kdj-golden-cross", "KDJ金叉", "good");
+    }
+    if (crossedBelow(previous.kdjK, previous.kdjD, bar.kdjK, bar.kdjD)) {
+      pushEvent("kdj-death-cross", "KDJ死叉", "risk");
+    }
+    if (crossedAbove(previous.pdi, previous.mdi, bar.pdi, bar.mdi)) {
+      pushEvent("dmi-golden-cross", "DMI转强", "good");
+    }
+    if (crossedBelow(previous.pdi, previous.mdi, bar.pdi, bar.mdi)) {
+      pushEvent("dmi-death-cross", "DMI转弱", "risk");
+    }
+    if (crossedAbove(previous.cci, -100, bar.cci, -100)) {
+      pushEvent("cci-oversold-rebound", "CCI修复", "good");
+    }
+    if (crossedAbove(previous.cci, 100, bar.cci, 100)) {
+      pushEvent("cci-breakout-up", "CCI强势", "good");
+    }
+    if (crossedBelow(previous.cci, -100, bar.cci, -100)) {
+      pushEvent("cci-breakout-down", "CCI弱势", "risk");
+    }
+    if (crossedAbove(previous.wr, -80, bar.wr, -80)) {
+      pushEvent("wr-oversold-rebound", "WR修复", "good");
+    }
+    if (crossedAbove(previous.wr, -20, bar.wr, -20)) {
+      pushEvent("wr-overbought", "WR超买", "risk");
+    }
 
     return events;
   });
@@ -3607,6 +3658,13 @@ function normalizeTechnicalIndicatorBar(bar: TechnicalIndicatorBarLike, index: n
     dea: normalizeOptionalNumber(bar.dea),
     bollUpper: normalizeOptionalNumber(bar.bollUpper),
     bollLower: normalizeOptionalNumber(bar.bollLower),
+    rsi14: normalizeOptionalNumber(bar.rsi14),
+    kdjK: normalizeOptionalNumber(bar.kdjK),
+    kdjD: normalizeOptionalNumber(bar.kdjD),
+    pdi: normalizeOptionalNumber(bar.pdi),
+    mdi: normalizeOptionalNumber(bar.mdi),
+    cci: normalizeOptionalNumber(bar.cci),
+    wr: normalizeOptionalNumber(bar.wr),
   };
 }
 

@@ -5027,6 +5027,13 @@ function buildTradingSignalGeometry(
     dea: candle.indicators.dea,
     bollUpper: candle.indicators.bollUpper,
     bollLower: candle.indicators.bollLower,
+    rsi14: candle.indicators.rsi14,
+    kdjK: candle.indicators.kdjK,
+    kdjD: candle.indicators.kdjD,
+    pdi: candle.indicators.pdi,
+    mdi: candle.indicators.mdi,
+    cci: candle.indicators.cci,
+    wr: candle.indicators.wr,
   }))).map((event) => {
     const rank = technicalEventRanks.get(event.index) || 0;
     technicalEventRanks.set(event.index, rank + 1);

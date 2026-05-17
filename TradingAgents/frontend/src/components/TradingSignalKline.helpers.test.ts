@@ -213,6 +213,13 @@ const technicalSignalBars = [
   { date: "2026-05-07", open: 10.8, high: 10.9, low: 8.7, close: 8.8, maFast: 10.3, maSlow: 10.9, dif: -0.03, dea: 0.02, bollUpper: 11.8, bollLower: 9 },
 ];
 
+const technicalMomentumSignalBars = [
+  { date: "2026-05-01", open: 10, high: 10.5, low: 9.5, close: 10, rsi14: 28, kdjK: 15, kdjD: 20, pdi: 10, mdi: 20, cci: -120, wr: -85 },
+  { date: "2026-05-02", open: 10, high: 11.2, low: 9.9, close: 10.8, rsi14: 32, kdjK: 25, kdjD: 18, pdi: 22, mdi: 18, cci: -80, wr: -78 },
+  { date: "2026-05-03", open: 10.8, high: 12, low: 10.6, close: 11.7, rsi14: 72, kdjK: 84, kdjD: 76, pdi: 31, mdi: 16, cci: 128, wr: -18 },
+  { date: "2026-05-04", open: 11.7, high: 11.9, low: 10.1, close: 10.5, rsi14: 66, kdjK: 70, kdjD: 78, pdi: 16, mdi: 24, cci: -116, wr: -42 },
+];
+
 const divergenceBars = [
   { date: "2026-05-01", open: 10, high: 10, low: 9.5, close: 9.8, rsi14: 45, macd: 0 },
   { date: "2026-05-02", open: 9.8, high: 10.8, low: 9, close: 9.4, rsi14: 34, macd: -0.5 },
@@ -1352,6 +1359,38 @@ function testBuildsTechnicalIndicatorAnnotations() {
   assertApprox(events.find((event) => event.type === "boll-breakout-down")?.price, 10.9, 0.001, "downside events anchor above the candle");
 }
 
+function testBuildsMomentumTechnicalIndicatorAnnotations() {
+  const events = buildTechnicalIndicatorAnnotations(technicalMomentumSignalBars);
+
+  assertEqual(events.length, 11, "momentum technical indicator events detect oscillator and DMI signals");
+  assertEqual(
+    events.map((event) => event.type).join(","),
+    [
+      "rsi-oversold-rebound",
+      "kdj-golden-cross",
+      "dmi-golden-cross",
+      "cci-oversold-rebound",
+      "wr-oversold-rebound",
+      "rsi-overbought",
+      "cci-breakout-up",
+      "wr-overbought",
+      "kdj-death-cross",
+      "dmi-death-cross",
+      "cci-breakout-down",
+    ].join(","),
+    "momentum events keep chronological order",
+  );
+  assertEqual(
+    events.map((event) => event.label).join(","),
+    "RSI修复,KDJ金叉,DMI转强,CCI修复,WR修复,RSI超买,CCI强势,WR超买,KDJ死叉,DMI转弱,CCI弱势",
+    "momentum events expose compact Chinese labels",
+  );
+  assertEqual(events.filter((event) => event.tone === "good").length, 6, "constructive oscillator events are marked good");
+  assertEqual(events.filter((event) => event.tone === "risk").length, 5, "risk oscillator events are marked risk");
+  assertApprox(events.find((event) => event.type === "rsi-overbought")?.price, 12, 0.001, "risk oscillator events anchor above the candle");
+  assertApprox(events.find((event) => event.type === "rsi-oversold-rebound")?.price, 9.9, 0.001, "constructive oscillator events anchor below the candle");
+}
+
 function testTechnicalIndicatorAnnotationsNeedComparableValues() {
   const events = buildTechnicalIndicatorAnnotations([
     { date: "2026-05-01", open: 10, high: 10.2, low: 9.8, close: 10 },
@@ -1588,6 +1627,7 @@ testSupportResistanceNeedsUsableBars();
 testBuildsCandlestickPatternAnnotations();
 testCandlestickPatternsNeedUsableBars();
 testBuildsTechnicalIndicatorAnnotations();
+testBuildsMomentumTechnicalIndicatorAnnotations();
 testTechnicalIndicatorAnnotationsNeedComparableValues();
 testBuildsTechnicalDivergenceAnnotations();
 testTechnicalDivergenceAnnotationsNeedComparableIndicators();
