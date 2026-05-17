@@ -9,6 +9,7 @@ import {
   buildPriceStructureTrendLines,
   buildSupportResistanceLevels,
   buildTechnicalIndicatorAnnotations,
+  buildTechnicalDivergenceAnnotations,
   buildTrendOverlayIndicators,
   buildTrendRegimeBands,
   buildVisiblePriceExtrema,
@@ -96,6 +97,19 @@ const technicalSignalBars = [
   { date: "2026-05-05", open: 12.2, high: 12.3, low: 11, close: 11.2, maFast: 11.2, maSlow: 11, dif: 0.04, dea: 0.02, bollUpper: 12.5, bollLower: 9.8 },
   { date: "2026-05-06", open: 11.2, high: 11.3, low: 10.6, close: 10.8, maFast: 10.9, maSlow: 11.1, dif: 0.01, dea: 0.03, bollUpper: 12.2, bollLower: 9.6 },
   { date: "2026-05-07", open: 10.8, high: 10.9, low: 8.7, close: 8.8, maFast: 10.3, maSlow: 10.9, dif: -0.03, dea: 0.02, bollUpper: 11.8, bollLower: 9 },
+];
+
+const divergenceBars = [
+  { date: "2026-05-01", open: 10, high: 10, low: 9.5, close: 9.8, rsi14: 45, macd: 0 },
+  { date: "2026-05-02", open: 9.8, high: 10.8, low: 9, close: 9.4, rsi14: 34, macd: -0.5 },
+  { date: "2026-05-03", open: 9.4, high: 10.5, low: 9.4, close: 10.1, rsi14: 39, macd: -0.4 },
+  { date: "2026-05-04", open: 10.1, high: 10.9, low: 8.6, close: 10, rsi14: 43, macd: -0.2 },
+  { date: "2026-05-05", open: 10, high: 10.4, low: 9.2, close: 10.2, rsi14: 48, macd: 0 },
+  { date: "2026-05-06", open: 10.2, high: 12.2, low: 10.1, close: 12, rsi14: 76, macd: 0.8 },
+  { date: "2026-05-07", open: 12, high: 11.5, low: 10.4, close: 11.1, rsi14: 70, macd: 0.7 },
+  { date: "2026-05-08", open: 11.1, high: 12, low: 10.8, close: 11.8, rsi14: 72, macd: 0.6 },
+  { date: "2026-05-09", open: 11.8, high: 12.8, low: 11.1, close: 12.4, rsi14: 66, macd: 0.3 },
+  { date: "2026-05-10", open: 12.4, high: 12.1, low: 11, close: 11.5, rsi14: 64, macd: 0.2 },
 ];
 
 const volumeSignalBars = [
@@ -493,6 +507,36 @@ function testTechnicalIndicatorAnnotationsNeedComparableValues() {
   assertEqual(events.length, 0, "missing indicator values have no technical indicator events");
 }
 
+function testBuildsTechnicalDivergenceAnnotations() {
+  const events = buildTechnicalDivergenceAnnotations(divergenceBars, {
+    swingWindow: 1,
+    minPriceMovePct: 0,
+    minIndicatorMove: 0,
+  });
+
+  assertEqual(events.length, 4, "RSI and MACD divergences detect paired price/indicator pivots");
+  assertEqual(
+    events.map((event) => event.type).join(","),
+    "rsi-bullish-divergence,macd-bullish-divergence,rsi-bearish-divergence,macd-bearish-divergence",
+    "divergences keep chronological and indicator order",
+  );
+  assertEqual(events.map((event) => event.label).join(","), "RSI底背离,MACD底背离,RSI顶背离,MACD顶背离", "divergences expose compact Chinese labels");
+  assertEqual(events.map((event) => event.tone).join(","), "good,good,risk,risk", "bullish and bearish divergences carry chart tone");
+  assertEqual(events.map((event) => `${event.startIndex}-${event.index}`).join(","), "1-3,1-3,5-8,5-8", "divergences connect comparable pivots");
+  assertApprox(events[0]?.startPrice, 9, 0.001, "bullish divergence starts at the previous low");
+  assertApprox(events[0]?.price, 8.6, 0.001, "bullish divergence anchors at the lower low");
+  assertApprox(events[0]?.startIndicator, 34, 0.001, "bullish divergence keeps previous RSI value");
+  assertApprox(events[0]?.endIndicator, 43, 0.001, "bullish divergence keeps improved RSI value");
+  assertApprox(events[2]?.price, 12.8, 0.001, "bearish divergence anchors at the higher high");
+  assertApprox(events[3]?.endIndicator, 0.3, 0.001, "MACD bearish divergence keeps weaker momentum value");
+}
+
+function testTechnicalDivergenceAnnotationsNeedComparableIndicators() {
+  const events = buildTechnicalDivergenceAnnotations(structureBars, { swingWindow: 1 });
+
+  assertEqual(events.length, 0, "missing oscillator values have no divergence annotations");
+}
+
 function testBuildsVolumeSignalAnnotations() {
   const events = buildVolumeSignalAnnotations(volumeSignalBars, {
     period: 3,
@@ -615,6 +659,8 @@ testBuildsCandlestickPatternAnnotations();
 testCandlestickPatternsNeedUsableBars();
 testBuildsTechnicalIndicatorAnnotations();
 testTechnicalIndicatorAnnotationsNeedComparableValues();
+testBuildsTechnicalDivergenceAnnotations();
+testTechnicalDivergenceAnnotationsNeedComparableIndicators();
 testBuildsVolumeSignalAnnotations();
 testVolumeSignalAnnotationsNeedEnoughVolumeHistory();
 testBuildsTrendRegimeBands();

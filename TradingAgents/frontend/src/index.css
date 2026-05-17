@@ -4140,6 +4140,60 @@ label {
   fill: #ffb3ad !important;
 }
 
+.technical-divergence-event {
+  pointer-events: none;
+}
+
+.technical-divergence-event line {
+  stroke-width: 0.85;
+  stroke-dasharray: 5 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.technical-divergence-event .divergence-price-link {
+  stroke-width: 1.15;
+}
+
+.technical-divergence-event path {
+  stroke: rgba(11, 15, 20, 0.78);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.technical-divergence-event text {
+  font-size: 10.5px !important;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(11, 15, 20, 0.92);
+  stroke-width: 2px;
+}
+
+.technical-divergence-event.good line {
+  stroke: rgba(126, 224, 163, 0.62);
+}
+
+.technical-divergence-event.good path {
+  fill: #7ee0a3;
+}
+
+.technical-divergence-event.good text {
+  fill: #9cf2bc !important;
+}
+
+.technical-divergence-event.risk line {
+  stroke: rgba(255, 140, 132, 0.64);
+}
+
+.technical-divergence-event.risk path {
+  fill: #ff8c84;
+}
+
+.technical-divergence-event.risk text {
+  fill: #ffb3ad !important;
+}
+
 .volume-signal-event {
   pointer-events: none;
 }
@@ -5436,6 +5490,15 @@ label {
   clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
   background: linear-gradient(90deg, #5eead4 0 48%, #ff8c84 52% 100%);
   box-shadow: 0 0 0 1px rgba(238, 242, 247, 0.24);
+}
+
+.legend-divergence {
+  display: inline-block;
+  width: 16px;
+  height: 11px !important;
+  clip-path: polygon(0 72%, 45% 20%, 100% 72%, 82% 72%, 45% 42%, 18% 72%);
+  background: linear-gradient(90deg, #7ee0a3 0 48%, #ff8c84 52% 100%);
+  box-shadow: 0 0 0 1px rgba(238, 242, 247, 0.18);
 }
 
 .legend-trend-regime {

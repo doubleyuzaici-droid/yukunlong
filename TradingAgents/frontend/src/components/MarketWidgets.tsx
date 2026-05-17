@@ -17,6 +17,7 @@ import {
   buildPriceGapAnnotations,
   buildPriceStructureTrendLines,
   buildSupportResistanceLevels,
+  buildTechnicalDivergenceAnnotations,
   buildTechnicalIndicatorAnnotations,
   buildTrendOverlayIndicators,
   buildTrendRegimeBands,
@@ -195,6 +196,7 @@ interface TradingChartPreferences {
   trendLines: boolean;
   patterns: boolean;
   indicatorSignals: boolean;
+  divergences: boolean;
   volumeSignals: boolean;
   trendRegime: boolean;
   sar: boolean;
@@ -376,6 +378,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   trendLines: true,
   patterns: true,
   indicatorSignals: true,
+  divergences: true,
   volumeSignals: true,
   trendRegime: true,
   sar: true,
@@ -444,6 +447,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     trendLines: typeof next.trendLines === "boolean" ? next.trendLines : DEFAULT_TRADING_CHART_PREFS.trendLines,
     patterns: typeof next.patterns === "boolean" ? next.patterns : DEFAULT_TRADING_CHART_PREFS.patterns,
     indicatorSignals: typeof next.indicatorSignals === "boolean" ? next.indicatorSignals : DEFAULT_TRADING_CHART_PREFS.indicatorSignals,
+    divergences: typeof next.divergences === "boolean" ? next.divergences : DEFAULT_TRADING_CHART_PREFS.divergences,
     volumeSignals: typeof next.volumeSignals === "boolean" ? next.volumeSignals : DEFAULT_TRADING_CHART_PREFS.volumeSignals,
     trendRegime: typeof next.trendRegime === "boolean" ? next.trendRegime : DEFAULT_TRADING_CHART_PREFS.trendRegime,
     sar: typeof next.sar === "boolean" ? next.sar : DEFAULT_TRADING_CHART_PREFS.sar,
@@ -1519,6 +1523,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.trendLines ? "active" : ""} onClick={() => toggleChartPref("trendLines")} type="button">趋势线</button>
         <button className={chartPrefs.patterns ? "active" : ""} onClick={() => toggleChartPref("patterns")} type="button">形态</button>
         <button className={chartPrefs.indicatorSignals ? "active" : ""} onClick={() => toggleChartPref("indicatorSignals")} type="button">技信</button>
+        <button className={chartPrefs.divergences ? "active" : ""} onClick={() => toggleChartPref("divergences")} type="button">背离</button>
         <button className={chartPrefs.sar ? "active" : ""} onClick={() => toggleChartPref("sar")} type="button">SAR</button>
         <button className={chartPrefs.bbi ? "active" : ""} onClick={() => toggleChartPref("bbi")} type="button">BBI</button>
         <span>指标·副图</span>
@@ -1993,6 +1998,17 @@ export function TradingSignalKlinePanel({
               </title>
             </g>
           ))}
+          {chartPrefs.divergences && chart.technicalDivergenceEvents.map((event) => (
+            <g className={`technical-divergence-event ${event.tone}`} key={event.key}>
+              <line className="divergence-price-link" x1={event.startX} x2={event.x} y1={event.startPriceY} y2={event.priceY} />
+              <line x1={event.x} x2={event.x} y1={event.priceY} y2={event.markerY} />
+              <path d={`M ${event.x - 5} ${event.markerY + (event.tone === "risk" ? -4 : 4)} L ${event.x} ${event.markerY + (event.tone === "risk" ? 5 : -5)} L ${event.x + 5} ${event.markerY + (event.tone === "risk" ? -4 : 4)} Z`} />
+              <text x={event.labelX} y={event.labelY}>{event.label}</text>
+              <title>
+                {event.startLabel}→{event.dateLabel} {event.label} · 价格 {formatNumber(event.startPrice, 2)}→{formatNumber(event.price, 2)} · 指标 {formatNumber(event.startIndicator, 2)}→{formatNumber(event.endIndicator, 2)}
+              </title>
+            </g>
+          ))}
           {chartPrefs.volume && chartPrefs.volumeSignals && chart.volumeSignalEvents.map((event) => (
             <g className={`volume-signal-event ${event.tone}`} key={event.key}>
               <line x1={event.x} x2={event.x} y1={event.volumeY} y2={event.markerY} />
@@ -2282,6 +2298,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-gap" />跳空缺口</span>
         <span><i className="legend-pattern" />K线形态</span>
         <span><i className="legend-tech-signal" />技术信号</span>
+        <span><i className="legend-divergence" />指标背离</span>
         <span><i className="legend-volume-signal" />量价异动</span>
         <span><i className="legend-marker" />信号日至入场日</span>
         <span><i className="legend-event" />证据事件</span>
@@ -3389,6 +3406,7 @@ function buildTradingSignalGeometry(
       priceGaps: [],
       candlestickPatterns: [],
       technicalIndicatorEvents: [],
+      technicalDivergenceEvents: [],
       volumeSignalEvents: [],
       trendRegimeBands: [],
       fibonacciLevels: [],
@@ -3894,6 +3912,43 @@ function buildTradingSignalGeometry(
       labelY: clampNumber(markerY - 7, PRICE_TOP + 14, PRICE_BOTTOM - 6),
     };
   });
+  const technicalDivergenceRanks = new Map<number, number>();
+  const technicalDivergenceEvents = buildTechnicalDivergenceAnnotations(candles.map((candle) => ({
+    date: candle.date,
+    period_label: candle.periodLabel,
+    open: candle.open,
+    high: candle.high,
+    low: candle.low,
+    close: candle.close,
+    rsi14: candle.indicators.rsi14,
+    macd: candle.indicators.macd,
+  })), {
+    swingWindow: 2,
+    minPriceMovePct: 0.6,
+    minIndicatorMove: 0.4,
+    maxPerType: 1,
+  }).map((event) => {
+    const rank = technicalDivergenceRanks.get(event.index) || 0;
+    technicalDivergenceRanks.set(event.index, rank + 1);
+    const x = xOf(event.index);
+    const startX = xOf(event.startIndex);
+    const priceY = yOf(event.price);
+    const startPriceY = yOf(event.startPrice);
+    const isRisk = event.tone === "risk";
+    const markerY = isRisk
+      ? Math.max(PRICE_TOP + 20, priceY - 34 - rank * 16)
+      : Math.min(PRICE_BOTTOM - 16, priceY + 34 + rank * 16);
+    return {
+      ...event,
+      x,
+      startX,
+      priceY,
+      startPriceY,
+      markerY,
+      labelX: clampNumber(x + (x > PLOT_RIGHT - 116 ? -86 : 12), PLOT_LEFT + 8, PLOT_RIGHT - 96),
+      labelY: clampNumber(markerY - 7, PRICE_TOP + 14, PRICE_BOTTOM - 6),
+    };
+  });
   const volumeSignalRanks = new Map<number, number>();
   const volumeSignalEvents = buildVolumeSignalAnnotations(candles, {
     period: Math.min(20, Math.max(3, Math.floor(visible.length / 6))),
@@ -4044,6 +4099,7 @@ function buildTradingSignalGeometry(
     priceGaps,
     candlestickPatterns,
     technicalIndicatorEvents,
+    technicalDivergenceEvents,
     volumeSignalEvents,
     trendRegimeBands,
     fibonacciLevels,

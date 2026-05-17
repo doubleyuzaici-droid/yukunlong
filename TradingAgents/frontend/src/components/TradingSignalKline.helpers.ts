@@ -25,6 +25,13 @@ export type TechnicalIndicatorEventType =
   | "macd-death-cross"
   | "boll-breakout-up"
   | "boll-breakout-down";
+export type TechnicalDivergenceTone = "good" | "risk";
+export type TechnicalDivergenceIndicator = "rsi" | "macd";
+export type TechnicalDivergenceType =
+  | "rsi-bullish-divergence"
+  | "rsi-bearish-divergence"
+  | "macd-bullish-divergence"
+  | "macd-bearish-divergence";
 export type VolumeSignalTone = "good" | "risk" | "neutral";
 export type VolumeSignalType = "volume-surge-up" | "volume-surge-down" | "volume-dry-up";
 export type TrendRegimeTone = "good" | "risk" | "neutral";
@@ -39,6 +46,11 @@ export interface TechnicalIndicatorBarLike extends PriceExtremaBarLike {
   dea?: number | null;
   bollUpper?: number | null;
   bollLower?: number | null;
+}
+
+export interface TechnicalDivergenceBarLike extends PriceExtremaBarLike {
+  rsi14?: number | null;
+  macd?: number | null;
 }
 
 export interface PriceGapAnnotation {
@@ -75,6 +87,24 @@ export interface TechnicalIndicatorAnnotation {
   date: string;
   dateLabel: string;
   price: number;
+}
+
+export interface TechnicalDivergenceAnnotation {
+  key: string;
+  type: TechnicalDivergenceType;
+  indicator: TechnicalDivergenceIndicator;
+  label: string;
+  tone: TechnicalDivergenceTone;
+  startIndex: number;
+  index: number;
+  date: string;
+  dateLabel: string;
+  startDate: string;
+  startLabel: string;
+  startPrice: number;
+  price: number;
+  startIndicator: number;
+  endIndicator: number;
 }
 
 export interface VolumeSignalAnnotation {
@@ -859,6 +889,38 @@ export function buildTechnicalIndicatorAnnotations(
   });
 }
 
+export function buildTechnicalDivergenceAnnotations(
+  bars: TechnicalDivergenceBarLike[],
+  options: {
+    swingWindow?: number;
+    minPriceMovePct?: number;
+    minIndicatorMove?: number;
+    maxPerType?: number;
+  } = {},
+): TechnicalDivergenceAnnotation[] {
+  const normalized = bars
+    .map(normalizeTechnicalDivergenceBar)
+    .filter((bar): bar is NonNullable<ReturnType<typeof normalizeTechnicalDivergenceBar>> => Boolean(bar));
+  const swingWindow = clampInteger(options.swingWindow ?? 2, 1, 8);
+  if (normalized.length < swingWindow * 2 + 3) return [];
+
+  const minPriceMovePct = Math.max(0, Number(options.minPriceMovePct ?? 0.5));
+  const minIndicatorMove = Math.max(0, Number(options.minIndicatorMove ?? 0.5));
+  const maxPerType = clampInteger(options.maxPerType ?? 2, 1, 8);
+  const pivots = buildTechnicalDivergencePivots(normalized, swingWindow);
+  const events = [
+    ...buildTechnicalDivergenceCandidates(pivots.lows, "rsi", "bullish", minPriceMovePct, minIndicatorMove, maxPerType),
+    ...buildTechnicalDivergenceCandidates(pivots.lows, "macd", "bullish", minPriceMovePct, minIndicatorMove, maxPerType),
+    ...buildTechnicalDivergenceCandidates(pivots.highs, "rsi", "bearish", minPriceMovePct, minIndicatorMove, maxPerType),
+    ...buildTechnicalDivergenceCandidates(pivots.highs, "macd", "bearish", minPriceMovePct, minIndicatorMove, maxPerType),
+  ];
+
+  return events.sort((left, right) =>
+    left.index - right.index ||
+    technicalDivergenceIndicatorRank(left.indicator) - technicalDivergenceIndicatorRank(right.indicator),
+  );
+}
+
 export function buildVolumeSignalAnnotations(
   bars: PriceExtremaBarLike[],
   options: {
@@ -1412,6 +1474,25 @@ function normalizeTechnicalIndicatorBar(bar: TechnicalIndicatorBarLike, index: n
   };
 }
 
+function normalizeTechnicalDivergenceBar(bar: TechnicalDivergenceBarLike, index: number) {
+  const close = Number(bar.close ?? bar.open ?? bar.high ?? bar.low);
+  const open = Number(bar.open ?? close);
+  const high = Number(bar.high ?? Math.max(open, close));
+  const low = Number(bar.low ?? Math.min(open, close));
+  if (![open, high, low, close].every(isFiniteNumber)) return null;
+  const date = String(bar.date || index);
+  return {
+    index,
+    date,
+    label: String(bar.period_label || bar.date || index),
+    high: Math.max(high, low, open, close),
+    low: Math.min(high, low, open, close),
+    close,
+    rsi: normalizeOptionalNumber(bar.rsi14),
+    macd: normalizeOptionalNumber(bar.macd),
+  };
+}
+
 function normalizeVolumeSignalBar(bar: PriceExtremaBarLike, index: number) {
   const close = Number(bar.close ?? bar.open ?? bar.high ?? bar.low);
   const open = Number(bar.open ?? close);
@@ -1527,6 +1608,89 @@ function crossedBelow(
     return false;
   }
   return previousLeft >= previousRight && currentLeft < currentRight;
+}
+
+function buildTechnicalDivergencePivots(
+  bars: Array<NonNullable<ReturnType<typeof normalizeTechnicalDivergenceBar>>>,
+  swingWindow: number,
+) {
+  const lows: Array<NonNullable<ReturnType<typeof normalizeTechnicalDivergenceBar>>> = [];
+  const highs: Array<NonNullable<ReturnType<typeof normalizeTechnicalDivergenceBar>>> = [];
+  bars.forEach((bar, index) => {
+    if (index < swingWindow || index > bars.length - swingWindow - 1) return;
+    const neighbours = [
+      ...bars.slice(index - swingWindow, index),
+      ...bars.slice(index + 1, index + swingWindow + 1),
+    ];
+    if (neighbours.length !== swingWindow * 2) return;
+    if (neighbours.every((item) => bar.low < item.low)) lows.push(bar);
+    if (neighbours.every((item) => bar.high > item.high)) highs.push(bar);
+  });
+  return { lows, highs };
+}
+
+function buildTechnicalDivergenceCandidates(
+  pivots: Array<NonNullable<ReturnType<typeof normalizeTechnicalDivergenceBar>>>,
+  indicator: TechnicalDivergenceIndicator,
+  direction: "bullish" | "bearish",
+  minPriceMovePct: number,
+  minIndicatorMove: number,
+  maxPerType: number,
+): TechnicalDivergenceAnnotation[] {
+  const candidates = pivots.slice(1).flatMap<TechnicalDivergenceAnnotation>((current, cursor) => {
+    const previous = pivots[cursor];
+    const previousIndicator = technicalDivergenceValue(previous, indicator);
+    const currentIndicator = technicalDivergenceValue(current, indicator);
+    if (previousIndicator == null || currentIndicator == null) return [];
+
+    const previousPrice = direction === "bullish" ? previous.low : previous.high;
+    const currentPrice = direction === "bullish" ? current.low : current.high;
+    if (previousPrice <= 0) return [];
+    const priceMovePct = Math.abs((currentPrice - previousPrice) / previousPrice) * 100;
+    const indicatorMove = Math.abs(currentIndicator - previousIndicator);
+    if (priceMovePct < minPriceMovePct || indicatorMove < minIndicatorMove) return [];
+
+    const hasDivergence = direction === "bullish"
+      ? currentPrice < previousPrice && currentIndicator > previousIndicator
+      : currentPrice > previousPrice && currentIndicator < previousIndicator;
+    if (!hasDivergence) return [];
+
+    const type = `${indicator}-${direction}-divergence` as TechnicalDivergenceType;
+    return [{
+      key: `${type}-${previous.index}-${current.index}`,
+      type,
+      indicator,
+      label: technicalDivergenceLabel(indicator, direction),
+      tone: direction === "bullish" ? "good" : "risk",
+      startIndex: previous.index,
+      index: current.index,
+      date: current.date,
+      dateLabel: current.label,
+      startDate: previous.date,
+      startLabel: previous.label,
+      startPrice: previousPrice,
+      price: currentPrice,
+      startIndicator: previousIndicator,
+      endIndicator: currentIndicator,
+    }];
+  });
+  return candidates.sort((left, right) => right.index - left.index).slice(0, maxPerType);
+}
+
+function technicalDivergenceValue(
+  bar: NonNullable<ReturnType<typeof normalizeTechnicalDivergenceBar>>,
+  indicator: TechnicalDivergenceIndicator,
+) {
+  return indicator === "rsi" ? bar.rsi : bar.macd;
+}
+
+function technicalDivergenceIndicatorRank(indicator: TechnicalDivergenceIndicator) {
+  return indicator === "rsi" ? 0 : 1;
+}
+
+function technicalDivergenceLabel(indicator: TechnicalDivergenceIndicator, direction: "bullish" | "bearish") {
+  const prefix = indicator === "rsi" ? "RSI" : "MACD";
+  return `${prefix}${direction === "bullish" ? "底背离" : "顶背离"}`;
 }
 
 function classifyTrendRegime(bar: NonNullable<ReturnType<typeof normalizeTrendRegimeBar>>): TrendRegimeType {
