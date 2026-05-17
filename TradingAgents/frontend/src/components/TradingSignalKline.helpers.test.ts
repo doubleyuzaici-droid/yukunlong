@@ -1,5 +1,6 @@
 import {
   buildAdvancedIndicators,
+  buildCandlestickPatternAnnotations,
   buildFibonacciRetracementLevels,
   buildIndicatorSectionLayout,
   buildIndicatorPanelReadouts,
@@ -71,6 +72,16 @@ const structureBars = [
   { date: "2026-05-10", open: 11.1, high: 11.3, low: 9.6, close: 10, volume: 280, amount: 2_800 },
   { date: "2026-05-11", open: 10, high: 10.7, low: 9.7, close: 10.4, volume: 240, amount: 2_496 },
   { date: "2026-05-12", open: 10.4, high: 11.8, low: 10.2, close: 11.5, volume: 300, amount: 3_450 },
+];
+
+const patternBars = [
+  { date: "2026-05-01", open: 10.2, high: 10.4, low: 9.9, close: 10, volume: 120, amount: 1_200 },
+  { date: "2026-05-02", open: 10, high: 10.6, low: 9.6, close: 10.03, volume: 140, amount: 1_404 },
+  { date: "2026-05-03", open: 10.2, high: 10.4, low: 9.7, close: 9.8, volume: 180, amount: 1_764 },
+  { date: "2026-05-04", open: 9.7, high: 10.6, low: 9.6, close: 10.5, volume: 260, amount: 2_730 },
+  { date: "2026-05-05", open: 10.4, high: 11.2, low: 10.3, close: 11, volume: 210, amount: 2_310 },
+  { date: "2026-05-06", open: 11.1, high: 11.3, low: 10.1, close: 10.2, volume: 280, amount: 2_856 },
+  { date: "2026-05-07", open: 10.3, high: 10.55, low: 9.4, close: 10.5, volume: 320, amount: 3_360 },
 ];
 
 function testBuildsVisibleVolumeDistribution() {
@@ -386,6 +397,28 @@ function testSupportResistanceNeedsUsableBars() {
   assertEqual(levels.length, 0, "empty input has no automatic support or resistance");
 }
 
+function testBuildsCandlestickPatternAnnotations() {
+  const patterns = buildCandlestickPatternAnnotations(patternBars);
+
+  assertEqual(patterns.length, 4, "classic candlestick patterns are detected");
+  assertEqual(
+    patterns.map((pattern) => pattern.type).join(","),
+    "doji,bullish-engulfing,bearish-engulfing,hammer",
+    "patterns keep chronological order",
+  );
+  assertEqual(patterns.map((pattern) => pattern.label).join(","), "十字星,看涨吞没,看跌吞没,锤头线", "patterns expose Chinese chart labels");
+  assertEqual(patterns.map((pattern) => pattern.index).join(","), "1,3,5,6", "patterns anchor to the signal candle");
+  assertEqual(patterns.find((pattern) => pattern.type === "bullish-engulfing")?.tone, "good", "bullish engulfing is marked constructive");
+  assertEqual(patterns.find((pattern) => pattern.type === "bearish-engulfing")?.tone, "risk", "bearish engulfing is marked risky");
+  assertApprox(patterns.find((pattern) => pattern.type === "hammer")?.price, 9.4, 0.001, "hammer anchors to the lower shadow");
+}
+
+function testCandlestickPatternsNeedUsableBars() {
+  const patterns = buildCandlestickPatternAnnotations([]);
+
+  assertEqual(patterns.length, 0, "empty input has no candlestick patterns");
+}
+
 function testBuildsPriceGapAnnotations() {
   const gaps = buildPriceGapAnnotations(gapBars, { minGapPct: 1 });
 
@@ -430,5 +463,7 @@ testBuildsFibonacciRetracementLevels();
 testFibonacciRetracementNeedsExtrema();
 testBuildsSupportResistanceLevelsFromSwingPivots();
 testSupportResistanceNeedsUsableBars();
+testBuildsCandlestickPatternAnnotations();
+testCandlestickPatternsNeedUsableBars();
 testBuildsPriceGapAnnotations();
 testPriceGapAnnotationsRespectThreshold();

@@ -4028,6 +4028,68 @@ label {
   fill: #ffb3ad !important;
 }
 
+.candlestick-pattern-marker {
+  pointer-events: none;
+}
+
+.candlestick-pattern-marker line {
+  stroke-dasharray: 3 3;
+  stroke-width: 0.75;
+  vector-effect: non-scaling-stroke;
+}
+
+.candlestick-pattern-marker circle {
+  stroke: rgba(11, 15, 20, 0.78);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.candlestick-pattern-marker text {
+  font-size: 10.5px !important;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(11, 15, 20, 0.92);
+  stroke-width: 2px;
+}
+
+.candlestick-pattern-marker.good line {
+  stroke: rgba(126, 224, 163, 0.58);
+}
+
+.candlestick-pattern-marker.good circle {
+  fill: #7ee0a3;
+}
+
+.candlestick-pattern-marker.good text {
+  fill: #9cf2bc !important;
+}
+
+.candlestick-pattern-marker.risk line {
+  stroke: rgba(255, 140, 132, 0.58);
+}
+
+.candlestick-pattern-marker.risk circle {
+  fill: #ff8c84;
+}
+
+.candlestick-pattern-marker.risk text {
+  fill: #ffb3ad !important;
+}
+
+.candlestick-pattern-marker.neutral line {
+  stroke: rgba(244, 211, 126, 0.58);
+}
+
+.candlestick-pattern-marker.neutral circle {
+  fill: #f4d37e;
+}
+
+.candlestick-pattern-marker.neutral text {
+  fill: #ffe4a3 !important;
+}
+
 .fibonacci-level {
   pointer-events: none;
 }
@@ -5143,6 +5205,15 @@ label {
   border: 1px dashed rgba(244, 176, 0, 0.74);
   border-radius: 2px !important;
   background: linear-gradient(90deg, rgba(5, 177, 105, 0.16), rgba(207, 32, 47, 0.16));
+}
+
+.legend-pattern {
+  display: inline-block;
+  width: 14px;
+  height: 10px !important;
+  border-radius: 999px !important;
+  background: linear-gradient(90deg, #7ee0a3 0 33%, #f4d37e 33% 66%, #ff8c84 66% 100%);
+  box-shadow: 0 0 0 1px rgba(238, 242, 247, 0.24);
 }
 
 .symbol-signal-panel {

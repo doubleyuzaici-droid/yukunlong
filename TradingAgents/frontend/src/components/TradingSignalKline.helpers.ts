@@ -15,6 +15,8 @@ export interface PriceExtremaBarLike extends VolumeProfileBarLike {
 }
 
 export type PriceGapDirection = "up" | "down";
+export type CandlestickPatternTone = "good" | "risk" | "neutral";
+export type CandlestickPatternType = "doji" | "hammer" | "bullish-engulfing" | "bearish-engulfing";
 
 export interface PriceGapAnnotation {
   key: string;
@@ -28,6 +30,17 @@ export interface PriceGapAnnotation {
   lowPrice: number;
   highPrice: number;
   gapPct: number | null;
+}
+
+export interface CandlestickPatternAnnotation {
+  key: string;
+  type: CandlestickPatternType;
+  label: string;
+  tone: CandlestickPatternTone;
+  index: number;
+  date: string;
+  dateLabel: string;
+  price: number;
 }
 
 export interface VisiblePriceExtremaSnapshot {
@@ -603,6 +616,98 @@ export function buildFibonacciRetracementLevels(
     }));
 }
 
+export function buildCandlestickPatternAnnotations(
+  bars: PriceExtremaBarLike[],
+  options: { dojiBodyRatio?: number; hammerLowerShadowRatio?: number } = {},
+): CandlestickPatternAnnotation[] {
+  const normalized = bars
+    .map(normalizeCandlestickPatternBar)
+    .filter((bar): bar is NonNullable<ReturnType<typeof normalizeCandlestickPatternBar>> => Boolean(bar));
+  if (normalized.length === 0) return [];
+
+  const dojiBodyRatio = clampNumber(Number(options.dojiBodyRatio ?? 0.08), 0.01, 0.2);
+  const hammerLowerShadowRatio = clampNumber(Number(options.hammerLowerShadowRatio ?? 2), 1.2, 5);
+
+  return normalized.flatMap((bar, cursor) => {
+    const range = Math.max(bar.high - bar.low, 0.000001);
+    const body = Math.abs(bar.close - bar.open);
+    const upperShadow = bar.high - Math.max(bar.open, bar.close);
+    const lowerShadow = Math.min(bar.open, bar.close) - bar.low;
+    const patterns: CandlestickPatternAnnotation[] = [];
+
+    if (body / range <= dojiBodyRatio) {
+      patterns.push({
+        key: `doji-${bar.index}`,
+        type: "doji",
+        label: "十字星",
+        tone: "neutral",
+        index: bar.index,
+        date: bar.date,
+        dateLabel: bar.label,
+        price: bar.close,
+      });
+    }
+
+    const previous = normalized[cursor - 1];
+    if (previous) {
+      const previousRange = Math.max(previous.high - previous.low, 0.000001);
+      const previousBody = Math.abs(previous.close - previous.open);
+      const hasEngulfingBodies = previousBody / previousRange > dojiBodyRatio && body / range > dojiBodyRatio;
+      const previousBearish = previous.close < previous.open;
+      const previousBullish = previous.close > previous.open;
+      const currentBullish = bar.close > bar.open;
+      const currentBearish = bar.close < bar.open;
+
+      if (hasEngulfingBodies && previousBearish && currentBullish && bar.open <= previous.close && bar.close >= previous.open) {
+        patterns.push({
+          key: `bullish-engulfing-${bar.index}`,
+          type: "bullish-engulfing",
+          label: "看涨吞没",
+          tone: "good",
+          index: bar.index,
+          date: bar.date,
+          dateLabel: bar.label,
+          price: bar.low,
+        });
+      }
+
+      if (hasEngulfingBodies && previousBullish && currentBearish && bar.open >= previous.close && bar.close <= previous.open) {
+        patterns.push({
+          key: `bearish-engulfing-${bar.index}`,
+          type: "bearish-engulfing",
+          label: "看跌吞没",
+          tone: "risk",
+          index: bar.index,
+          date: bar.date,
+          dateLabel: bar.label,
+          price: bar.high,
+        });
+      }
+    }
+
+    const closesNearTop = Math.max(bar.open, bar.close) >= bar.low + range * 0.68;
+    if (
+      body > 0 &&
+      lowerShadow >= body * hammerLowerShadowRatio &&
+      upperShadow <= Math.max(body, range * 0.12) &&
+      closesNearTop
+    ) {
+      patterns.push({
+        key: `hammer-${bar.index}`,
+        type: "hammer",
+        label: "锤头线",
+        tone: "good",
+        index: bar.index,
+        date: bar.date,
+        dateLabel: bar.label,
+        price: bar.low,
+      });
+    }
+
+    return patterns;
+  });
+}
+
 export function buildSupportResistanceLevels(
   bars: PriceExtremaBarLike[],
   options: {
@@ -928,6 +1033,24 @@ function normalizePriceGapBar(bar: PriceExtremaBarLike, index: number) {
     index,
     date,
     label: String(bar.period_label || bar.date || index),
+    high: Math.max(high, low, open, close),
+    low: Math.min(high, low, open, close),
+    close,
+  };
+}
+
+function normalizeCandlestickPatternBar(bar: PriceExtremaBarLike, index: number) {
+  const close = Number(bar.close ?? bar.open ?? bar.high ?? bar.low);
+  const open = Number(bar.open ?? close);
+  const high = Number(bar.high ?? Math.max(open, close));
+  const low = Number(bar.low ?? Math.min(open, close));
+  if (![open, high, low, close].every(isFiniteNumber)) return null;
+  const date = String(bar.date || index);
+  return {
+    index,
+    date,
+    label: String(bar.period_label || bar.date || index),
+    open,
     high: Math.max(high, low, open, close),
     low: Math.min(high, low, open, close),
     close,
