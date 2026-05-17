@@ -36,6 +36,7 @@ import {
   buildKlineEventSummary,
   buildKlineRangeNavigator,
   buildKlineHoverMetrics,
+  buildHeikinAshiBars,
   buildLatestPriceLine,
   buildLimitPriceLines,
   buildManualDrawingGeometry,
@@ -449,6 +450,7 @@ const KLINE_RENDER_MODES: { key: KlineRenderMode; label: string }[] = [
   { key: "candle", label: "蜡烛" },
   { key: "line", label: "收盘线" },
   { key: "ohlc", label: "OHLC" },
+  { key: "heikinAshi", label: "平均K" },
 ];
 
 const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
@@ -2570,46 +2572,59 @@ export function TradingSignalKlinePanel({
           {chartPrefs.ma && chart.ma60 && <polyline className="ma-line ma60" points={chart.ma60} />}
           {chartPrefs.ma && chart.ma120 && <polyline className="ma-line ma120" points={chart.ma120} />}
           {klineRenderMode === "line" && chart.closeLine && <polyline className="kline-close-line" points={chart.closeLine} />}
-          {chart.candles.map((candle) => (
-            <g className={`candle ${candle.tone} ${klineRenderMode}`} key={candle.date}>
-              {klineRenderMode === "ohlc" ? (
-                <>
-                  <line className="ohlc-stem" x1={candle.x} x2={candle.x} y1={candle.highY} y2={candle.lowY} />
-                  <line className="ohlc-open" x1={candle.x - candle.width * 0.48} x2={candle.x} y1={candle.openY} y2={candle.openY} />
-                  <line className="ohlc-close" x1={candle.x} x2={candle.x + candle.width * 0.48} y1={candle.closeY} y2={candle.closeY} />
-                </>
-              ) : klineRenderMode === "candle" ? (
-                <>
-                  <line x1={candle.x} x2={candle.x} y1={candle.highY} y2={candle.lowY} />
+          {chart.candles.map((candle) => {
+            const isHeikinAshi = klineRenderMode === "heikinAshi";
+            const candleTone = isHeikinAshi ? candle.heikinTone : candle.tone;
+            const renderHighY = isHeikinAshi ? candle.heikinHighY : candle.highY;
+            const renderLowY = isHeikinAshi ? candle.heikinLowY : candle.lowY;
+            const renderBodyY = isHeikinAshi ? candle.heikinBodyY : candle.bodyY;
+            const renderBodyHeight = isHeikinAshi ? candle.heikinBodyHeight : candle.bodyHeight;
+            return (
+              <g className={`candle ${candleTone} ${klineRenderMode}`} key={candle.date}>
+                {klineRenderMode === "ohlc" ? (
+                  <>
+                    <line className="ohlc-stem" x1={candle.x} x2={candle.x} y1={candle.highY} y2={candle.lowY} />
+                    <line className="ohlc-open" x1={candle.x - candle.width * 0.48} x2={candle.x} y1={candle.openY} y2={candle.openY} />
+                    <line className="ohlc-close" x1={candle.x} x2={candle.x + candle.width * 0.48} y1={candle.closeY} y2={candle.closeY} />
+                  </>
+                ) : klineRenderMode === "candle" || isHeikinAshi ? (
+                  <>
+                    <line x1={candle.x} x2={candle.x} y1={renderHighY} y2={renderLowY} />
+                    <rect
+                      x={candle.x - candle.width / 2}
+                      y={renderBodyY}
+                      width={candle.width}
+                      height={Math.max(renderBodyHeight, 1.2)}
+                      rx="0.35"
+                    />
+                    {isHeikinAshi && (
+                      <title>
+                        {candle.date} 平均K 开 {formatNumber(candle.heikinOpen, 2)} 高 {formatNumber(candle.heikinHigh, 2)} 低 {formatNumber(candle.heikinLow, 2)} 收 {formatNumber(candle.heikinClose, 2)}
+                      </title>
+                    )}
+                  </>
+                ) : null}
+                {chartPrefs.volume && (
                   <rect
+                    className="volume-bar"
                     x={candle.x - candle.width / 2}
-                    y={candle.bodyY}
+                    y={candle.volumeY}
                     width={candle.width}
-                    height={Math.max(candle.bodyHeight, 1.2)}
-                    rx="0.35"
+                    height={candle.volumeHeight}
                   />
-                </>
-              ) : null}
-              {chartPrefs.volume && (
-                <rect
-                  className="volume-bar"
-                  x={candle.x - candle.width / 2}
-                  y={candle.volumeY}
-                  width={candle.width}
-                  height={candle.volumeHeight}
-                />
-              )}
-              {chartPrefs.limitLines && candle.limitState && candle.limitLabel && (
-                <g className={`limit-state-marker ${candle.limitState}`}>
-                  <rect x={candle.x - 15} y={candle.limitLabelY - 10} width="30" height="13" rx="4" />
-                  <text x={candle.x} y={candle.limitLabelY}>
-                    {candle.limitLabel}
-                  </text>
-                  <title>{candle.date} {candle.limitLabel}</title>
-                </g>
-              )}
-            </g>
-          ))}
+                )}
+                {chartPrefs.limitLines && candle.limitState && candle.limitLabel && (
+                  <g className={`limit-state-marker ${candle.limitState}`}>
+                    <rect x={candle.x - 15} y={candle.limitLabelY - 10} width="30" height="13" rx="4" />
+                    <text x={candle.x} y={candle.limitLabelY}>
+                      {candle.limitLabel}
+                    </text>
+                    <title>{candle.date} {candle.limitLabel}</title>
+                  </g>
+                )}
+              </g>
+            );
+          })}
           {manualDrawingGeometry.map((drawing) => (
             <g className={`manual-drawing-layer ${drawing.type}`} key={drawing.id}>
               <line x1={drawing.x1} x2={drawing.x2} y1={drawing.y1} y2={drawing.y2} />
@@ -5071,17 +5086,25 @@ function buildTradingSignalGeometry(
     },
   ]);
 
+  const heikinAshiBars = buildHeikinAshiBars(visible);
   const candles = visible.map((bar, index) => {
     const open = Number(bar.open ?? bar.close ?? 0);
     const close = Number(bar.close ?? open);
     const high = Number(bar.high ?? Math.max(open, close));
     const low = Number(bar.low ?? Math.min(open, close));
+    const heikinBar = heikinAshiBars[index];
+    const heikinOpen = Number(heikinBar?.open ?? open);
+    const heikinClose = Number(heikinBar?.close ?? close);
+    const heikinHigh = Number(heikinBar?.high ?? high);
+    const heikinLow = Number(heikinBar?.low ?? low);
     const prevClose = index > 0 ? closeValues[index - 1] : null;
     const change = typeof prevClose === "number" ? close - prevClose : null;
     const changePct = prevClose ? close / prevClose - 1 : null;
     const amplitudePct = prevClose ? (high - low) / prevClose : null;
     const openY = yOf(open);
     const closeY = yOf(close);
+    const heikinOpenY = yOf(heikinOpen);
+    const heikinCloseY = yOf(heikinClose);
     const volumeHeight = Math.max(1, (Number(bar.volume || 0) / maxVolume) * (VOLUME_BOTTOM - VOLUME_TOP));
     const limitState = resolveLimitCandleState(bar);
     const hoverMetrics = buildKlineHoverMetrics(bar);
@@ -5114,6 +5137,17 @@ function buildTradingSignalGeometry(
       bodyY: Math.min(openY, closeY),
       bodyHeight: Math.abs(openY - closeY),
       closeY: yOf(close),
+      heikinOpen,
+      heikinHigh,
+      heikinLow,
+      heikinClose,
+      heikinHighY: yOf(heikinHigh),
+      heikinLowY: yOf(heikinLow),
+      heikinOpenY,
+      heikinCloseY,
+      heikinBodyY: Math.min(heikinOpenY, heikinCloseY),
+      heikinBodyHeight: Math.abs(heikinOpenY - heikinCloseY),
+      heikinTone: heikinClose >= heikinOpen ? "positive" : "negative",
       volumeY: VOLUME_BOTTOM - volumeHeight,
       volumeHeight,
       tone: close >= open ? "positive" : "negative",

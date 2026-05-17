@@ -20,6 +20,7 @@ import {
   buildKlineEventBacktestSummary,
   buildLatestPriceLine,
   buildKlineRangeNavigator,
+  buildHeikinAshiBars,
   rightOffsetFromKlineNavigatorX,
   buildTrendRibbonAreaSegments,
   buildIchimokuIndicators,
@@ -735,7 +736,21 @@ function testPriceAdjustmentModeFallback() {
 function testNormalizesKlineRenderMode() {
   assertEqual(normalizeKlineRenderMode("line"), "line", "line chart mode is accepted");
   assertEqual(normalizeKlineRenderMode("ohlc"), "ohlc", "OHLC bar mode is accepted");
+  assertEqual(normalizeKlineRenderMode("heikinAshi"), "heikinAshi", "Heikin-Ashi chart mode is accepted");
   assertEqual(normalizeKlineRenderMode("area"), "candle", "unknown chart mode falls back to candle");
+}
+
+function testBuildsHeikinAshiBars() {
+  const heikinBars = buildHeikinAshiBars(bars);
+
+  assertEqual(heikinBars.length, 4, "Heikin-Ashi output preserves bar count");
+  assertEqual(heikinBars[0]?.date, "2026-05-11", "Heikin-Ashi output keeps source metadata");
+  assertApprox(heikinBars[0]?.open, 10.4, 0.001, "first Heikin-Ashi open starts from original open and close midpoint");
+  assertApprox(heikinBars[0]?.close, 10.4, 0.001, "first Heikin-Ashi close averages original OHLC");
+  assertApprox(heikinBars[1]?.open, 10.4, 0.001, "subsequent Heikin-Ashi open uses previous Heikin-Ashi open and close");
+  assertApprox(heikinBars[1]?.close, 11.25, 0.001, "Heikin-Ashi close averages each original OHLC");
+  assertApprox(heikinBars[1]?.high, 12, 0.001, "Heikin-Ashi high keeps the max of original high and synthetic body");
+  assertApprox(heikinBars[1]?.low, 10.4, 0.001, "Heikin-Ashi low includes the synthetic open");
 }
 
 function testBuildsMeasuredRangeStats() {
@@ -1835,6 +1850,7 @@ testBuildsForwardAdjustedBars();
 testBuildsBackwardAdjustedBars();
 testPriceAdjustmentModeFallback();
 testNormalizesKlineRenderMode();
+testBuildsHeikinAshiBars();
 testBuildsMeasuredRangeStats();
 testMeasuredRangeStatsKeepSelectionDirection();
 testHandlesMissingBarsExplicitly();

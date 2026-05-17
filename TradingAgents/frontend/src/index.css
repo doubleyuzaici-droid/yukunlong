@@ -3125,6 +3125,22 @@ label {
   vector-effect: non-scaling-stroke;
 }
 
+.trade-signal-chart .candle line {
+  stroke: currentColor;
+  stroke-width: 0.78;
+  vector-effect: non-scaling-stroke;
+}
+
+.trade-signal-chart .candle rect {
+  fill: currentColor;
+}
+
+.trade-signal-chart .candle.heikinAshi rect {
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 0.35;
+  vector-effect: non-scaling-stroke;
+}
+
 .trade-signal-chart .candle.ohlc line {
   stroke: currentColor;
   stroke-linecap: square;

@@ -355,7 +355,7 @@ export interface ManualDrawingGeometry {
 }
 
 export type PriceAxisMode = "price" | "percent";
-export type KlineRenderMode = "candle" | "line" | "ohlc";
+export type KlineRenderMode = "candle" | "line" | "ohlc" | "heikinAshi";
 
 export interface PriceAxisScale {
   mode: PriceAxisMode;
@@ -387,6 +387,13 @@ export interface PriceAdjustmentBarLike {
   close?: number | null;
   adj_factor?: number | null;
 }
+
+export type HeikinAshiBar<T extends PriceExtremaBarLike> = T & {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+};
 
 const MANUAL_DRAWING_STORAGE_PREFIX = "tradingagents.tradeSignalKline.drawings";
 
@@ -2099,7 +2106,7 @@ export function normalizePriceAxisMode(value: unknown): PriceAxisMode {
 }
 
 export function normalizeKlineRenderMode(value: unknown): KlineRenderMode {
-  if (value === "line" || value === "ohlc") return value;
+  if (value === "line" || value === "ohlc" || value === "heikinAshi") return value;
   return "candle";
 }
 
@@ -3540,6 +3547,36 @@ export function buildKlineEventBacktestSummary(input: KlineEventBacktestInput): 
       riseRate,
       averageReturnPct,
     }];
+  });
+}
+
+export function buildHeikinAshiBars<T extends PriceExtremaBarLike>(bars: T[]): Array<HeikinAshiBar<T>> {
+  let previousOpen: number | null = null;
+  let previousClose: number | null = null;
+
+  return bars.map((bar, index) => {
+    const normalized = normalizeCandlestickPatternBar(bar, index);
+    const sourceOpen = normalized?.open ?? 0;
+    const sourceHigh = normalized?.high ?? sourceOpen;
+    const sourceLow = normalized?.low ?? sourceOpen;
+    const sourceClose = normalized?.close ?? sourceOpen;
+    const close = (sourceOpen + sourceHigh + sourceLow + sourceClose) / 4;
+    const open = previousOpen == null || previousClose == null
+      ? (sourceOpen + sourceClose) / 2
+      : (previousOpen + previousClose) / 2;
+    const high = Math.max(sourceHigh, open, close);
+    const low = Math.min(sourceLow, open, close);
+
+    previousOpen = open;
+    previousClose = close;
+
+    return {
+      ...bar,
+      open,
+      high,
+      low,
+      close,
+    };
   });
 }
 
