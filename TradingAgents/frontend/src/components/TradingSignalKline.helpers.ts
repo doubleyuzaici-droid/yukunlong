@@ -1252,6 +1252,13 @@ export function buildIndicatorPanelReadouts(
   return groups.filter((value): value is IndicatorPanelReadoutGroup => Boolean(value));
 }
 
+export function selectIndicatorReadoutSnapshot<T>(
+  latest?: T | null,
+  cursor?: T | null,
+): T | null {
+  return cursor ?? latest ?? null;
+}
+
 export function buildAdvancedIndicators(
   bars: VolumeProfileBarLike[],
   options: { period?: number; emvPeriod?: number } = {},

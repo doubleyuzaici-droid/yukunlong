@@ -46,6 +46,7 @@ import {
   priceAxisPriceFromY,
   priceAxisValueFromPrice,
   priceAxisYOf,
+  selectIndicatorReadoutSnapshot,
   type IndicatorPanelReadoutItem,
   type ManualDrawing,
   type ManualDrawingAnchor,
@@ -1330,9 +1331,16 @@ export function TradingSignalKlinePanel({
     () => buildChartDiagnostics(strategyAnalysis, strategyControls?.backtest),
     [strategyAnalysis, strategyControls?.backtest],
   );
+  const indicatorReadoutSnapshot = selectIndicatorReadoutSnapshot(
+    chart.latestIndicators,
+    crosshair?.candle?.indicators,
+  );
+  const indicatorReadoutLabel = crosshair?.candle
+    ? `游标 ${shortDateLabel(crosshair.candle.periodLabel || crosshair.candle.date)}`
+    : "最新";
   const indicatorPanelReadouts = useMemo(
-    () => buildIndicatorPanelReadouts(chart.latestIndicators, { mode: chartPrefs.subCharts ? "split" : "compact" }),
-    [chart.latestIndicators, chartPrefs.subCharts],
+    () => buildIndicatorPanelReadouts(indicatorReadoutSnapshot, { mode: chartPrefs.subCharts ? "split" : "compact" }),
+    [indicatorReadoutSnapshot, chartPrefs.subCharts],
   );
   const indicatorPanelReadoutMap = useMemo(
     () => new Map(indicatorPanelReadouts.map((group) => [group.key, group])),
@@ -1370,7 +1378,7 @@ export function TradingSignalKlinePanel({
     mergedSignals[0] ||
     null;
   const activeIndicators = activeMarker?.indicators || chart.latestIndicators;
-  const readoutIndicators = crosshair?.candle?.indicators || chart.latestIndicators;
+  const readoutIndicators = indicatorReadoutSnapshot;
   const measuredRange = useMemo(
     () => buildMeasureRange(
       chart.candles,
@@ -1969,8 +1977,9 @@ export function TradingSignalKlinePanel({
               <text className="indicator-label" x={chart.plotLeft} y={section.top + 16}>{section.label}</text>
               {indicatorPanelReadoutMap.get(section.key) && (
                 <text className="indicator-section-readout" x={chart.plotLeft + 170} y={section.top + 16}>
+                  <tspan>{indicatorReadoutLabel}</tspan>
                   {indicatorPanelReadoutMap.get(section.key)?.items.slice(0, chartPrefs.subCharts ? 8 : 10).map((item, index) => (
-                    <tspan className={item.signed ? quoteTone(item.value) : ""} dx={index === 0 ? 0 : 10} key={item.label}>
+                    <tspan className={item.signed ? quoteTone(item.value) : ""} dx={index === 0 ? 12 : 10} key={item.label}>
                       {item.label} {formatIndicatorPanelReadout(item)}
                     </tspan>
                   ))}

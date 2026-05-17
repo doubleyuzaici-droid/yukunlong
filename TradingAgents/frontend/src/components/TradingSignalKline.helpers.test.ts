@@ -34,6 +34,7 @@ import {
   priceAxisPriceFromY,
   priceAxisValueFromPrice,
   priceAxisYOf,
+  selectIndicatorReadoutSnapshot,
 } from "./TradingSignalKline.helpers.js";
 
 function assertEqual<T>(actual: T, expected: T, message: string) {
@@ -664,6 +665,15 @@ function testCompactIndicatorPanelReadoutsFoldExtraIndicators() {
   assertEqual(oscillator?.items.map((item) => item.label).join(","), "RSI,J,CR,+DI,BIAS,TRIX", "compact oscillator folds extra indicator readings");
 }
 
+function testSelectsCursorIndicatorReadoutSnapshot() {
+  const latest = { close: 20, macd: 0.3 };
+  const cursor = { close: 18, macd: -0.2 };
+
+  assertEqual(selectIndicatorReadoutSnapshot(latest, cursor), cursor, "cursor snapshot drives indicator readouts while hovering");
+  assertEqual(selectIndicatorReadoutSnapshot(latest, null), latest, "latest snapshot remains the fallback when there is no cursor");
+  assertEqual(selectIndicatorReadoutSnapshot(null, null), null, "missing snapshots stay explicit");
+}
+
 function testBuildsTrendOverlayIndicators() {
   const indicators = buildTrendOverlayIndicators(trendOverlayBars, {
     bbiPeriods: [2, 3, 4, 5],
@@ -1024,6 +1034,7 @@ testCompactIndicatorLayoutKeepsLegacyBands();
 testSplitIndicatorLayoutCreatesSeparateSubCharts();
 testBuildsSplitIndicatorPanelReadouts();
 testCompactIndicatorPanelReadoutsFoldExtraIndicators();
+testSelectsCursorIndicatorReadoutSnapshot();
 testBuildsTrendOverlayIndicators();
 testTrendOverlayIndicatorsNeedEnoughSamples();
 testBuildsVolumeMomentumIndicators();
