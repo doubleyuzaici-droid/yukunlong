@@ -2030,7 +2030,7 @@ label {
 
 .symbol-tab-strip {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
   border: 1px solid rgba(222, 225, 230, 0.1);
   border-radius: 8px;
@@ -2074,6 +2074,271 @@ label {
   display: grid;
   gap: 14px;
   min-width: 0;
+}
+
+.market-analysis-overview {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.analysis-overview-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(222, 225, 230, 0.14);
+  border-radius: 8px;
+  padding: 16px;
+  background:
+    linear-gradient(135deg, rgba(5, 177, 105, 0.13), rgba(0, 82, 255, 0.11) 46%, rgba(244, 176, 0, 0.08)),
+    rgba(10, 15, 21, 0.76);
+}
+
+.analysis-overview-hero.risk {
+  background:
+    linear-gradient(135deg, rgba(207, 32, 47, 0.15), rgba(15, 21, 29, 0.84) 52%, rgba(244, 176, 0, 0.08)),
+    rgba(10, 15, 21, 0.78);
+}
+
+.analysis-overview-hero.warn {
+  background:
+    linear-gradient(135deg, rgba(244, 176, 0, 0.16), rgba(0, 82, 255, 0.09)),
+    rgba(10, 15, 21, 0.78);
+}
+
+.analysis-overview-hero h2 {
+  margin: 5px 0 6px;
+  color: var(--text-primary);
+  font-size: 24px;
+  line-height: 1.18;
+}
+
+.analysis-overview-hero > div:first-child {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.analysis-overview-hero p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.analysis-overview-actions {
+  flex: 0 1 auto;
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.analysis-radar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.overview-metric-card,
+.overview-mini-item,
+.indicator-card,
+.analysis-overview-panel {
+  border: 1px solid rgba(222, 225, 230, 0.12);
+  border-radius: 8px;
+  background: rgba(10, 15, 21, 0.56);
+}
+
+.overview-metric-card {
+  display: grid;
+  gap: 5px;
+  min-height: 92px;
+  padding: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-metric-card span,
+.overview-mini-item span,
+.indicator-card span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.overview-metric-card strong,
+.overview-mini-item strong,
+.indicator-card strong {
+  color: var(--text-primary);
+  font-size: 16px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.overview-metric-card em,
+.overview-mini-item em,
+.indicator-card em,
+.indicator-card small {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.overview-metric-card.opportunity,
+.overview-mini-item.opportunity,
+.indicator-card.opportunity {
+  border-color: rgba(5, 177, 105, 0.3);
+}
+
+.overview-metric-card.opportunity strong,
+.overview-mini-item.opportunity span,
+.indicator-card.opportunity strong {
+  color: var(--price-up);
+}
+
+.overview-metric-card.risk,
+.overview-mini-item.risk,
+.indicator-card.risk {
+  border-color: rgba(207, 32, 47, 0.34);
+}
+
+.overview-metric-card.risk strong,
+.overview-mini-item.risk span,
+.indicator-card.risk strong {
+  color: var(--price-down);
+}
+
+.overview-metric-card.warn,
+.overview-mini-item.warn,
+.indicator-card.warn {
+  border-color: rgba(244, 176, 0, 0.3);
+}
+
+.overview-metric-card.warn strong,
+.overview-mini-item.warn span,
+.indicator-card.warn strong {
+  color: #f4b000;
+}
+
+.overview-metric-card.missing,
+.overview-mini-item.missing,
+.indicator-card.missing {
+  border-style: dashed;
+  opacity: 0.82;
+}
+
+.analysis-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
+  gap: 14px;
+  align-items: start;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.analysis-overview-grid.secondary {
+  grid-template-columns: minmax(280px, 0.9fr) minmax(300px, 0.8fr) minmax(280px, 0.75fr);
+}
+
+.analysis-overview-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.analysis-kline-preview .price-history-chart {
+  min-height: 260px;
+}
+
+.analysis-chart-feature-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.overview-mini-item {
+  display: grid;
+  gap: 4px;
+  min-height: 84px;
+  padding: 10px;
+}
+
+.indicator-matrix {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+  gap: 8px;
+}
+
+.indicator-card {
+  display: grid;
+  gap: 6px;
+  min-height: 132px;
+  padding: 11px;
+  text-align: left;
+}
+
+.indicator-card:hover {
+  transform: translateY(-1px);
+}
+
+.overview-chart-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.overview-chart-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(222, 225, 230, 0.1);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(8, 12, 17, 0.36);
+}
+
+.overview-chart-card > strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.analysis-strategy-grid,
+.overview-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 8px;
+}
+
+.analysis-next-step-list {
+  display: grid;
+  gap: 8px;
+}
+
+.analysis-next-step-list p {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  border: 1px solid rgba(222, 225, 230, 0.1);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: rgba(8, 12, 17, 0.36);
+}
+
+.analysis-next-step-list span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.analysis-next-step-list strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .embedded-workspace-pane .workbench-section {
@@ -5349,6 +5614,10 @@ label {
     position: static;
   }
 
+  .symbol-left-rail {
+    grid-template-columns: 1fr;
+  }
+
   .symbol-tab-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -5386,6 +5655,8 @@ label {
   .strategy-snapshot-grid,
   .trade-decision-grid,
   .strategy-factor-workbench,
+  .analysis-overview-grid,
+  .analysis-overview-grid.secondary,
   .signal-inspector-grid,
   .resonance-grid,
   .resonance-split,
@@ -5400,51 +5671,55 @@ label {
   .command-grid,
   .report-structure-strip,
   .llm-readiness-panel,
-	  .portfolio-audit-grid,
-	  .sweep-control-grid,
-	  .sweep-result-grid,
-	  .monthly-return-grid,
-	  .brief-five-grid,
-	  .brief-layer-grid,
-	  .trading-discipline-grid,
-	  .trading-plan-row,
-	  .governance-summary-grid,
-	  .governance-group-grid,
-	  .governance-item,
-	  .signal-history-card {
-	    grid-template-columns: 1fr;
-	  }
+  .portfolio-audit-grid,
+  .sweep-control-grid,
+  .sweep-result-grid,
+  .monthly-return-grid,
+  .brief-five-grid,
+  .brief-layer-grid,
+  .trading-discipline-grid,
+  .trading-plan-row,
+  .governance-summary-grid,
+  .governance-group-grid,
+  .governance-item,
+  .analysis-overview-hero,
+  .signal-history-card {
+    grid-template-columns: 1fr;
+  }
 
-	  .report-action-row,
-	  .brief-decision-hero,
-	  .realtime-head,
-	  .intraday-chart-title,
-	  .integrity-list p,
-	  .strategy-checklist p {
-	    grid-template-columns: 1fr;
-	  }
+  .report-action-row,
+  .brief-decision-hero,
+  .analysis-overview-hero,
+  .realtime-head,
+  .intraday-chart-title,
+  .integrity-list p,
+  .strategy-checklist p {
+    grid-template-columns: 1fr;
+  }
 
-	  .report-action-row {
-	    align-items: flex-start;
-	    flex-direction: column;
-	  }
+  .report-action-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 
-	  .brief-decision-hero {
-	    flex-direction: column;
-	  }
+  .brief-decision-hero,
+  .analysis-overview-hero {
+    flex-direction: column;
+  }
 
-	  .brief-hero-actions {
-	    justify-content: flex-start;
-	  }
+  .brief-hero-actions,
+  .analysis-overview-actions {
+    justify-content: flex-start;
+  }
 
-	  .brief-step-row,
-	  .brief-explainer-row {
-	    grid-template-columns: 1fr;
-	  }
+  .brief-step-row,
+  .brief-explainer-row {
+    grid-template-columns: 1fr;
+  }
 
-	  .governance-item small {
-	    grid-column: auto;
-	  }
+  .governance-item small {
+    grid-column: auto;
+  }
 
   .realtime-head,
   .intraday-chart-title {

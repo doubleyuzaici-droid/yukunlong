@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "tsc --project tsconfig.json --outDir .tmp/test-build --noEmit false --allowImportingTsExtensions false && node --experimental-specifier-resolution=node .tmp/test-build/pages/SymbolWorkspacePage.test.js",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },

@@ -8,6 +8,11 @@ import {
 } from "../components/MarketWidgets";
 import FundamentalsPage from "./FundamentalsPage";
 import NewsEvidencePage from "./NewsEvidencePage";
+import {
+  buildMarketAnalysisOverview as buildMarketAnalysisOverviewModel,
+  type MarketAnalysisItem as OverviewItem,
+  type MarketAnalysisOverviewModel as OverviewModel,
+} from "./SymbolWorkspacePage.helpers";
 import type { MarketContextPayload, MarketHistoryBar, MarketHistoryPayload, MarketQuote } from "../types/market";
 import {
   formatCompactNumber,
@@ -20,9 +25,10 @@ import {
 
 const today = new Date().toISOString().slice(0, 10);
 
-type SymbolWorkspaceTab = "chart" | "fundamentals" | "news" | "review" | "history";
+type SymbolWorkspaceTab = "overview" | "chart" | "fundamentals" | "news" | "review" | "history";
 
 const SYMBOL_WORKSPACE_TABS: { key: SymbolWorkspaceTab; label: string; note: string }[] = [
+  { key: "overview", label: "行情分析", note: "价格、指标、资金、策略" },
   { key: "chart", label: "图表信号", note: "K线、指标、信号点" },
   { key: "fundamentals", label: "基本面估值", note: "财务、估值、血缘" },
   { key: "news", label: "新闻证据", note: "公告、资讯、证据" },
@@ -323,7 +329,7 @@ export default function SymbolWorkspacePage({
   const [selectedSignal, setSelectedSignal] = useState<SignalHistoryRow | null>(null);
   const [signalExplain, setSignalExplain] = useState<SignalExplainPayload | null>(null);
   const [readiness, setReadiness] = useState<AnalysisReadinessPayload | null>(null);
-  const [activeTab, setActiveTab] = useState<SymbolWorkspaceTab>("chart");
+  const [activeTab, setActiveTab] = useState<SymbolWorkspaceTab>("overview");
   const [strategyMode, setStrategyMode] = useState<"conservative" | "aggressive">("conservative");
   const [strategyAnalysis, setStrategyAnalysis] = useState<ResonanceV2Analysis | null>(null);
   const [strategyBacktest, setStrategyBacktest] = useState<ResonanceV2BacktestPayload | null>(null);
@@ -495,6 +501,17 @@ export default function SymbolWorkspacePage({
       })),
     [signals],
   );
+  const marketOverview = useMemo(
+    () =>
+      buildMarketAnalysisOverviewModel({
+        history,
+        context,
+        signals,
+        readiness,
+        strategyAnalysis,
+      }),
+    [context, history, readiness, signals, strategyAnalysis],
+  );
   const quote = history?.quote;
   const displayName =
     history?.display_name ||
@@ -631,6 +648,22 @@ export default function SymbolWorkspacePage({
               </button>
             ))}
           </div>
+
+          {activeTab === "overview" && (
+            <div className="symbol-tab-panel">
+              <MarketAnalysisOverview
+                chartSignals={chartSignals}
+                context={context}
+                history={history}
+                onOpenChart={() => setActiveTab("chart")}
+                onOpenReview={() => setActiveTab("review")}
+                overview={marketOverview}
+                readiness={readiness}
+                selectedSignal={selectedSignal}
+                strategyAnalysis={strategyAnalysis}
+              />
+            </div>
+          )}
 
           {activeTab === "chart" && (
             <div className="symbol-tab-panel">
@@ -805,6 +838,180 @@ function AnalysisReadinessPanel({ readiness }: { readiness: AnalysisReadinessPay
         {readiness.next_actions.length === 0 && <b>保持同步并继续复盘</b>}
       </div>
     </div>
+  );
+}
+
+function MarketAnalysisOverview({
+  chartSignals,
+  context,
+  history,
+  onOpenChart,
+  onOpenReview,
+  overview,
+  readiness,
+  selectedSignal,
+  strategyAnalysis,
+}: {
+  chartSignals: {
+    signal_id: string;
+    date: string;
+    signal_name: string;
+    signal_level?: string;
+    direction?: string;
+    entry_date?: string | null;
+    entry_price?: number | null;
+    score?: number;
+    review_count?: number;
+    ret_5d?: number | null;
+    ret_20d?: number | null;
+    ret_60d?: number | null;
+    max_adverse_20d?: number | null;
+  }[];
+  context: MarketContextPayload | null;
+  history: MarketHistoryPayload | null;
+  onOpenChart: () => void;
+  onOpenReview: () => void;
+  overview: OverviewModel;
+  readiness: AnalysisReadinessPayload | null;
+  selectedSignal: SignalHistoryRow | null;
+  strategyAnalysis: ResonanceV2Analysis | null;
+}) {
+  return (
+    <div className="market-analysis-overview">
+      <div className={`analysis-overview-hero ${overview.summary.tone}`}>
+        <div>
+          <span className="eyebrow">Market Analysis</span>
+          <h2>{overview.summary.title}</h2>
+          <p>{overview.summary.subtitle}</p>
+        </div>
+        <div className="analysis-overview-actions">
+          <button className="primary compact-action" onClick={onOpenChart} type="button">
+            打开完整K线
+          </button>
+          <button className="mini" onClick={onOpenReview} type="button" disabled={!selectedSignal}>
+            查看审查
+          </button>
+        </div>
+      </div>
+
+      <div className="analysis-radar-grid">
+        {overview.radar.map((item) => (
+          <OverviewMetricCard item={item} key={item.key} />
+        ))}
+      </div>
+
+      <div className="analysis-overview-grid">
+        <section className="analysis-overview-panel analysis-kline-preview">
+          <div className="section-subhead">
+            <h2>K线与信号预览</h2>
+            <span className="muted">{history?.bar_count || 0} 根 · {chartSignals.length} 信号</span>
+          </div>
+          <PriceHistoryChart bars={history?.bars || []} signals={chartSignals} />
+          <div className="analysis-chart-feature-strip">
+            {overview.chartFeatures.map((item) => (
+              <OverviewMiniItem item={item} key={item.key} />
+            ))}
+          </div>
+        </section>
+
+        <section className="analysis-overview-panel">
+          <div className="section-subhead">
+            <h2>指标矩阵</h2>
+            <span className="muted">趋势 · 动能 · 波动 · 资金</span>
+          </div>
+          <div className="indicator-matrix">
+            {overview.indicators.map((item) => (
+              <IndicatorCard item={item} key={item.key} onOpenChart={onOpenChart} />
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <div className="analysis-overview-grid secondary">
+        <section className="analysis-overview-panel">
+          <div className="section-subhead">
+            <h2>资金与因子图表</h2>
+            <span className="muted">{context?.data_coverage.latest_factor_date || "待计算"}</span>
+          </div>
+          <div className="overview-chart-stack">
+            <div className="overview-chart-card">
+              <strong>20日收益因子</strong>
+              <FactorSparkline rows={context?.factor_series || []} />
+            </div>
+            <div className="overview-chart-card">
+              <strong>资金流趋势</strong>
+              <FundFlowTrendChart rows={context?.fund_flow_series || []} />
+            </div>
+          </div>
+        </section>
+
+        <section className="analysis-overview-panel">
+          <div className="section-subhead">
+            <h2>策略与风险</h2>
+            <span className="muted">{strategyAnalysis?.strategy_name || "V2策略"}</span>
+          </div>
+          <div className="analysis-strategy-grid">
+            <MiniMetric label="V2结论" value={strategyAnalysis?.decision.label || "-"} />
+            <MiniMetric label="周线趋势" value={strategyAnalysis?.trend_state?.label || "-"} />
+            <MiniMetric label="S_buy" value={formatNumber(strategyAnalysis?.buy_signal?.score, 3)} />
+            <MiniMetric label="S_sell" value={formatNumber(strategyAnalysis?.sell_signal?.score, 2)} />
+            <MiniMetric label="止损" value={formatNumber(strategyAnalysis?.price_channels?.stop_price, 2)} />
+            <MiniMetric label="目标1/2" value={`${formatNumber(strategyAnalysis?.price_channels?.target1, 2)} / ${formatNumber(strategyAnalysis?.price_channels?.target2, 2)}`} />
+          </div>
+          <div className="analysis-next-step-list">
+            {overview.nextSteps.map((step) => (
+              <p key={step}>
+                <span>下一步</span>
+                <strong>{step}</strong>
+              </p>
+            ))}
+          </div>
+        </section>
+
+        <section className="analysis-overview-panel">
+          <div className="section-subhead">
+            <h2>证据闭环</h2>
+            <span className="muted">{readiness ? `${Math.round(readiness.score * 100)}%` : "待诊断"}</span>
+          </div>
+          <div className="overview-evidence-grid">
+            {overview.evidence.map((item) => (
+              <OverviewMetricCard item={item} key={item.key} />
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function OverviewMetricCard({ item }: { item: OverviewItem }) {
+  return (
+    <div className={`overview-metric-card ${item.tone}`}>
+      <span>{item.label}</span>
+      <strong>{item.value}</strong>
+      <em>{item.detail}</em>
+    </div>
+  );
+}
+
+function OverviewMiniItem({ item }: { item: OverviewItem }) {
+  return (
+    <div className={`overview-mini-item ${item.tone}`}>
+      <strong>{item.label}</strong>
+      <span>{item.value}</span>
+      <em>{item.detail}</em>
+    </div>
+  );
+}
+
+function IndicatorCard({ item, onOpenChart }: { item: OverviewItem; onOpenChart: () => void }) {
+  return (
+    <button className={`indicator-card ${item.tone}`} onClick={onOpenChart} type="button" title={item.nextStep || item.detail}>
+      <span>{item.label}</span>
+      <strong>{item.value}</strong>
+      <em>{item.detail}</em>
+      {item.nextStep && <small>{item.nextStep}</small>}
+    </button>
   );
 }
 
