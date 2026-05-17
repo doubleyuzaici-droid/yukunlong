@@ -2873,6 +2873,50 @@ label {
   vector-effect: non-scaling-stroke;
 }
 
+.limit-state-marker {
+  pointer-events: none;
+}
+
+.limit-state-marker rect {
+  fill: rgba(11, 15, 20, 0.84);
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.limit-state-marker text {
+  font-size: 9px !important;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: rgba(11, 15, 20, 0.82);
+  stroke-width: 1.6px;
+}
+
+.limit-state-marker.limit-up rect {
+  stroke: rgba(255, 140, 132, 0.7);
+}
+
+.limit-state-marker.limit-up text {
+  fill: #ffb3ad !important;
+}
+
+.limit-state-marker.limit-down rect {
+  stroke: rgba(126, 224, 163, 0.7);
+}
+
+.limit-state-marker.limit-down text {
+  fill: #9cf2bc !important;
+}
+
+.limit-state-marker.suspended rect {
+  stroke: rgba(172, 184, 198, 0.62);
+}
+
+.limit-state-marker.suspended text {
+  fill: rgba(226, 232, 240, 0.9) !important;
+}
+
 .chart-crosshair line {
   stroke: rgba(238, 242, 247, 0.38);
   stroke-width: 0.45;

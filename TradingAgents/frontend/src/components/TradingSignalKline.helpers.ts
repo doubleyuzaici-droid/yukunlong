@@ -726,6 +726,17 @@ export interface LimitPriceLines {
   values: number[];
 }
 
+export type LimitCandleState = "limit-up" | "limit-down" | "suspended";
+
+export interface LimitCandleStateBarLike {
+  close?: number | null;
+  limit_up?: number | null;
+  limit_down?: number | null;
+  is_suspended?: boolean | number | string | null;
+  is_limit_up?: boolean | number | string | null;
+  is_limit_down?: boolean | number | string | null;
+}
+
 export function buildLimitPriceLines(
   bars: LimitPriceBarLike[],
   yOf: (price: number) => number | null | undefined,
@@ -748,6 +759,30 @@ export function buildLimitPriceLines(
     latestDown: downPoints.length ? downPoints[downPoints.length - 1] : null,
     values: [...upPoints.map((point) => point.price), ...downPoints.map((point) => point.price)],
   };
+}
+
+export function resolveLimitCandleState(
+  bar: LimitCandleStateBarLike,
+  tolerancePct = 0.0005,
+): LimitCandleState | null {
+  if (isTruthyFlag(bar.is_suspended)) return "suspended";
+  if (isTruthyFlag(bar.is_limit_up) || isPriceNearLimit(bar.close, bar.limit_up, tolerancePct)) {
+    return "limit-up";
+  }
+  if (isTruthyFlag(bar.is_limit_down) || isPriceNearLimit(bar.close, bar.limit_down, tolerancePct)) {
+    return "limit-down";
+  }
+  return null;
+}
+
+function isTruthyFlag(value: boolean | number | string | null | undefined) {
+  return value === true || value === 1 || value === "1" || String(value).toLowerCase() === "true";
+}
+
+function isPriceNearLimit(price: number | null | undefined, limitPrice: number | null | undefined, tolerancePct: number) {
+  if (!isFiniteNumber(price) || !isFiniteNumber(limitPrice)) return false;
+  const tolerance = Math.max(0.01, Math.abs(limitPrice) * Math.max(0, tolerancePct));
+  return Math.abs(price - limitPrice) <= tolerance;
 }
 
 export type VolumeProfileLevelKey = "poc" | "support" | "resistance";

@@ -49,6 +49,7 @@ import {
   priceAxisPriceFromY,
   priceAxisValueFromPrice,
   priceAxisYOf,
+  resolveLimitCandleState,
   selectIndicatorReadoutSnapshot,
   type IndicatorAxisTick,
   type IndicatorPanelReadoutItem,
@@ -2255,6 +2256,15 @@ export function TradingSignalKlinePanel({
                   height={candle.volumeHeight}
                 />
               )}
+              {chartPrefs.limitLines && candle.limitState && candle.limitLabel && (
+                <g className={`limit-state-marker ${candle.limitState}`}>
+                  <rect x={candle.x - 15} y={candle.limitLabelY - 10} width="30" height="13" rx="4" />
+                  <text x={candle.x} y={candle.limitLabelY}>
+                    {candle.limitLabel}
+                  </text>
+                  <title>{candle.date} {candle.limitLabel}</title>
+                </g>
+              )}
             </g>
           ))}
           {manualDrawingGeometry.map((drawing) => (
@@ -4257,6 +4267,14 @@ function buildTradingSignalGeometry(
     const openY = yOf(open);
     const closeY = yOf(close);
     const volumeHeight = Math.max(1, (Number(bar.volume || 0) / maxVolume) * (VOLUME_BOTTOM - VOLUME_TOP));
+    const limitState = resolveLimitCandleState(bar);
+    const limitLabel = limitState === "limit-up"
+      ? "涨停"
+      : limitState === "limit-down"
+        ? "跌停"
+        : limitState === "suspended"
+          ? "停牌"
+          : null;
     const ma5 = maValue(index, fastPeriod);
     const ma20 = maValue(index, midPeriod);
     const ma60 = maValue(index, slowPeriod);
@@ -4282,6 +4300,11 @@ function buildTradingSignalGeometry(
       volumeY: VOLUME_BOTTOM - volumeHeight,
       volumeHeight,
       tone: close >= open ? "positive" : "negative",
+      limitState,
+      limitLabel,
+      limitLabelY: limitState === "limit-down"
+        ? clampNumber(yOf(low) + 16, PRICE_TOP + 14, PRICE_BOTTOM - 8)
+        : clampNumber(yOf(high) - 10, PRICE_TOP + 14, PRICE_BOTTOM - 8),
       high,
       low,
       close,

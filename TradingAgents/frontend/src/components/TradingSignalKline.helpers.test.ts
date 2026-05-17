@@ -37,6 +37,7 @@ import {
   priceAxisPriceFromY,
   priceAxisValueFromPrice,
   priceAxisYOf,
+  resolveLimitCandleState,
   selectIndicatorReadoutSnapshot,
 } from "./TradingSignalKline.helpers.js";
 
@@ -267,6 +268,29 @@ function testBuildsLimitPriceLinesFromFinitePrices() {
   assertApprox(lines.latestUp?.price, 12, 0.001, "latest valid limit-up price is exposed");
   assertApprox(lines.latestDown?.price, 9.2, 0.001, "latest valid limit-down price is exposed");
   assertEqual(lines.values.length, 4, "finite limit prices are available for price-domain expansion");
+}
+
+function testResolvesLimitCandleState() {
+  assertEqual(
+    resolveLimitCandleState({ close: 10, limit_up: 10, limit_down: 9, is_suspended: true }),
+    "suspended",
+    "suspended state takes priority over limit prices",
+  );
+  assertEqual(
+    resolveLimitCandleState({ close: 10, is_limit_up: true }),
+    "limit-up",
+    "explicit limit-up flag is honored",
+  );
+  assertEqual(
+    resolveLimitCandleState({ close: 9, limit_down: 9 }),
+    "limit-down",
+    "close price matching limit-down is detected",
+  );
+  assertEqual(
+    resolveLimitCandleState({ close: 10, limit_up: 11, limit_down: 9 }),
+    null,
+    "ordinary candles have no limit state",
+  );
 }
 
 function testAppliesTrendChartPreferencePreset() {
@@ -1062,6 +1086,7 @@ function testPriceGapAnnotationsRespectThreshold() {
 
 testBuildsVisibleVolumeDistribution();
 testBuildsLimitPriceLinesFromFinitePrices();
+testResolvesLimitCandleState();
 testAppliesTrendChartPreferencePreset();
 testMatchesChartPreferencePresetFromValues();
 testUnknownChartPreferencePresetIsNoop();
