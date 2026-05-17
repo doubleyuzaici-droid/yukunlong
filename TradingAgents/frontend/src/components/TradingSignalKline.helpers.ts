@@ -185,6 +185,34 @@ export interface KlineEventSummaryInput {
   trendBands?: TrendRegimeBand[];
 }
 
+export type KlineEventDensityTone = KlineEventSummaryTone | "mixed";
+
+export interface KlineEventDensityInput extends KlineEventSummaryInput {
+  visibleCount: number;
+  plotLeft: number;
+  plotRight: number;
+  baselineY: number;
+  minHeight?: number;
+  maxHeight?: number;
+  maxBarWidth?: number;
+}
+
+export interface KlineEventDensityBar {
+  key: string;
+  index: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  count: number;
+  goodCount: number;
+  riskCount: number;
+  neutralCount: number;
+  tone: KlineEventDensityTone;
+  label: string;
+  detail: string;
+}
+
 export interface PriceStructureTrendLine {
   key: string;
   type: PriceStructureTrendLineType;
@@ -3195,6 +3223,79 @@ export function buildKlineEventSummary(input: KlineEventSummaryInput): KlineEven
   }
 
   return items;
+}
+
+export function buildKlineEventDensity(input: KlineEventDensityInput): KlineEventDensityBar[] {
+  const visibleCount = Math.max(0, Math.floor(input.visibleCount));
+  if (visibleCount <= 0 || !isFiniteNumber(input.plotLeft) || !isFiniteNumber(input.plotRight) || !isFiniteNumber(input.baselineY)) {
+    return [];
+  }
+
+  const eventsByIndex = new Map<number, { labels: string[]; goodCount: number; riskCount: number; neutralCount: number }>();
+  const addEvent = (index: number | null | undefined, tone: KlineEventSummaryTone, label: string) => {
+    if (!Number.isInteger(index) || index == null || index < 0 || index >= visibleCount || !label) return;
+    const bucket = eventsByIndex.get(index) ?? { labels: [], goodCount: 0, riskCount: 0, neutralCount: 0 };
+    bucket.labels.push(label);
+    if (tone === "good") bucket.goodCount += 1;
+    else if (tone === "risk") bucket.riskCount += 1;
+    else bucket.neutralCount += 1;
+    eventsByIndex.set(index, bucket);
+  };
+
+  (input.technicalEvents ?? []).forEach((event) => addEvent(event.index, event.tone, event.label));
+  (input.divergenceEvents ?? []).forEach((event) => addEvent(event.index, event.tone, event.label));
+  (input.volumeEvents ?? []).forEach((event) => addEvent(event.index, event.tone, event.label));
+  (input.patterns ?? []).forEach((event) => addEvent(event.index, event.tone, event.label));
+  (input.gaps ?? []).forEach((gap) => addEvent(
+    gap.endIndex,
+    gap.direction === "up" ? "good" : "risk",
+    gap.direction === "up" ? "向上缺口" : "向下缺口",
+  ));
+
+  if (eventsByIndex.size === 0) return [];
+
+  const maxCount = Math.max(...Array.from(eventsByIndex.values()).map((bucket) =>
+    bucket.goodCount + bucket.riskCount + bucket.neutralCount,
+  ));
+  const minHeight = clampNumber(input.minHeight ?? 5, 2, 20);
+  const maxHeight = Math.max(minHeight, input.maxHeight ?? 18);
+  const span = Math.max(1, visibleCount - 1);
+  const xStep = (input.plotRight - input.plotLeft) / span;
+  const width = clampNumber(Math.abs(xStep) * 0.44, 2, input.maxBarWidth ?? 8);
+
+  return Array.from(eventsByIndex.entries())
+    .sort(([left], [right]) => left - right)
+    .map(([index, bucket]) => {
+      const count = bucket.goodCount + bucket.riskCount + bucket.neutralCount;
+      const tone: KlineEventDensityTone = bucket.goodCount > 0 && bucket.riskCount > 0
+        ? "mixed"
+        : bucket.riskCount > 0
+          ? "risk"
+          : bucket.goodCount > 0
+            ? "good"
+            : "neutral";
+      const height = clampNumber(minHeight + (count / Math.max(maxCount, 1)) * (maxHeight - minHeight), minHeight, maxHeight);
+      const labels = bucket.labels.slice(0, 4);
+      const detail = bucket.labels.length > 4
+        ? `${labels.join(" / ")} 等${bucket.labels.length}项`
+        : labels.join(" / ");
+      const x = input.plotLeft + (index / span) * (input.plotRight - input.plotLeft);
+      return {
+        key: `event-density-${index}`,
+        index,
+        x,
+        y: input.baselineY - height,
+        width,
+        height,
+        count,
+        goodCount: bucket.goodCount,
+        riskCount: bucket.riskCount,
+        neutralCount: bucket.neutralCount,
+        tone,
+        label: `${count}个事件`,
+        detail,
+      };
+    });
 }
 
 export function buildPriceStructureTrendLines(

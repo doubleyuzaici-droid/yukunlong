@@ -16,6 +16,7 @@ import {
   buildOverlayPriceLabels,
   buildIndicatorValueLabels,
   buildKlineEventSummary,
+  buildKlineEventDensity,
   buildLatestPriceLine,
   buildKlineRangeNavigator,
   rightOffsetFromKlineNavigatorX,
@@ -1560,6 +1561,37 @@ function testBuildsKlineEventSummary() {
   assertEqual(summary[5]?.value, "空头排列", "trend item reports latest regime label");
 }
 
+function testBuildsKlineEventDensity() {
+  const density = buildKlineEventDensity({
+    visibleCount: 6,
+    plotLeft: 100,
+    plotRight: 600,
+    baselineY: 720,
+    maxHeight: 24,
+    technicalEvents: [
+      { key: "tech-1", type: "ma-golden-cross", label: "MA金叉", tone: "good", index: 1, date: "2026-05-02", dateLabel: "05-02", price: 10.8 },
+      { key: "tech-2", type: "macd-death-cross", label: "MACD死叉", tone: "risk", index: 2, date: "2026-05-03", dateLabel: "05-03", price: 11.2 },
+    ],
+    volumeEvents: [
+      { key: "vol-2", type: "volume-surge-up", label: "放量上攻", tone: "good", index: 2, date: "2026-05-03", dateLabel: "05-03", price: 11, volume: 300, averageVolume: 120, volumeRatio: 2.5, changePct: 2.2 },
+    ],
+    patterns: [
+      { key: "pattern-2", type: "doji", label: "十字星", tone: "neutral", index: 2, date: "2026-05-03", dateLabel: "05-03", price: 11 },
+    ],
+    gaps: [
+      { key: "gap-4", direction: "down", startIndex: 3, endIndex: 4, startDate: "2026-05-04", endDate: "2026-05-05", startLabel: "05-04", endLabel: "05-05", lowPrice: 9.7, highPrice: 10.2, gapPct: 3.4 },
+    ],
+  });
+
+  assertEqual(density.length, 3, "event density groups events by candle index");
+  assertEqual(density.map((bar) => `${bar.index}:${bar.count}:${bar.tone}`).join(","), "1:1:good,2:3:mixed,4:1:risk", "event density exposes counts and mixed tone");
+  assertApprox(density[0]?.x, 200, 0.001, "event density maps index to chart x");
+  assertEqual((density[1]?.height || 0) > (density[0]?.height || 0), true, "larger event clusters get taller bars");
+  assertEqual(density[1]?.label, "3个事件", "event density labels cluster count");
+  assertOk(density[1]?.detail.includes("MACD死叉"), "event density detail includes event labels");
+  assertOk(density[2]?.detail.includes("向下缺口"), "event density includes gap direction labels");
+}
+
 testBuildsVisibleVolumeDistribution();
 testBuildsLimitPriceLinesFromFinitePrices();
 testMapsClientPointToSplitChartViewBox();
@@ -1640,3 +1672,4 @@ testPriceStructureTrendLinesNeedTwoPivots();
 testBuildsPriceGapAnnotations();
 testPriceGapAnnotationsRespectThreshold();
 testBuildsKlineEventSummary();
+testBuildsKlineEventDensity();

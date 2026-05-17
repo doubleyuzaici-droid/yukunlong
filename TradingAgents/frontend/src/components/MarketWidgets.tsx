@@ -28,6 +28,7 @@ import {
   buildChartLayerSummary,
   buildIndicatorStateSummary,
   buildIchimokuIndicators,
+  buildKlineEventDensity,
   buildKlineEventSummary,
   buildKlineRangeNavigator,
   buildKlineHoverMetrics,
@@ -2246,6 +2247,13 @@ export function TradingSignalKlinePanel({
           ))}
           <line className="macd-zero-line" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.macdZeroY} y2={chart.macdZeroY} />
           <line className="signal-lane" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.signalLaneY} y2={chart.signalLaneY} />
+          {chart.eventDensityBars.map((bar) => (
+            <g className={`kline-event-density-bar ${bar.tone}`} key={bar.key}>
+              <rect height={bar.height} rx="1.6" width={bar.width} x={bar.x - bar.width / 2} y={bar.y} />
+              {bar.count > 1 && <text x={bar.x} y={bar.y - 3}>{bar.count}</text>}
+              <title>{bar.label} · {bar.detail}</title>
+            </g>
+          ))}
           {chartPrefs.levels && chart.latestPriceLine && (
             <g className={`latest-price-line ${chart.latestPriceLine.tone}`}>
               <line x1={chart.plotLeft} x2={chart.plotRight} y1={chart.latestPriceLine.y} y2={chart.latestPriceLine.y} />
@@ -4144,6 +4152,7 @@ function buildTradingSignalGeometry(
       technicalIndicatorEvents: [],
       technicalDivergenceEvents: [],
       volumeSignalEvents: [],
+      eventDensityBars: [],
       fundFlowOverlay: buildFundFlowOverlayGeometry([], [], { top: VOLUME_TOP, bottom: VOLUME_BOTTOM }),
       indicatorThresholdGuides: [],
       indicatorThresholdZones: [],
@@ -5366,6 +5375,19 @@ function buildTradingSignalGeometry(
     x: candle.x,
     label: candle.periodLabel || candle.date,
   })));
+  const eventDensityBars = buildKlineEventDensity({
+    baselineY: SIGNAL_LANE_Y - 4,
+    divergenceEvents: technicalDivergenceEvents,
+    gaps: priceGaps,
+    maxBarWidth: Math.max(3, candleWidth * 0.72),
+    maxHeight: 22,
+    patterns: candlestickPatterns,
+    plotLeft: PLOT_LEFT,
+    plotRight: PLOT_RIGHT,
+    technicalEvents: technicalIndicatorEvents,
+    visibleCount: visible.length,
+    volumeEvents: volumeSignalEvents,
+  });
 
   return {
     candles,
@@ -5377,6 +5399,7 @@ function buildTradingSignalGeometry(
     technicalIndicatorEvents,
     technicalDivergenceEvents,
     volumeSignalEvents,
+    eventDensityBars,
     fundFlowOverlay,
     trendRegimeBands,
     fibonacciLevels,

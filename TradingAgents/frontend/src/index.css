@@ -3007,6 +3007,43 @@ label {
   text-anchor: end;
 }
 
+.kline-event-density-bar {
+  pointer-events: none;
+}
+
+.kline-event-density-bar rect {
+  fill: rgba(148, 163, 184, 0.34);
+  stroke: rgba(8, 12, 17, 0.64);
+  stroke-width: 0.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.kline-event-density-bar text {
+  fill: rgba(238, 242, 247, 0.62) !important;
+  font-size: 7px !important;
+  font-weight: 900;
+  paint-order: stroke;
+  stroke: rgba(5, 10, 16, 0.82);
+  stroke-width: 1.2px;
+  text-anchor: middle;
+}
+
+.kline-event-density-bar.good rect {
+  fill: rgba(94, 234, 212, 0.48);
+}
+
+.kline-event-density-bar.risk rect {
+  fill: rgba(255, 140, 132, 0.48);
+}
+
+.kline-event-density-bar.neutral rect {
+  fill: rgba(143, 179, 255, 0.42);
+}
+
+.kline-event-density-bar.mixed rect {
+  fill: rgba(244, 176, 0, 0.5);
+}
+
 .price-history-chart polyline {
   fill: none;
   stroke: #d9f8df;
