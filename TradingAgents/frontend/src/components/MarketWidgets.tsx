@@ -23,6 +23,7 @@ import {
   buildIndicatorAxisTicks,
   buildIndicatorSectionLayout,
   buildIndicatorThresholdGuides,
+  buildIndicatorValueLabels,
   buildIchimokuIndicators,
   buildKlineEventSummary,
   buildKlineHoverMetrics,
@@ -64,6 +65,8 @@ import {
   selectIndicatorReadoutSnapshot,
   type IndicatorAxisTick,
   type IndicatorPanelReadoutItem,
+  type IndicatorValueLabel,
+  type IndicatorValueLabelDefinition,
   type KlineRenderMode,
   type ManualDrawing,
   type ManualDrawingAnchor,
@@ -1449,6 +1452,28 @@ export function TradingSignalKlinePanel({
     }),
     { bottom: chart.priceBottom, minGap: 19, top: chart.priceTop },
   );
+  const visibleIndicatorValueLabels = buildIndicatorValueLabels(
+    (chart.indicatorValueLabels || []).filter((label: IndicatorValueLabelDefinition) => {
+      if (label.group === "volume") return chartPrefs.volume;
+      if (label.group === "macd") return chartPrefs.macd;
+      if (label.group === "rsi") return chartPrefs.rsi;
+      if (label.group === "kdj") return chartPrefs.kdj;
+      if (label.group === "advanced") return chartPrefs.advanced;
+      if (label.group === "momentum") return chartPrefs.momentum;
+      if (label.group === "biasDma") return chartPrefs.biasDma;
+      if (label.group === "volumeMomentum") return chartPrefs.volumeMomentum;
+      if (label.group === "volatility") return chartPrefs.volatility;
+      return true;
+    }),
+    {
+      maxPerSection: chartPrefs.subCharts ? 7 : 10,
+      minGap: 13,
+      sections: Object.fromEntries(chart.sections.map((section: { key: string; top: number; bottom: number }) => [
+        section.key,
+        { top: section.top, bottom: section.bottom },
+      ])),
+    },
+  );
   const measuredRange = useMemo(
     () => buildMeasureRange(
       chart.candles,
@@ -2131,6 +2156,16 @@ export function TradingSignalKlinePanel({
                 {label.label} {formatChartAxisPrice(chart, label.price)}
               </text>
               <title>{label.label} {formatChartAxisPrice(chart, label.price)}</title>
+            </g>
+          ))}
+          {visibleIndicatorValueLabels.map((label) => (
+            <g className={`indicator-value-label ${label.section} ${label.group || "indicator"} ${label.tone}`} key={label.key}>
+              <line x1={chart.plotRight + 1} x2={chart.plotRight + 9} y1={label.y} y2={label.labelY} />
+              <rect height="16" rx="4" width="64" x={chart.plotRight + 8} y={label.labelY - 8} />
+              <text x={chart.plotRight + 12} y={label.labelY + 3}>
+                {label.label} {formatIndicatorValueLabel(label)}
+              </text>
+              <title>{label.label} {formatIndicatorValueLabel(label)}</title>
             </g>
           ))}
           {visibleIndicatorThresholdGuides.map((guide) => (
@@ -3983,6 +4018,7 @@ function buildTradingSignalGeometry(
       fundFlowOverlay: buildFundFlowOverlayGeometry([], [], { top: VOLUME_TOP, bottom: VOLUME_BOTTOM }),
       indicatorThresholdGuides: [],
       overlayPriceLabels: [],
+      indicatorValueLabels: [],
       bollBandArea: "",
       maTrendRibbons: [],
       ichimokuCloudSegments: [],
@@ -4855,6 +4891,66 @@ function buildTradingSignalGeometry(
     minGap: 19,
     top: PRICE_TOP,
   });
+  const extraIndicatorSection = (section: "advanced" | "momentum" | "volatility") =>
+    splitSubCharts ? section : "oscillator";
+  const indicatorValueLabel = (
+    key: string,
+    section: string,
+    group: string,
+    label: string,
+    value: number | null | undefined,
+    y: number | null,
+    tone: "good" | "risk" | "neutral" | "info",
+    priority: number,
+    options: { precision?: number; signed?: boolean; compact?: boolean } = {},
+  ) => ({
+    key,
+    section,
+    group,
+    label,
+    value,
+    y,
+    tone,
+    priority,
+    ...options,
+  });
+  const indicatorValueLabelSections = Object.fromEntries(sections.map((section) => [
+    section.key,
+    { top: section.top, bottom: section.bottom },
+  ]));
+  const indicatorValueLabels = buildIndicatorValueLabels([
+    indicatorValueLabel("vol", "volume", "volume", "VOL", latestIndicator?.volume, latestIndicator ? volumeY(latestIndicator.volume) : null, "neutral", 10, { compact: true }),
+    indicatorValueLabel("vma5", "volume", "volume", "VMA5", latestIndicator?.volumeMa5, latestIndicator ? volumeY(latestIndicator.volumeMa5) : null, "info", 11, { compact: true }),
+    indicatorValueLabel("vma10", "volume", "volume", "VMA10", latestIndicator?.volumeMa10, latestIndicator ? volumeY(latestIndicator.volumeMa10) : null, "info", 12, { compact: true }),
+    indicatorValueLabel("vma20", "volume", "volume", "VMA20", latestIndicator?.volumeMa20, latestIndicator ? volumeY(latestIndicator.volumeMa20) : null, "info", 13, { compact: true }),
+    indicatorValueLabel("dif", "macd", "macd", "DIF", latestIndicator?.dif, latestIndicator ? macdY(latestIndicator.dif ?? 0) : null, "info", 20, { precision: 2, signed: true }),
+    indicatorValueLabel("dea", "macd", "macd", "DEA", latestIndicator?.dea, latestIndicator ? macdY(latestIndicator.dea ?? 0) : null, "info", 21, { precision: 2, signed: true }),
+    indicatorValueLabel("macd", "macd", "macd", "MACD", latestIndicator?.macd, latestIndicator ? macdY(latestIndicator.macd ?? 0) : null, (latestIndicator?.macd ?? 0) >= 0 ? "good" : "risk", 22, { precision: 2, signed: true }),
+    indicatorValueLabel("rsi", "oscillator", "rsi", "RSI", latestIndicator?.rsi14, latestIndicator ? rsiY(latestIndicator.rsi14) : null, (latestIndicator?.rsi14 ?? 50) >= 70 ? "risk" : (latestIndicator?.rsi14 ?? 50) <= 30 ? "good" : "neutral", 30, { precision: 1 }),
+    indicatorValueLabel("kdj-k", "oscillator", "kdj", "K", latestIndicator?.kdjK, latestIndicator ? rsiY(latestIndicator.kdjK) : null, "info", 31, { precision: 1 }),
+    indicatorValueLabel("kdj-d", "oscillator", "kdj", "D", latestIndicator?.kdjD, latestIndicator ? rsiY(latestIndicator.kdjD) : null, "info", 32, { precision: 1 }),
+    indicatorValueLabel("kdj-j", "oscillator", "kdj", "J", latestIndicator?.kdjJ, latestIndicator ? rsiY(latestIndicator.kdjJ) : null, "info", 33, { precision: 1 }),
+    indicatorValueLabel("cr", extraIndicatorSection("advanced"), "advanced", "CR", latestIndicator?.cr, latestIndicator ? advancedY(latestIndicator.cr) : null, "info", 40, { precision: 1 }),
+    indicatorValueLabel("ar", extraIndicatorSection("advanced"), "advanced", "AR", latestIndicator?.ar, latestIndicator ? advancedY(latestIndicator.ar) : null, "info", 41, { precision: 1 }),
+    indicatorValueLabel("br", extraIndicatorSection("advanced"), "advanced", "BR", latestIndicator?.br, latestIndicator ? advancedY(latestIndicator.br) : null, "info", 42, { precision: 1 }),
+    indicatorValueLabel("emv", extraIndicatorSection("advanced"), "advanced", "EMV", latestIndicator?.emv, latestIndicator ? emvY(latestIndicator.emv) : null, "neutral", 43, { precision: 4, signed: true }),
+    indicatorValueLabel("mfi", extraIndicatorSection("advanced"), "volumeMomentum", "MFI", latestIndicator?.mfi, latestIndicator ? moneyFlowY(latestIndicator.mfi) : null, (latestIndicator?.mfi ?? 50) >= 80 ? "risk" : (latestIndicator?.mfi ?? 50) <= 20 ? "good" : "neutral", 50, { precision: 1 }),
+    indicatorValueLabel("vr", extraIndicatorSection("advanced"), "volumeMomentum", "VR", latestIndicator?.vr, latestIndicator ? moneyFlowY(latestIndicator.vr) : null, "info", 51, { precision: 1 }),
+    indicatorValueLabel("pdi", extraIndicatorSection("momentum"), "momentum", "+DI", latestIndicator?.pdi, latestIndicator ? dmiY(latestIndicator.pdi) : null, "good", 60, { precision: 1 }),
+    indicatorValueLabel("mdi", extraIndicatorSection("momentum"), "momentum", "-DI", latestIndicator?.mdi, latestIndicator ? dmiY(latestIndicator.mdi) : null, "risk", 61, { precision: 1 }),
+    indicatorValueLabel("adx", extraIndicatorSection("momentum"), "momentum", "ADX", latestIndicator?.adx, latestIndicator ? dmiY(latestIndicator.adx) : null, "info", 62, { precision: 1 }),
+    indicatorValueLabel("cci", extraIndicatorSection("momentum"), "momentum", "CCI", latestIndicator?.cci, latestIndicator ? momentumY(latestIndicator.cci) : null, (latestIndicator?.cci ?? 0) >= 100 ? "risk" : (latestIndicator?.cci ?? 0) <= -100 ? "good" : "neutral", 63, { precision: 1, signed: true }),
+    indicatorValueLabel("bias", extraIndicatorSection("momentum"), "biasDma", "BIAS", latestIndicator?.bias, latestIndicator ? biasY(latestIndicator.bias) : null, "neutral", 70, { precision: 2, signed: true }),
+    indicatorValueLabel("dma", extraIndicatorSection("momentum"), "biasDma", "DMA", latestIndicator?.dma, latestIndicator ? dmaY(latestIndicator.dma) : null, "info", 71, { precision: 2, signed: true }),
+    indicatorValueLabel("roc", extraIndicatorSection("momentum"), "volumeMomentum", "ROC", latestIndicator?.roc, latestIndicator ? rocY(latestIndicator.roc) : null, (latestIndicator?.roc ?? 0) >= 0 ? "good" : "risk", 80, { precision: 2, signed: true }),
+    indicatorValueLabel("trix", extraIndicatorSection("momentum"), "volumeMomentum", "TRIX", latestIndicator?.trix, latestIndicator ? rocY(latestIndicator.trix) : null, "info", 81, { precision: 2, signed: true }),
+    indicatorValueLabel("atr", extraIndicatorSection("volatility"), "volatility", "ATR", latestIndicator?.atr, latestIndicator ? atrY(latestIndicator.atr) : null, "neutral", 90, { precision: 2 }),
+    indicatorValueLabel("obv", extraIndicatorSection("volatility"), "volatility", "OBV", latestIndicator?.obv, latestIndicator ? obvY(latestIndicator.obv) : null, "info", 91, { compact: true, signed: true }),
+  ], {
+    maxPerSection: splitSubCharts ? 7 : 10,
+    minGap: 13,
+    sections: indicatorValueLabelSections,
+  });
   const macdBars = macdValues.map((value, index) => {
     const y = macdY(value);
     return {
@@ -5014,6 +5110,7 @@ function buildTradingSignalGeometry(
     indicatorAxisTicks,
     indicatorThresholdGuides,
     overlayPriceLabels,
+    indicatorValueLabels,
     timeTicks,
     latestIndicators: candles[candles.length - 1]?.indicators || null,
     prevCloseY: isFiniteNumber(candles[candles.length - 1]?.prevClose)
@@ -5216,6 +5313,13 @@ function formatChartAxisValue(chart: Record<string, any>, value?: number | null)
 
 function formatChartAxisPrice(chart: Record<string, any>, price?: number | null) {
   return formatChartAxisValue(chart, chartAxisValueFromPrice(chart, price));
+}
+
+function formatIndicatorValueLabel(label: IndicatorValueLabel) {
+  if (label.compact) return formatCompactNumber(label.value);
+  return label.signed
+    ? formatSignedNumber(label.value, label.precision ?? 2)
+    : formatNumber(label.value, label.precision ?? 2);
 }
 
 function formatIndicatorPanelReadout(item: IndicatorPanelReadoutItem) {

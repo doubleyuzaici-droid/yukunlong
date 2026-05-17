@@ -4947,6 +4947,57 @@ label {
   fill: rgba(255, 190, 184, 0.96) !important;
 }
 
+.indicator-value-label {
+  pointer-events: none;
+}
+
+.indicator-value-label line {
+  stroke: rgba(203, 213, 225, 0.3);
+  stroke-width: 0.65;
+  vector-effect: non-scaling-stroke;
+}
+
+.indicator-value-label rect {
+  fill: rgba(8, 12, 17, 0.9);
+  stroke: rgba(148, 163, 184, 0.32);
+  stroke-width: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+
+.indicator-value-label text {
+  fill: rgba(226, 232, 240, 0.92) !important;
+  font-size: 8.1px !important;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(5, 10, 16, 0.82);
+  stroke-width: 1.15px;
+}
+
+.indicator-value-label.info line,
+.indicator-value-label.info rect {
+  stroke: rgba(143, 179, 255, 0.56);
+}
+
+.indicator-value-label.good line,
+.indicator-value-label.good rect {
+  stroke: rgba(126, 224, 163, 0.58);
+}
+
+.indicator-value-label.risk line,
+.indicator-value-label.risk rect {
+  stroke: rgba(255, 140, 132, 0.6);
+}
+
+.indicator-value-label.good text {
+  fill: rgba(174, 246, 202, 0.94) !important;
+}
+
+.indicator-value-label.risk text {
+  fill: rgba(255, 190, 184, 0.94) !important;
+}
+
 .candle-chart .ma5 {
   stroke: rgba(238, 242, 247, 0.56);
   stroke-width: 1;

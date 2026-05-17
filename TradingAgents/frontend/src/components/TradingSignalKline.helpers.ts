@@ -882,6 +882,37 @@ export interface OverlayPriceLabel {
   priority?: number;
 }
 
+export type IndicatorValueLabelTone = "good" | "risk" | "neutral" | "info";
+
+export interface IndicatorValueLabelDefinition {
+  key: string;
+  section: string;
+  group?: string;
+  label: string;
+  value?: number | null;
+  y?: number | null;
+  tone?: IndicatorValueLabelTone;
+  priority?: number;
+  precision?: number;
+  signed?: boolean;
+  compact?: boolean;
+}
+
+export interface IndicatorValueLabel {
+  key: string;
+  section: string;
+  group?: string;
+  label: string;
+  value: number;
+  y: number;
+  labelY: number;
+  tone: IndicatorValueLabelTone;
+  priority?: number;
+  precision?: number;
+  signed?: boolean;
+  compact?: boolean;
+}
+
 export interface IndicatorBandAreaPoint {
   x?: number | null;
   upperY?: number | null;
@@ -1140,6 +1171,53 @@ export function buildOverlayPriceLabels(
   }
 
   return candidates.map(({ sourceIndex: _sourceIndex, ...label }) => label);
+}
+
+export function buildIndicatorValueLabels(
+  definitions: IndicatorValueLabelDefinition[],
+  options: { sections: Record<string, IndicatorChartBand | undefined>; minGap?: number; maxPerSection?: number },
+): IndicatorValueLabel[] {
+  const sectionOrder = Object.keys(options.sections);
+  return sectionOrder.flatMap((section) => {
+    const bounds = options.sections[section];
+    if (!bounds) return [];
+    const sectionDefinitions = definitions.filter((definition) => definition.section === section);
+    const overlayLabels = buildOverlayPriceLabels(
+      sectionDefinitions.map((definition) => ({
+        key: definition.key,
+        group: definition.group,
+        label: definition.label,
+        price: definition.value,
+        y: definition.y,
+        tone: definition.tone,
+        priority: definition.priority,
+      })),
+      {
+        bottom: bounds.bottom,
+        maxLabels: options.maxPerSection,
+        minGap: options.minGap ?? 14,
+        top: bounds.top,
+      },
+    );
+    const byKey = new Map(sectionDefinitions.map((definition) => [definition.key, definition]));
+    return overlayLabels.map((label) => {
+      const definition = byKey.get(label.key);
+      return {
+        key: label.key,
+        section,
+        group: label.group,
+        label: label.label,
+        value: label.price,
+        y: label.y,
+        labelY: label.labelY,
+        tone: label.tone,
+        priority: label.priority,
+        precision: definition?.precision,
+        signed: definition?.signed,
+        compact: definition?.compact,
+      };
+    });
+  });
 }
 
 export function buildIndicatorBandAreaPath(points: IndicatorBandAreaPoint[]): string {

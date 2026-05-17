@@ -11,6 +11,7 @@ import {
   buildIndicatorThresholdGuides,
   buildIndicatorBandAreaPath,
   buildOverlayPriceLabels,
+  buildIndicatorValueLabels,
   buildKlineEventSummary,
   buildTrendRibbonAreaSegments,
   buildIchimokuIndicators,
@@ -839,6 +840,31 @@ function testBuildsOverlayPriceLabelsWithoutOverlap() {
   assertEqual(labels[0]!.tone, "info", "tone preserved");
 }
 
+function testBuildsIndicatorValueLabelsBySection() {
+  const labels = buildIndicatorValueLabels(
+    [
+      { key: "dif", section: "macd", group: "macd", label: "DIF", value: 2.12, y: 116, tone: "good", priority: 1, precision: 2 },
+      { key: "dea", section: "macd", group: "macd", label: "DEA", value: 2.02, y: 120, tone: "neutral", priority: 2, precision: 2 },
+      { key: "empty", section: "macd", group: "macd", label: "BAD", value: null, y: 122 },
+      { key: "rsi", section: "oscillator", group: "rsi", label: "RSI", value: 72.4, y: 214, tone: "risk", priority: 1, precision: 1 },
+      { key: "unknown", section: "missing", group: "macd", label: "X", value: 1, y: 118 },
+    ],
+    {
+      sections: {
+        macd: { top: 100, bottom: 150 },
+        oscillator: { top: 200, bottom: 242 },
+      },
+      minGap: 14,
+    },
+  );
+
+  assertEqual(labels.length, 3, "indicator value labels omit missing values and unknown sections");
+  assertEqual(labels.map((label) => label.key).join(","), "dif,dea,rsi", "indicator labels keep section and visual order");
+  assertOk(labels[1]!.labelY - labels[0]!.labelY >= 14, "labels in the same indicator section avoid overlap");
+  assertEqual(labels[2]!.section, "oscillator", "labels keep their target section");
+  assertEqual(labels[2]!.precision, 1, "formatting metadata is preserved for rendering");
+}
+
 function testBuildsTrendRibbonAreaSegments() {
   const segments = buildTrendRibbonAreaSegments([
     { x: 10, fastY: 30, slowY: 58, fastValue: 12, slowValue: 10 },
@@ -1342,6 +1368,7 @@ testBuildsCompactIndicatorAxisTickLabels();
 testBuildsIndicatorThresholdGuides();
 testBuildsIndicatorBandAreaPath();
 testBuildsOverlayPriceLabelsWithoutOverlap();
+testBuildsIndicatorValueLabelsBySection();
 testBuildsTrendRibbonAreaSegments();
 testBuildsIchimokuIndicators();
 testBuildsSplitIndicatorPanelReadouts();
