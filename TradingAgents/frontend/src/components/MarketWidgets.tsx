@@ -18,6 +18,7 @@ import {
   buildCandlestickPatternAnnotations,
   buildFibonacciRetracementLevels,
   buildFundFlowOverlayGeometry,
+  buildIndicatorBandAreaPath,
   buildIndicatorPanelReadouts,
   buildIndicatorAxisTicks,
   buildIndicatorSectionLayout,
@@ -35,6 +36,7 @@ import {
   buildTechnicalDivergenceAnnotations,
   buildTechnicalIndicatorAnnotations,
   buildTrendOverlayIndicators,
+  buildTrendRibbonAreaSegments,
   buildTrendRegimeBands,
   buildVisiblePriceExtrema,
   buildVolumeProfileLevelAnnotations,
@@ -2209,6 +2211,12 @@ export function TradingSignalKlinePanel({
               {tick.label}
             </text>
           ))}
+          {chartPrefs.boll && chart.bollBandArea && (
+            <path className="boll-band-area" d={chart.bollBandArea} />
+          )}
+          {chartPrefs.ma && chart.maTrendRibbons.map((ribbon) => (
+            <path className={`ma-trend-ribbon ${ribbon.tone}`} d={ribbon.path} key={ribbon.key} />
+          ))}
           {chartPrefs.macd && chart.macdBars.map((bar) => (
             <rect
               className={`macd-bar ${bar.value >= 0 ? "positive" : "negative"}`}
@@ -3914,6 +3922,8 @@ function buildTradingSignalGeometry(
       volumeSignalEvents: [],
       fundFlowOverlay: buildFundFlowOverlayGeometry([], [], { top: VOLUME_TOP, bottom: VOLUME_BOTTOM }),
       indicatorThresholdGuides: [],
+      bollBandArea: "",
+      maTrendRibbons: [],
       trendRegimeBands: [],
       fibonacciLevels: [],
       supportResistanceLevels: [],
@@ -4704,6 +4714,18 @@ function buildTradingSignalGeometry(
   const volumeMa5Line = indicatorPoints(volumeMa5Values, volumeY);
   const volumeMa10Line = indicatorPoints(volumeMa10Values, volumeY);
   const volumeMa20Line = indicatorPoints(volumeMa20Values, volumeY);
+  const bollBandArea = buildIndicatorBandAreaPath(candles.map((candle, index) => ({
+    x: candle.x,
+    upperY: isFiniteNumber(bollValues[index]?.upper) ? yOf(bollValues[index]?.upper) : null,
+    lowerY: isFiniteNumber(bollValues[index]?.lower) ? yOf(bollValues[index]?.lower) : null,
+  })));
+  const maTrendRibbons = buildTrendRibbonAreaSegments(candles.map((candle) => ({
+    x: candle.x,
+    fastY: isFiniteNumber(candle.ma20) ? yOf(candle.ma20) : null,
+    slowY: isFiniteNumber(candle.ma60) ? yOf(candle.ma60) : null,
+    fastValue: candle.ma20,
+    slowValue: candle.ma60,
+  })));
   const macdBars = macdValues.map((value, index) => {
     const y = macdY(value);
     return {
@@ -4813,6 +4835,8 @@ function buildTradingSignalGeometry(
     vwapLine: indicatorPoints(vwapValues, yOf),
     sarLine: indicatorPoints(sarValues, yOf),
     bbiLine: indicatorPoints(bbiValues, yOf),
+    bollBandArea,
+    maTrendRibbons,
     bollUpper: bollLine("upper"),
     bollMid: bollLine("mid"),
     bollLower: bollLine("lower"),

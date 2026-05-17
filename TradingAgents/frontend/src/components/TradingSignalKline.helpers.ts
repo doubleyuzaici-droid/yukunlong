@@ -834,6 +834,28 @@ export interface IndicatorThresholdGuide {
   tone: IndicatorThresholdGuideTone;
 }
 
+export interface IndicatorBandAreaPoint {
+  x?: number | null;
+  upperY?: number | null;
+  lowerY?: number | null;
+}
+
+export interface TrendRibbonAreaPoint {
+  x?: number | null;
+  fastY?: number | null;
+  slowY?: number | null;
+  fastValue?: number | null;
+  slowValue?: number | null;
+}
+
+export interface TrendRibbonAreaSegment {
+  key: string;
+  tone: "good" | "risk" | "neutral";
+  path: string;
+  startIndex: number;
+  endIndex: number;
+}
+
 export function buildLimitPriceLines(
   bars: LimitPriceBarLike[],
   yOf: (price: number) => number | null | undefined,
@@ -981,6 +1003,66 @@ export function buildIndicatorThresholdGuides(
       y: clampNumber(y, top, bottom),
       labelY: clampNumber(y - 4, top + 12, bottom - 4),
       tone: definition.tone ?? "neutral",
+    }];
+  });
+}
+
+export function buildIndicatorBandAreaPath(points: IndicatorBandAreaPoint[]): string {
+  const usable = points.flatMap((point) =>
+    isFiniteNumber(point.x) && isFiniteNumber(point.upperY) && isFiniteNumber(point.lowerY)
+      ? [{ x: point.x, upperY: point.upperY, lowerY: point.lowerY }]
+      : [],
+  );
+  if (usable.length < 2) return "";
+  const upper = usable.map((point, index) =>
+    `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)},${point.upperY.toFixed(2)}`,
+  );
+  const lower = [...usable].reverse().map((point) =>
+    `L ${point.x.toFixed(2)},${point.lowerY.toFixed(2)}`,
+  );
+  return `${upper.concat(lower).join(" ")} Z`;
+}
+
+export function buildTrendRibbonAreaSegments(points: TrendRibbonAreaPoint[]): TrendRibbonAreaSegment[] {
+  const segments: Array<{ tone: TrendRibbonAreaSegment["tone"]; startIndex: number; points: IndicatorBandAreaPoint[] }> = [];
+  points.forEach((point, index) => {
+    if (
+      !isFiniteNumber(point.x) ||
+      !isFiniteNumber(point.fastY) ||
+      !isFiniteNumber(point.slowY) ||
+      !isFiniteNumber(point.fastValue) ||
+      !isFiniteNumber(point.slowValue)
+    ) {
+      return;
+    }
+    const tone = point.fastValue > point.slowValue
+      ? "good"
+      : point.fastValue < point.slowValue
+        ? "risk"
+        : "neutral";
+    const bandPoint = {
+      x: point.x,
+      upperY: Math.min(point.fastY, point.slowY),
+      lowerY: Math.max(point.fastY, point.slowY),
+    };
+    const current = segments[segments.length - 1];
+    if (!current || current.tone !== tone || current.startIndex + current.points.length !== index) {
+      segments.push({ tone, startIndex: index, points: [bandPoint] });
+      return;
+    }
+    current.points.push(bandPoint);
+  });
+
+  return segments.flatMap((segment) => {
+    const path = buildIndicatorBandAreaPath(segment.points);
+    if (!path) return [];
+    const endIndex = segment.startIndex + segment.points.length - 1;
+    return [{
+      key: `ma-ribbon-${segment.startIndex}-${endIndex}-${segment.tone}`,
+      tone: segment.tone,
+      path,
+      startIndex: segment.startIndex,
+      endIndex,
     }];
   });
 }

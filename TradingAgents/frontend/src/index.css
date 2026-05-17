@@ -5041,6 +5041,14 @@ label {
   vector-effect: non-scaling-stroke;
 }
 
+.boll-band-area {
+  fill: rgba(126, 224, 163, 0.08);
+  pointer-events: none;
+  stroke: rgba(126, 224, 163, 0.12);
+  stroke-width: 0.5;
+  vector-effect: non-scaling-stroke;
+}
+
 .boll-line.upper,
 .boll-line.lower {
   stroke: rgba(126, 224, 163, 0.48);
@@ -5049,6 +5057,24 @@ label {
 
 .boll-line.mid {
   stroke: rgba(126, 224, 163, 0.72);
+}
+
+.ma-trend-ribbon {
+  opacity: 0.22;
+  pointer-events: none;
+  stroke-width: 0;
+}
+
+.ma-trend-ribbon.good {
+  fill: #7ee0a3;
+}
+
+.ma-trend-ribbon.risk {
+  fill: #ff8c84;
+}
+
+.ma-trend-ribbon.neutral {
+  fill: rgba(238, 242, 247, 0.42);
 }
 
 .relative-return-layer line {

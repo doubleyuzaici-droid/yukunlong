@@ -9,6 +9,8 @@ import {
   buildIndicatorPanelReadouts,
   buildIndicatorAxisTicks,
   buildIndicatorThresholdGuides,
+  buildIndicatorBandAreaPath,
+  buildTrendRibbonAreaSegments,
   buildFundFlowOverlayGeometry,
   buildLimitPriceLines,
   buildKlineHoverMetrics,
@@ -801,6 +803,36 @@ function testBuildsIndicatorThresholdGuides() {
   assertEqual(guides[0]?.tone, "risk", "threshold guide preserves tone for styling");
 }
 
+function testBuildsIndicatorBandAreaPath() {
+  const path = buildIndicatorBandAreaPath([
+    { x: 10, upperY: 20, lowerY: 80 },
+    { x: 20, upperY: 25, lowerY: 78 },
+    { x: 30, upperY: 22, lowerY: 70 },
+  ]);
+
+  assertEqual(
+    path,
+    "M 10.00,20.00 L 20.00,25.00 L 30.00,22.00 L 30.00,70.00 L 20.00,78.00 L 10.00,80.00 Z",
+    "indicator band area stitches upper points with reversed lower points",
+  );
+}
+
+function testBuildsTrendRibbonAreaSegments() {
+  const segments = buildTrendRibbonAreaSegments([
+    { x: 10, fastY: 30, slowY: 58, fastValue: 12, slowValue: 10 },
+    { x: 20, fastY: 32, slowY: 56, fastValue: 13, slowValue: 11 },
+    { x: 30, fastY: 60, slowY: 38, fastValue: 9, slowValue: 11 },
+    { x: 40, fastY: 62, slowY: 36, fastValue: 8, slowValue: 12 },
+  ]);
+
+  assertEqual(segments.length, 2, "trend ribbon splits when fast and slow averages cross");
+  assertEqual(segments[0]?.tone, "good", "fast average above slow average marks a bullish ribbon");
+  assertEqual(segments[0]?.startIndex, 0, "first segment tracks original start index");
+  assertEqual(segments[0]?.endIndex, 1, "first segment tracks original end index");
+  assertEqual(segments[1]?.tone, "risk", "fast average below slow average marks a bearish ribbon");
+  assertOk(segments[1]?.path.includes("M 30.00,38.00"), "bearish segment uses the visual upper boundary first");
+}
+
 function testBuildsSplitIndicatorPanelReadouts() {
   const readouts = buildIndicatorPanelReadouts({
     close: 13.5,
@@ -1234,6 +1266,8 @@ testSplitIndicatorLayoutCreatesSeparateSubCharts();
 testBuildsIndicatorAxisTicks();
 testBuildsCompactIndicatorAxisTickLabels();
 testBuildsIndicatorThresholdGuides();
+testBuildsIndicatorBandAreaPath();
+testBuildsTrendRibbonAreaSegments();
 testBuildsSplitIndicatorPanelReadouts();
 testCompactIndicatorPanelReadoutsFoldExtraIndicators();
 testSelectsCursorIndicatorReadoutSnapshot();
