@@ -14,6 +14,7 @@ import {
   type KlineEvidenceEvent,
   type MarketAnalysisItem as OverviewItem,
   type MarketAnalysisOverviewModel as OverviewModel,
+  type MarketAnalysisTechnicalChart,
 } from "./SymbolWorkspacePage.helpers";
 import type { MarketContextPayload, MarketHistoryBar, MarketHistoryPayload, MarketQuote } from "../types/market";
 import {
@@ -945,10 +946,18 @@ function MarketAnalysisOverview({
       <div className="analysis-overview-grid secondary">
         <section className="analysis-overview-panel">
           <div className="section-subhead">
-            <h2>资金与因子图表</h2>
+            <h2>指标与资金图表</h2>
             <span className="muted">{context?.data_coverage.latest_factor_date || "待计算"}</span>
           </div>
           <div className="overview-chart-stack">
+            <div className="overview-chart-card">
+              <strong>技术指标走势</strong>
+              <div className="overview-technical-chart-grid">
+                {overview.technicalCharts.map((chart) => (
+                  <OverviewTechnicalChartCard chart={chart} key={chart.key} />
+                ))}
+              </div>
+            </div>
             <div className="overview-chart-card">
               <strong>20日收益因子</strong>
               <FactorSparkline rows={context?.factor_series || []} />
@@ -1558,6 +1567,58 @@ function MiniMetric({ label, value }: { label: string; value: string }) {
     <div className="mini-metric">
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function OverviewTechnicalChartCard({ chart }: { chart: MarketAnalysisTechnicalChart }) {
+  const points = chart.points.slice(-32);
+  const values = points.map((point) => point.value).filter(Number.isFinite);
+  const scaleMin = typeof chart.scaleMin === "number"
+    ? chart.scaleMin
+    : Math.min(0, ...values);
+  const scaleMax = typeof chart.scaleMax === "number"
+    ? chart.scaleMax
+    : Math.max(0, ...values);
+  const spread = scaleMax === scaleMin ? 1 : scaleMax - scaleMin;
+  const xOf = (index: number) => 5 + (index / Math.max(points.length - 1, 1)) * 110;
+  const yOf = (value: number) => 57 - ((value - scaleMin) / spread) * 48;
+  const linePoints = points.map((point, index) => `${xOf(index).toFixed(1)},${yOf(point.value).toFixed(1)}`).join(" ");
+  const zeroY = yOf(Math.max(scaleMin, Math.min(scaleMax, 0)));
+  return (
+    <div className={`overview-technical-chart ${chart.tone}`}>
+      <div className="overview-technical-chart-head">
+        <span>{chart.label}</span>
+        <strong>{chart.value}</strong>
+      </div>
+      <svg viewBox="0 0 120 64" preserveAspectRatio="none" aria-hidden="true">
+        {chart.key === "rsi" && (
+          <>
+            <line className="threshold risk" x1="4" x2="116" y1={yOf(70)} y2={yOf(70)} />
+            <line className="threshold good" x1="4" x2="116" y1={yOf(30)} y2={yOf(30)} />
+          </>
+        )}
+        <line className="baseline" x1="4" x2="116" y1={zeroY} y2={zeroY} />
+        {chart.key === "macd" ? points.map((point, index) => {
+          const x = xOf(index);
+          const y = yOf(point.value);
+          return (
+            <rect
+              className={point.value >= 0 ? "positive-bar" : "negative-bar"}
+              height={Math.max(1, Math.abs(zeroY - y))}
+              key={`${point.date}-${index}`}
+              rx="0.8"
+              width={Math.max(1.3, 78 / Math.max(points.length, 1))}
+              x={x - 1}
+              y={Math.min(zeroY, y)}
+            />
+          );
+        }) : (
+          <polyline points={linePoints} />
+        )}
+      </svg>
+      <em>{chart.detail}</em>
+      {points.length === 0 && <span className="empty-state">暂无指标序列</span>}
     </div>
   );
 }

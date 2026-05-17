@@ -1,6 +1,7 @@
 import {
   buildKlineEvidenceEvents,
   buildMarketAnalysisOverview,
+  buildOverviewTechnicalCharts,
   classifyIndicatorTone,
 } from "./SymbolWorkspacePage.helpers.js";
 
@@ -169,13 +170,19 @@ function testBuildsBullishOverview() {
   const trend = overview.indicators.find((item: any) => item.key === "trend");
   const macd = overview.indicators.find((item: any) => item.key === "macd");
   const chart = overview.chartFeatures.find((item: any) => item.key === "indicator_stack");
+  const macdChart = overview.technicalCharts.find((item: any) => item.key === "macd");
+  const rsiChart = overview.technicalCharts.find((item: any) => item.key === "rsi");
 
   assertOk(trend, "trend indicator exists");
   assertOk(macd, "macd indicator exists");
   assertOk(chart, "indicator stack chart feature exists");
+  assertOk(macdChart, "MACD overview technical chart exists");
+  assertOk(rsiChart, "RSI overview technical chart exists");
   assertEqual(trend?.tone, "opportunity", "MA alignment should be opportunity");
   assertEqual(macd?.tone, "opportunity", "positive trend momentum should be opportunity");
   assertIncludes(chart?.detail || "", "MA", "chart feature lists K-line indicators");
+  assertOk((macdChart?.points.length || 0) > 12, "MACD chart exposes compact point series");
+  assertOk((rsiChart?.points.length || 0) > 12, "RSI chart exposes compact point series");
 }
 
 function testMissingDataStaysVisible() {
@@ -190,6 +197,21 @@ function testMissingDataStaysVisible() {
 
   assertEqual(trend?.tone, "missing", "missing market data is not neutral");
   assertIncludes(overview.nextSteps[0], "同步", "missing overview gives sync next step");
+}
+
+function testBuildsOverviewTechnicalCharts() {
+  const charts = buildOverviewTechnicalCharts(sampleBars());
+  const distance = charts.find((item: any) => item.key === "ma-distance");
+  const macd = charts.find((item: any) => item.key === "macd");
+  const rsi = charts.find((item: any) => item.key === "rsi");
+  const missing = buildOverviewTechnicalCharts([]);
+
+  assertEqual(charts.length, 3, "overview exposes three technical mini charts");
+  assertOk(distance?.points.length, "MA distance chart has points");
+  assertOk(macd?.points.some((point: any) => point.tone === "good"), "MACD chart carries bar tones");
+  assertOk(rsi?.points.every((point: any) => point.value >= 0 && point.value <= 100), "RSI chart is bounded to oscillator scale");
+  assertEqual(missing[0]?.tone, "missing", "missing bars create explicit missing technical chart");
+  assertIncludes(missing[0]?.detail || "", "同步", "missing chart gives a data next step");
 }
 
 function testBuildsKlineEvidenceEvents() {
@@ -243,4 +265,5 @@ function testBuildsKlineEvidenceEvents() {
 testClassifiesIndicatorTones();
 testBuildsBullishOverview();
 testMissingDataStaysVisible();
+testBuildsOverviewTechnicalCharts();
 testBuildsKlineEvidenceEvents();

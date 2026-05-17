@@ -152,10 +152,28 @@ export interface MarketAnalysisItem {
   nextStep?: string;
 }
 
+export interface MarketAnalysisSparkPoint {
+  date: string;
+  value: number;
+  tone?: MarketAnalysisTone;
+}
+
+export interface MarketAnalysisTechnicalChart {
+  key: string;
+  label: string;
+  value: string;
+  detail: string;
+  tone: MarketAnalysisTone;
+  points: MarketAnalysisSparkPoint[];
+  scaleMin?: number;
+  scaleMax?: number;
+}
+
 export interface MarketAnalysisOverviewModel {
   radar: MarketAnalysisItem[];
   indicators: MarketAnalysisItem[];
   chartFeatures: MarketAnalysisItem[];
+  technicalCharts: MarketAnalysisTechnicalChart[];
   evidence: MarketAnalysisItem[];
   nextSteps: string[];
   summary: {
@@ -494,6 +512,7 @@ export function buildMarketAnalysisOverview({
         tone: "missing",
       },
     ],
+    technicalCharts: buildOverviewTechnicalCharts(bars),
     evidence: [
       {
         key: "strategy",
@@ -525,6 +544,95 @@ export function buildMarketAnalysisOverview({
       },
     ],
     nextSteps,
+  };
+}
+
+export function buildOverviewTechnicalCharts(bars: MarketBarLike[]): MarketAnalysisTechnicalChart[] {
+  const orderedBars = [...(bars || [])]
+    .filter((bar) => bar.date && typeof bar.close === "number" && Number.isFinite(bar.close))
+    .sort((left, right) => left.date.localeCompare(right.date));
+  if (orderedBars.length === 0) {
+    return [
+      missingTechnicalChart("ma-distance", "MA20 偏离"),
+      missingTechnicalChart("macd", "MACD 柱"),
+      missingTechnicalChart("rsi", "RSI14"),
+    ];
+  }
+
+  const closes = orderedBars.map((bar) => Number(bar.close));
+  const ma20 = movingAverageSeries(closes, 20);
+  const maDistancePoints = orderedBars.flatMap((bar, index) => {
+    const average = ma20[index];
+    const close = closes[index];
+    if (average == null || average === 0) return [];
+    const value = close / average - 1;
+    return [{ date: bar.date, value, tone: classifyIndicatorTone(value, 0, "higher") }];
+  }).slice(-32);
+
+  const ema12 = emaSeries(closes, 12);
+  const ema26 = emaSeries(closes, 26);
+  const difSeries = closes.map((_, index) => ema12[index] - ema26[index]);
+  const deaSeries = emaSeries(difSeries, 9);
+  const macdPoints = orderedBars.map((bar, index) => {
+    const value = (difSeries[index] - deaSeries[index]) * 2;
+    return {
+      date: bar.date,
+      value,
+      tone: value > 0 ? "good" as MarketAnalysisTone : value < 0 ? "risk" as MarketAnalysisTone : "neutral" as MarketAnalysisTone,
+    };
+  }).slice(-32);
+
+  const rsiPoints = rsiSeries(closes, 14).flatMap((value, index) => {
+    if (value == null) return [];
+    return [{
+      date: orderedBars[index].date,
+      value: Math.max(0, Math.min(100, value)),
+      tone: rsiIndicatorTone(value),
+    }];
+  }).slice(-32);
+
+  const latestDistance = maDistancePoints[maDistancePoints.length - 1]?.value ?? null;
+  const latestMacd = macdPoints[macdPoints.length - 1]?.value ?? null;
+  const latestRsi = rsiPoints[rsiPoints.length - 1]?.value ?? null;
+
+  return [
+    {
+      key: "ma-distance",
+      label: "MA20 偏离",
+      value: formatSignedPercent(latestDistance),
+      detail: maDistancePoints.length ? "价格相对 MA20 的偏离，辅助判断趋势惯性和回撤空间。" : "至少需要 20 根 K 线计算 MA20 偏离。",
+      tone: maDistancePoints.length ? classifyIndicatorTone(latestDistance, 0, "higher") : "missing",
+      points: maDistancePoints,
+    },
+    {
+      key: "macd",
+      label: "MACD 柱",
+      value: formatNumber(latestMacd, 2),
+      detail: "柱体高低观察动能扩散、收敛和潜在背离。",
+      tone: classifyIndicatorTone(latestMacd, 0, "higher"),
+      points: macdPoints,
+    },
+    {
+      key: "rsi",
+      label: "RSI14",
+      value: formatNumber(latestRsi, 1),
+      detail: "70/30 为常用强弱阈值，结合趋势和成交量确认。",
+      tone: rsiIndicatorTone(latestRsi),
+      points: rsiPoints,
+      scaleMin: 0,
+      scaleMax: 100,
+    },
+  ];
+}
+
+function missingTechnicalChart(key: string, label: string): MarketAnalysisTechnicalChart {
+  return {
+    key,
+    label,
+    value: "-",
+    detail: "同步历史行情和因子样本后显示技术指标走势。",
+    tone: "missing",
+    points: [],
   };
 }
 
@@ -661,6 +769,20 @@ function averageNumbers(values: number[]) {
   const usable = values.filter((value) => Number.isFinite(value));
   if (usable.length === 0) return null;
   return usable.reduce((sum, value) => sum + value, 0) / usable.length;
+}
+
+function movingAverageSeries(values: number[], period: number): (number | null)[] {
+  return values.map((_, index) => {
+    if (index + 1 < period) return null;
+    return averageNumbers(values.slice(index - period + 1, index + 1));
+  });
+}
+
+function rsiSeries(values: number[], period: number): (number | null)[] {
+  return values.map((_, index) => {
+    if (index < period) return null;
+    return rsiSnapshot(values.slice(0, index + 1), period);
+  });
 }
 
 function rsiSnapshot(values: number[], period: number) {
