@@ -206,14 +206,18 @@ function testBuildsOverviewTechnicalCharts() {
   const rsi = charts.find((item: any) => item.key === "rsi");
   const kdj = charts.find((item: any) => item.key === "kdj-j");
   const boll = charts.find((item: any) => item.key === "boll-position");
+  const atr = charts.find((item: any) => item.key === "atr-volatility");
+  const obv = charts.find((item: any) => item.key === "obv-trend");
   const missing = buildOverviewTechnicalCharts([]);
 
-  assertEqual(charts.length, 5, "overview exposes five technical mini charts");
+  assertEqual(charts.length, 7, "overview exposes seven technical mini charts");
   assertOk(distance?.points.length, "MA distance chart has points");
   assertOk(macd?.points.some((point: any) => point.tone === "good"), "MACD chart carries bar tones");
   assertOk(rsi?.points.every((point: any) => point.value >= 0 && point.value <= 100), "RSI chart is bounded to oscillator scale");
   assertOk(kdj?.points.every((point: any) => point.value >= 0 && point.value <= 100), "KDJ chart clips J values into oscillator scale");
   assertOk(boll?.points.every((point: any) => point.value >= 0 && point.value <= 100), "BOLL position chart is bounded to channel scale");
+  assertOk(atr?.points.every((point: any) => point.value >= 0), "ATR volatility chart uses non-negative percent values");
+  assertOk(obv?.points.length, "OBV trend chart exposes volume-price confirmation points");
   assertEqual(missing[0]?.tone, "missing", "missing bars create explicit missing technical chart");
   assertIncludes(missing[0]?.detail || "", "同步", "missing chart gives a data next step");
 }

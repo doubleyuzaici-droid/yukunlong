@@ -558,12 +558,15 @@ export function buildOverviewTechnicalCharts(bars: MarketBarLike[]): MarketAnaly
       missingTechnicalChart("rsi", "RSI14"),
       missingTechnicalChart("kdj-j", "KDJ J"),
       missingTechnicalChart("boll-position", "BOLL %B"),
+      missingTechnicalChart("atr-volatility", "ATR 波动"),
+      missingTechnicalChart("obv-trend", "OBV 趋势"),
     ];
   }
 
   const closes = orderedBars.map((bar) => Number(bar.close));
   const highs = orderedBars.map((bar) => Number(bar.high ?? bar.close ?? 0));
   const lows = orderedBars.map((bar) => Number(bar.low ?? bar.close ?? 0));
+  const volumes = orderedBars.map((bar) => Number(bar.volume || 0));
   const ma20 = movingAverageSeries(closes, 20);
   const maDistancePoints = orderedBars.flatMap((bar, index) => {
     const average = ma20[index];
@@ -608,12 +611,29 @@ export function buildOverviewTechnicalCharts(bars: MarketBarLike[]): MarketAnaly
       tone: bounded >= 88 ? "warn" as MarketAnalysisTone : bounded <= 12 ? "risk" as MarketAnalysisTone : bounded >= 50 ? "opportunity" as MarketAnalysisTone : "neutral" as MarketAnalysisTone,
     }];
   }).slice(-32);
+  const atrVolatilityPoints = atrSeries(highs, lows, closes, 14).flatMap((value, index) => {
+    const close = closes[index];
+    if (value == null || !Number.isFinite(close) || close === 0) return [];
+    const volatilityPct = Math.abs(value / close);
+    return [{
+      date: orderedBars[index].date,
+      value: volatilityPct,
+      tone: volatilityPct >= 0.06 ? "warn" as MarketAnalysisTone : volatilityPct <= 0.018 ? "neutral" as MarketAnalysisTone : "opportunity" as MarketAnalysisTone,
+    }];
+  }).slice(-32);
+  const obvPoints = obvSeries(closes, volumes).map((value, index) => ({
+    date: orderedBars[index].date,
+    value,
+    tone: value >= 0 ? "good" as MarketAnalysisTone : "risk" as MarketAnalysisTone,
+  })).slice(-32);
 
   const latestDistance = maDistancePoints[maDistancePoints.length - 1]?.value ?? null;
   const latestMacd = macdPoints[macdPoints.length - 1]?.value ?? null;
   const latestRsi = rsiPoints[rsiPoints.length - 1]?.value ?? null;
   const latestKdjJ = kdjPoints[kdjPoints.length - 1]?.value ?? null;
   const latestBollPosition = bollPositionPoints[bollPositionPoints.length - 1]?.value ?? null;
+  const latestAtrVolatility = atrVolatilityPoints[atrVolatilityPoints.length - 1]?.value ?? null;
+  const latestObv = obvPoints[obvPoints.length - 1]?.value ?? null;
 
   return [
     {
@@ -661,6 +681,23 @@ export function buildOverviewTechnicalCharts(bars: MarketBarLike[]): MarketAnaly
       points: bollPositionPoints,
       scaleMin: 0,
       scaleMax: 100,
+    },
+    {
+      key: "atr-volatility",
+      label: "ATR 波动",
+      value: formatSignedPercent(latestAtrVolatility),
+      detail: "ATR/收盘价衡量近期波动强度，过高时降低仓位和追价权重。",
+      tone: latestAtrVolatility == null ? "missing" : latestAtrVolatility >= 0.06 ? "warn" : "neutral",
+      points: atrVolatilityPoints,
+      scaleMin: 0,
+    },
+    {
+      key: "obv-trend",
+      label: "OBV 趋势",
+      value: formatCompactNumber(latestObv),
+      detail: "OBV 观察成交量是否支持价格方向，用于辅助确认量价背离。",
+      tone: classifyIndicatorTone(latestObv, 0, "higher"),
+      points: obvPoints,
     },
   ];
 }
@@ -845,6 +882,29 @@ function bollPositionSeries(values: number[], period: number, multiplier: number
     const boll = bollSnapshot(values.slice(0, index + 1), period, multiplier);
     if (boll.lower == null || boll.upper == null || boll.upper === boll.lower) return null;
     return ((close - boll.lower) / (boll.upper - boll.lower)) * 100;
+  });
+}
+
+function atrSeries(highs: number[], lows: number[], closes: number[], period: number): (number | null)[] {
+  const trueRanges = highs.map((high, index) => {
+    if (index === 0) return high - lows[index];
+    const previousClose = closes[index - 1];
+    return Math.max(high - lows[index], Math.abs(high - previousClose), Math.abs(lows[index] - previousClose));
+  });
+  return trueRanges.map((_, index) => {
+    if (index + 1 < period) return null;
+    return averageNumbers(trueRanges.slice(index - period + 1, index + 1));
+  });
+}
+
+function obvSeries(closes: number[], volumes: number[]) {
+  let obv = 0;
+  return closes.map((close, index) => {
+    if (index > 0) {
+      if (close > closes[index - 1]) obv += volumes[index] || 0;
+      else if (close < closes[index - 1]) obv -= volumes[index] || 0;
+    }
+    return obv;
   });
 }
 
