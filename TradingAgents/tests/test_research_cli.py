@@ -97,6 +97,38 @@ def test_research_cli_sync_bars_accepts_data_source(monkeypatch, capsys):
     assert "synced 3 daily bars" in capsys.readouterr().out
 
 
+def test_research_cli_sync_indices_accepts_csi500_alias(monkeypatch, capsys):
+    from tradingagents.research.cli import main
+
+    calls = []
+
+    def fake_sync_index_bars(start, end, *, index_symbols=None, source=None):
+        calls.append((start, end, index_symbols, source))
+        return 8
+
+    monkeypatch.setattr("tradingagents.research.cli.sync_index_bars", fake_sync_index_bars)
+
+    assert (
+        main(
+            [
+                "sync-indices",
+                "--start",
+                "2026-05-01",
+                "--end",
+                "2026-05-16",
+                "--index",
+                "399905",
+                "--source",
+                "akshare",
+            ]
+        )
+        == 0
+    )
+
+    assert calls == [("2026-05-01", "2026-05-16", ["399905"], "akshare")]
+    assert "synced 8 index bars" in capsys.readouterr().out
+
+
 def test_research_cli_run_pipeline(monkeypatch, capsys):
     from tradingagents.research.cli import main
 

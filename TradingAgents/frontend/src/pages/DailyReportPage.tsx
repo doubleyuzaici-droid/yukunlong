@@ -8,6 +8,7 @@ const today = new Date().toISOString().slice(0, 10);
 export default function DailyReportPage() {
   const [date, setDate] = useState(today);
   const [markdown, setMarkdown] = useState("");
+  const [professionalHtml, setProfessionalHtml] = useState("");
   const [pipeline, setPipeline] = useState<PipelineSummary | null>(null);
   const [loading, setLoading] = useState<"report" | "pipeline" | null>(null);
   const [message, setMessage] = useState("");
@@ -41,6 +42,20 @@ export default function DailyReportPage() {
     setLoading(null);
   };
 
+  const loadProfessional = async () => {
+    setLoading("report");
+    const response = await fetch(`/api/reports/professional/daily?date=${date}`);
+    const data = await response.json();
+    if (data.success) {
+      setMarkdown(data.data.markdown);
+      setProfessionalHtml(data.data.html);
+      setMessage(`专业日报：信号 ${data.data.sections.signals.count} 条，质量问题 ${data.data.sections.data_quality.open_issue_count} 个`);
+    } else {
+      setMessage("专业日报生成失败");
+    }
+    setLoading(null);
+  };
+
   return (
     <section className="workbench-section">
       <div className="section-heading">
@@ -55,7 +70,11 @@ export default function DailyReportPage() {
         <button className="primary" onClick={runPipelineAndLoad} disabled={loading !== null}>
           {loading === "pipeline" ? "运行中" : "同步并生成"}
         </button>
+        <button onClick={loadProfessional} disabled={loading !== null}>
+          专业日报
+        </button>
         <a className="button-link" href={`/api/reports/daily/download?date=${date}`}>下载</a>
+        <a className="button-link" href={`/api/reports/professional/daily/download?date=${date}&format=html`}>下载HTML</a>
         <span className="muted">{message}</span>
       </div>
       {pipeline && (
@@ -82,6 +101,18 @@ export default function DailyReportPage() {
           {markdown || "选择日期后生成复盘。"}
         </ReactMarkdown>
       </div>
+      {professionalHtml && (
+        <div className="data-trust-panel compact">
+          <div className="data-trust-head">
+            <div>
+              <span className="eyebrow">Professional Export</span>
+              <h2>专业报告 HTML 已生成</h2>
+              <p>可下载为 HTML 归档；Markdown 区域同步展示结构化内容。</p>
+            </div>
+            <span className="status-badge">ready</span>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

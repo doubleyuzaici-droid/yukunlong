@@ -20,6 +20,25 @@ def _frame(source: str):
     )
 
 
+def _index_frame(source: str):
+    return pd.DataFrame(
+        [
+            {
+                "date": "2026-05-15",
+                "index_symbol": "000905.SH",
+                "market": "CHINA",
+                "open": 8676.62,
+                "high": 8717.09,
+                "low": 8473.04,
+                "close": 8536.34,
+                "volume": 270961762,
+                "amount": 643024000000.0,
+                "source": source,
+            }
+        ]
+    )
+
+
 def test_fetch_daily_bars_defaults_to_akshare(monkeypatch):
     from tradingagents.research import data_sync
 
@@ -139,3 +158,58 @@ def test_sync_watchlist_fund_flows_upserts_and_logs_missing(monkeypatch):
         "symbol": "00700.HK",
         "message": "fund flow unavailable",
     }]
+
+
+def test_sync_index_bars_upserts_csi500_alias(monkeypatch):
+    from tradingagents.research import data_sync
+
+    calls = []
+    upserted = []
+
+    def fake_fetch_index_bars(symbol, start, end, *, source=None):
+        calls.append((symbol, start, end, source))
+        return _index_frame("akshare_index_em")
+
+    monkeypatch.setattr(data_sync, "fetch_index_bars", fake_fetch_index_bars)
+    monkeypatch.setattr(data_sync, "upsert_index_bars", lambda rows: upserted.extend(rows))
+
+    count = data_sync.sync_index_bars(
+        "2026-05-01", "2026-05-16", index_symbols=["399905"], source="akshare"
+    )
+
+    assert count == 1
+    assert calls == [("399905", "2026-05-01", "2026-05-16", "akshare")]
+    assert upserted[0]["index_symbol"] == "000905.SH"
+
+
+def test_fetch_index_bars_routes_hsi_to_hk_index_fetcher(monkeypatch):
+    from tradingagents.research import data_sync
+
+    calls = []
+
+    def fake_hk_index(symbol, start, end):
+        calls.append((symbol, start, end))
+        return pd.DataFrame(
+            [
+                {
+                    "date": "2026-05-15",
+                    "index_symbol": "HSI",
+                    "market": "HONGKONG",
+                    "open": 26391.02,
+                    "high": 26391.02,
+                    "low": 25847.15,
+                    "close": 25962.73,
+                    "volume": 19830055956,
+                    "amount": 325385515870,
+                    "source": "akshare_hk_index_sina",
+                }
+            ]
+        )
+
+    monkeypatch.setattr(data_sync, "get_hk_index_data_frame_akshare", fake_hk_index)
+
+    frame = data_sync.fetch_index_bars("恒生指数", "2026-05-01", "2026-05-16")
+
+    assert calls == [("HSI", "2026-05-01", "2026-05-16")]
+    assert frame.iloc[0]["index_symbol"] == "HSI"
+    assert frame.iloc[0]["market"] == "HONGKONG"

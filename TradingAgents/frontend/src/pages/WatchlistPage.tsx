@@ -4,6 +4,10 @@ import {
   type PipelineSummary,
   type WatchlistStatusRow,
 } from "../utils/researchPipeline";
+import { fetchQuotes, Sparkline } from "../components/MarketWidgets";
+import type { MarketQuote } from "../types/market";
+import { formatNumber, formatSignedPercent, quoteTone } from "../utils/formatters";
+import { recordAuditEvent } from "../utils/audit";
 
 interface WatchlistItem {
   symbol: string;
@@ -13,7 +17,11 @@ interface WatchlistItem {
   status: string;
 }
 
-export default function WatchlistPage() {
+export default function WatchlistPage({
+  onOpenSymbol,
+}: {
+  onOpenSymbol?: (symbol: string) => void;
+}) {
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [symbols, setSymbols] = useState("00700.HK 600519.SH");
   const [market, setMarket] = useState("");
@@ -23,11 +31,15 @@ export default function WatchlistPage() {
   const [message, setMessage] = useState("");
   const [statusRows, setStatusRows] = useState<WatchlistStatusRow[]>([]);
   const [pipeline, setPipeline] = useState<PipelineSummary | null>(null);
+  const [quotes, setQuotes] = useState<MarketQuote[]>([]);
 
   const load = async () => {
     const response = await fetch("/api/research/watchlist");
     const data = await response.json();
-    if (data.success) setItems(data.data);
+    if (data.success) {
+      setItems(data.data);
+      setQuotes(await fetchQuotes(data.data.map((item: WatchlistItem) => item.symbol)));
+    }
     const statusResponse = await fetch("/api/research/status");
     const statusData = await statusResponse.json();
     if (statusData.success) setStatusRows(statusData.data.watchlist_status);
@@ -64,6 +76,9 @@ export default function WatchlistPage() {
   };
 
   const remove = async (symbol: string) => {
+    if (!window.confirm(`确认将 ${symbol} 移出观察池？该标的不会再参与默认同步和扫描。`)) {
+      return;
+    }
     setMessage("");
     const response = await fetch(
       `/api/research/watchlist/${encodeURIComponent(symbol)}`,
@@ -71,6 +86,7 @@ export default function WatchlistPage() {
     );
     const data = await response.json();
     if (data.success) {
+      recordAuditEvent("remove_watchlist_symbol", symbol, "removed from default research scope");
       setItems(data.data);
       setMessage(`${symbol} 已移出观察池`);
       await load();
@@ -98,7 +114,27 @@ export default function WatchlistPage() {
     setLoading(false);
   };
 
+  const bootstrapCoreWatchlist = async () => {
+    setLoading(true);
+    setMessage("补入核心研究池");
+    const response = await fetch("/api/research/watchlist/bootstrap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await response.json();
+    if (data.success) {
+      setStatusRows(data.data.watchlist_status);
+      setMessage(`已补入核心样本：${(data.data.inserted || []).map((row: WatchlistItem) => row.symbol).join(" / ")}`);
+      await load();
+    } else {
+      setMessage("核心研究池补入失败");
+    }
+    setLoading(false);
+  };
+
   const statusBySymbol = new Map(statusRows.map((row) => [row.symbol, row]));
+  const quoteBySymbol = new Map(quotes.map((quote) => [quote.symbol, quote]));
 
   return (
     <section className="workbench-section">
@@ -132,6 +168,9 @@ export default function WatchlistPage() {
         <button className="primary" disabled={loading}>
           {loading ? "处理中" : "添加"}
         </button>
+        <button type="button" onClick={bootstrapCoreWatchlist} disabled={loading}>
+          补核心池
+        </button>
         <button type="button" onClick={runPipeline} disabled={loading || items.length === 0}>
           同步并扫描
         </button>
@@ -161,7 +200,9 @@ export default function WatchlistPage() {
               <th>市场</th>
               <th>行业</th>
               <th>关注逻辑</th>
-              <th>行情</th>
+              <th>价格</th>
+              <th>涨跌</th>
+              <th>走势</th>
               <th>数据状态</th>
               <th>状态</th>
               <th>操作</th>
@@ -170,6 +211,8 @@ export default function WatchlistPage() {
           <tbody>
             {items.map((item) => {
               const status = statusBySymbol.get(item.symbol);
+              const quote = quoteBySymbol.get(item.symbol);
+              const tone = quoteTone(quote?.change_pct);
               return (
                 <tr key={item.symbol}>
                   <td>{item.symbol}</td>
@@ -177,9 +220,17 @@ export default function WatchlistPage() {
                   <td>{item.industry || "-"}</td>
                   <td>{item.thesis || "-"}</td>
                   <td>
-                    {status ? `${status.bar_count} 行` : "-"}
+                    {formatNumber(quote?.price, 2)}
                     <br />
-                    <span className="muted">{status?.latest_bar_date || "未同步"}</span>
+                    <span className="muted">{quote?.trade_date || "未同步"}</span>
+                  </td>
+                  <td className={tone}>
+                    {formatSignedPercent(quote?.change_pct)}
+                    <br />
+                    <span className="muted">{quote?.status_text || "-"}</span>
+                  </td>
+                  <td>
+                    <Sparkline points={quote?.sparkline || []} tone={tone} />
                   </td>
                   <td>
                     <span className="status-badge">
@@ -190,6 +241,9 @@ export default function WatchlistPage() {
                   </td>
                   <td>{item.status}</td>
                   <td>
+                    <button className="mini" onClick={() => onOpenSymbol?.(item.symbol)}>
+                      工作台
+                    </button>{" "}
                     <button className="danger mini" onClick={() => remove(item.symbol)}>
                       移除
                     </button>
@@ -199,7 +253,7 @@ export default function WatchlistPage() {
             })}
             {items.length === 0 && (
               <tr>
-                <td colSpan={8}>暂无自选股</td>
+                <td colSpan={10}>暂无自选股</td>
               </tr>
             )}
           </tbody>

@@ -5,15 +5,38 @@ import {
   READINESS_LABELS,
   type PipelineSummary,
 } from "../utils/researchPipeline";
+import { parseJsonList } from "../utils/formatters";
+import { fetchQuotes, QuoteCard } from "../components/MarketWidgets";
+import type { MarketQuote } from "../types/market";
 
 interface SignalRow {
   signal_id: string;
+  date?: string;
   symbol: string;
   market: string;
   signal_name: string;
   signal_level: string;
   direction: string;
   score: number;
+  timeframe?: string;
+  evidence_json?: string;
+  risk_json?: string;
+  invalid_json?: string;
+  strategy_version?: string;
+  market_regime?: string | null;
+}
+
+interface ReviewPayload {
+  review_id: string;
+  signal_id: string;
+  action: string;
+  confidence: string;
+  bull_points: string[];
+  bear_points: string[];
+  risk_flags: string[];
+  missing_data: string[];
+  review_summary: string;
+  created_at?: string;
 }
 
 const today = new Date().toISOString().slice(0, 10);
@@ -51,12 +74,21 @@ const GROUPS = [
   },
 ];
 
-export default function TodaySignalsPage() {
+export default function TodaySignalsPage({
+  onOpenSymbol,
+}: {
+  onOpenSymbol?: (symbol: string, date?: string) => void;
+}) {
   const [date, setDate] = useState(today);
   const [signals, setSignals] = useState<SignalRow[]>([]);
+  const [selectedSignal, setSelectedSignal] = useState<SignalRow | null>(null);
+  const [review, setReview] = useState<ReviewPayload | null>(null);
+  const [signalReviews, setSignalReviews] = useState<ReviewPayload[]>([]);
+  const [selectedQuote, setSelectedQuote] = useState<MarketQuote | null>(null);
   const [pipeline, setPipeline] = useState<PipelineSummary | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState<"scan" | "pipeline" | null>(null);
+  const [reviewing, setReviewing] = useState(false);
 
   const readiness = useMemo(
     () => readinessCounts(pipeline?.watchlist_status || []),
@@ -66,7 +98,15 @@ export default function TodaySignalsPage() {
   const load = async (targetDate = date) => {
     const response = await fetch(`/api/signals/today?date=${targetDate}`);
     const data = await response.json();
-    if (data.success) setSignals(data.data);
+    if (data.success) {
+      setSignals(data.data);
+      setSelectedSignal((current) => {
+        if (current && data.data.some((item: SignalRow) => item.signal_id === current.signal_id)) {
+          return current;
+        }
+        return data.data[0] || null;
+      });
+    }
   };
 
   useEffect(() => {
@@ -105,6 +145,50 @@ export default function TodaySignalsPage() {
     await load(date);
     setLoading(null);
   };
+
+  const loadReviews = async (signalId: string) => {
+    const response = await fetch(`/api/agent-reviews?signal_id=${encodeURIComponent(signalId)}`);
+    const data = await response.json();
+    if (data.success) setSignalReviews(data.data);
+  };
+
+  const selectSignal = async (signal: SignalRow) => {
+    setSelectedSignal(signal);
+    setReview(null);
+    await loadReviews(signal.signal_id);
+  };
+
+  const runReview = async () => {
+    if (!selectedSignal) return;
+    setReviewing(true);
+    const response = await fetch(
+      `/api/signals/${encodeURIComponent(selectedSignal.signal_id)}/agent-review`,
+      { method: "POST" },
+    );
+    const data = await response.json();
+    if (data.success) {
+      setReview(data.data);
+      await loadReviews(selectedSignal.signal_id);
+      setMessage(`${selectedSignal.symbol} 审查完成`);
+    } else {
+      setMessage("审查失败");
+    }
+    setReviewing(false);
+  };
+
+  useEffect(() => {
+    if (selectedSignal) loadReviews(selectedSignal.signal_id);
+  }, [selectedSignal?.signal_id]);
+
+  useEffect(() => {
+    if (!selectedSignal?.symbol) {
+      setSelectedQuote(null);
+      return;
+    }
+    fetchQuotes([selectedSignal.symbol])
+      .then((quotes) => setSelectedQuote(quotes[0] || null))
+      .catch(() => setSelectedQuote(null));
+  }, [selectedSignal?.symbol]);
 
   return (
     <section className="workbench-section">
@@ -165,6 +249,39 @@ export default function TodaySignalsPage() {
       {signals.length === 0 && (
         <p className="empty-state block">{pipelineEmptyReason(pipeline)}</p>
       )}
+      {selectedSignal && (
+        <div className="detail-panel signal-detail">
+          <div className="detail-header">
+            <div>
+              <span className="eyebrow">信号详情</span>
+              <h2>{selectedSignal.symbol} · {selectedSignal.signal_name}</h2>
+              <p>
+                {selectedSignal.market} / {selectedSignal.signal_level} / {selectedSignal.direction}
+                {selectedSignal.market_regime ? ` / ${selectedSignal.market_regime}` : ""}
+              </p>
+            </div>
+            <div className="header-button-group">
+              <button onClick={() => onOpenSymbol?.(selectedSignal.symbol, selectedSignal.date || date)}>个股工作台</button>
+              <button className="primary" onClick={runReview} disabled={reviewing}>
+                {reviewing ? "审查中" : "Agent 审查"}
+              </button>
+            </div>
+          </div>
+          <QuoteCard quote={selectedQuote} />
+          <div className="detail-grid">
+            <SignalList title="证据" items={parseJsonList(selectedSignal.evidence_json)} />
+            <SignalList title="风险" items={parseJsonList(selectedSignal.risk_json)} />
+            <SignalList title="失效条件" items={parseJsonList(selectedSignal.invalid_json)} />
+          </div>
+          {(review || signalReviews[0]) && (
+            <div className="review-summary-strip">
+              <strong>{review?.action || signalReviews[0].action}</strong>
+              <span>{review?.confidence || signalReviews[0].confidence}</span>
+              <p>{review?.review_summary || signalReviews[0].review_summary}</p>
+            </div>
+          )}
+        </div>
+      )}
       <div className="signal-grid">
         {GROUPS.map((group) => {
           const rows = signals.filter(group.match);
@@ -175,7 +292,11 @@ export default function TodaySignalsPage() {
                 <span>{rows.length}</span>
               </h2>
               {rows.map((signal) => (
-              <div className="signal-row" key={signal.signal_id}>
+              <div
+                className={`signal-row ${selectedSignal?.signal_id === signal.signal_id ? "selected-card" : ""}`}
+                key={signal.signal_id}
+                onClick={() => selectSignal(signal)}
+              >
                 <div>
                   <strong>{signal.symbol}</strong>
                   <span>{signal.market}</span>
@@ -191,5 +312,17 @@ export default function TodaySignalsPage() {
         })}
       </div>
     </section>
+  );
+}
+
+function SignalList({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="list-panel compact-list">
+      <h2>{title}</h2>
+      {items.map((item) => (
+        <p key={item}>{item}</p>
+      ))}
+      {items.length === 0 && <p className="empty-state">暂无记录</p>}
+    </div>
   );
 }

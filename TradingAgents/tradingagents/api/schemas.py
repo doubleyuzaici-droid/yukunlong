@@ -92,6 +92,14 @@ class AnalyzeRequest(BaseModel):
     deepseek_thinking: Optional[str] = Field(
         default=None, description="DeepSeek thinking mode: enabled/disabled"
     )
+    checkpoint_enabled: bool = Field(
+        default=False,
+        description="启用 LangGraph checkpoint，失败后可用同一股票和日期恢复",
+    )
+    clear_checkpoint_before_run: bool = Field(
+        default=False,
+        description="运行前清除同一股票和日期的旧 checkpoint",
+    )
 
 
 class TaskStatus(str, Enum):
@@ -99,6 +107,7 @@ class TaskStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class AgentStatus(str, Enum):
@@ -129,6 +138,7 @@ class TaskProgress(BaseModel):
     trade_date: str
     research_depth: str = "medium"
     messages: list[dict[str, Any]] = Field(default_factory=list)
+    tool_events: list[dict[str, Any]] = Field(default_factory=list)
     current_step: str = ""
     stages: list[StageInfo] = Field(default_factory=list)
     current_stage_key: str = ""
@@ -149,6 +159,11 @@ class TaskReport(BaseModel):
     news_report: Optional[str] = None
     fundamentals_report: Optional[str] = None
     investment_plan: Optional[str] = None
+    trader_investment_plan: Optional[str] = None
+    investment_debate_summary: Optional[str] = None
+    risk_debate_summary: Optional[str] = None
+    quant_signal_context: Optional[str] = None
+    past_context: Optional[str] = None
     final_trade_decision: Optional[str] = None
     saved_path: Optional[str] = None
 

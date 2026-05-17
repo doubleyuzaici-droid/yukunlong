@@ -150,7 +150,10 @@ SCHEMA_STATEMENTS = [
         severity TEXT,
         symbol TEXT,
         message TEXT,
-        created_at TEXT
+        created_at TEXT,
+        resolution_status TEXT,
+        resolution_note TEXT,
+        resolved_at TEXT
     )
     """,
     """
@@ -197,6 +200,66 @@ SCHEMA_STATEMENTS = [
         created_at TEXT
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS llm_provider_config (
+        provider TEXT PRIMARY KEY,
+        display_name TEXT,
+        default_quick_model TEXT,
+        default_deep_model TEXT,
+        base_url TEXT,
+        api_key_mask TEXT,
+        enabled INTEGER DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS fundamental_snapshot (
+        date TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        revenue REAL,
+        net_income REAL,
+        eps REAL,
+        roe REAL,
+        gross_margin REAL,
+        pe_ttm REAL,
+        pb REAL,
+        dividend_yield REAL,
+        source TEXT,
+        updated_at TEXT,
+        PRIMARY KEY(date, symbol)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS news_evidence (
+        news_id TEXT PRIMARY KEY,
+        date TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        headline TEXT NOT NULL,
+        source TEXT,
+        url TEXT,
+        sentiment TEXT,
+        credibility REAL,
+        summary TEXT,
+        created_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sync_trace (
+        trace_id TEXT PRIMARY KEY,
+        symbol TEXT,
+        job_type TEXT NOT NULL,
+        start TEXT,
+        end TEXT,
+        primary_source TEXT,
+        fallback_source TEXT,
+        status TEXT,
+        rows_written INTEGER DEFAULT 0,
+        elapsed_ms INTEGER,
+        error TEXT,
+        created_at TEXT
+    )
+    """,
 ]
 
 
@@ -232,6 +295,8 @@ def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
 def _migrate_schema(conn: sqlite3.Connection) -> None:
     if not _column_exists(conn, "signal_log", "market_regime"):
         conn.execute("ALTER TABLE signal_log ADD COLUMN market_regime TEXT")
+    if not _column_exists(conn, "event_return", "market_regime"):
+        conn.execute("ALTER TABLE event_return ADD COLUMN market_regime TEXT")
     factor_columns = {
         "ma20": "REAL",
         "ma60": "REAL",
@@ -253,3 +318,19 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     for column, column_type in factor_columns.items():
         if not _column_exists(conn, "factor_daily", column):
             conn.execute(f"ALTER TABLE factor_daily ADD COLUMN {column} {column_type}")
+    quality_columns = {
+        "resolution_status": "TEXT",
+        "resolution_note": "TEXT",
+        "resolved_at": "TEXT",
+    }
+    for column, column_type in quality_columns.items():
+        if not _column_exists(conn, "data_quality_log", column):
+            conn.execute(f"ALTER TABLE data_quality_log ADD COLUMN {column} {column_type}")
+    agent_review_columns = {
+        "decision_status": "TEXT",
+        "decision_note": "TEXT",
+        "resolved_at": "TEXT",
+    }
+    for column, column_type in agent_review_columns.items():
+        if not _column_exists(conn, "agent_decision_log", column):
+            conn.execute(f"ALTER TABLE agent_decision_log ADD COLUMN {column} {column_type}")

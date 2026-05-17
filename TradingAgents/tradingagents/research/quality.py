@@ -18,10 +18,13 @@ def log_quality_issue(
         conn.execute(
             """
             INSERT INTO data_quality_log
-                (date, check_name, severity, symbol, message, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (
+                    date, check_name, severity, symbol, message, created_at,
+                    resolution_status
+                )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (date, check_name, severity, symbol, message, created_at),
+            (date, check_name, severity, symbol, message, created_at, "open"),
         )
         conn.commit()
 
@@ -38,3 +41,29 @@ def list_quality_issues(limit: int = 100) -> list[dict]:
             (limit,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def resolve_quality_issue(
+    issue_id: int,
+    resolution_status: str = "resolved",
+    resolution_note: str | None = None,
+) -> dict | None:
+    init_db()
+    resolved_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE data_quality_log
+            SET resolution_status = ?,
+                resolution_note = ?,
+                resolved_at = ?
+            WHERE id = ?
+            """,
+            (resolution_status, resolution_note, resolved_at, issue_id),
+        )
+        row = conn.execute(
+            "SELECT * FROM data_quality_log WHERE id = ?",
+            (issue_id,),
+        ).fetchone()
+        conn.commit()
+    return dict(row) if row else None

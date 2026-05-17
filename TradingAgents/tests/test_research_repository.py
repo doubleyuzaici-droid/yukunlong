@@ -23,6 +23,21 @@ def test_watchlist_upsert_deduplicates_and_lists_active_symbols(research_repo):
     assert rows[0]["market"] == "HONGKONG"
 
 
+def test_core_research_universe_bootstrap_includes_missing_professional_symbols(research_repo):
+    inserted = research_repo.ensure_core_watchlist_symbols()
+
+    rows_by_symbol = {row["symbol"]: row for row in inserted}
+    assert {"600519.SH", "601318.SH", "00700.HK", "01024.HK"} <= set(rows_by_symbol)
+    assert rows_by_symbol["601318.SH"]["name"] == "中国平安"
+    assert rows_by_symbol["01024.HK"]["market"] == "HONGKONG"
+    assert rows_by_symbol["600519.SH"]["thesis"]
+
+    rows = research_repo.list_watchlist()
+    assert {"600519.SH", "601318.SH", "00700.HK", "01024.HK"} <= {
+        row["symbol"] for row in rows
+    }
+
+
 def test_daily_bars_upsert_is_idempotent_and_loads_ordered_frame(research_repo):
     rows = [
         {

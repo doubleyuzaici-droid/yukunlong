@@ -27,6 +27,20 @@ export interface PipelineSummary {
   signal_count: number;
   watchlist_count: number;
   watchlist_status: WatchlistStatusRow[];
+  core_universe?: {
+    symbol: string;
+    name?: string | null;
+    market: string;
+    industry?: string | null;
+    thesis?: string | null;
+    in_watchlist?: boolean;
+    scan_readiness?: string;
+    bar_count?: number;
+    latest_bar_date?: string | null;
+    signal_count?: number;
+  }[];
+  missing_core_symbols?: string[];
+  bootstrapped_symbols?: string[];
   warnings?: PipelineWarning[];
 }
 

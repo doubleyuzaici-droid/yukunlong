@@ -50,6 +50,40 @@ const LLM_OPTIONS = [
   { value: "ollama", label: "Ollama(本地)" },
 ];
 
+const LLM_PROVIDER_GUIDANCE: Record<string, { defaultDeep: string; defaultQuick: string; note: string }> = {
+  openai: {
+    defaultDeep: "gpt-5.4",
+    defaultQuick: "gpt-5.4-mini",
+    note: "适合完整多 Agent 推理，支持 reasoning effort。",
+  },
+  anthropic: {
+    defaultDeep: "claude-sonnet-4-5",
+    defaultQuick: "claude-haiku-4-5",
+    note: "适合长报告和辩论式分析，注意上下文成本。",
+  },
+  deepseek: {
+    defaultDeep: "deepseek-reasoner",
+    defaultQuick: "deepseek-chat",
+    note: "适合中文场景和低成本推理，思考模式会影响延迟。",
+  },
+  qwen: {
+    defaultDeep: "qwen-max",
+    defaultQuick: "qwen-plus",
+    note: "适合中文金融文本，建议保留人工复核。",
+  },
+  ollama: {
+    defaultDeep: "qwen3:latest",
+    defaultQuick: "qwen3:latest",
+    note: "本地模型适合离线验证，质量取决于本机模型和上下文长度。",
+  },
+};
+
+const DEPTH_ROUNDS: Record<string, number> = {
+  shallow: 1,
+  medium: 3,
+  deep: 5,
+};
+
 const LANG_OPTIONS = [
   "English", "Simplified Chinese", "Japanese", "Korean",
   "Hindi", "Spanish", "Portuguese", "French", "German", "Arabic", "Russian",
@@ -78,6 +112,15 @@ export default function AnalysisForm({ onStart }: Props) {
   const [googleThinking, setGoogleThinking] = useState("high");
   const [deepseekThinking, setDeepseekThinking] = useState("enabled");
   const [deepseekEffort, setDeepseekEffort] = useState("medium");
+  const [checkpointEnabled, setCheckpointEnabled] = useState(false);
+  const [clearCheckpointBeforeRun, setClearCheckpointBeforeRun] = useState(false);
+  const providerGuidance = LLM_PROVIDER_GUIDANCE[llmProvider] || {
+    defaultDeep: deepModel,
+    defaultQuick: quickModel,
+    note: "使用兼容 OpenAI 风格的模型名称时，请确认后端环境变量和 Base URL。",
+  };
+  const debateRounds = DEPTH_ROUNDS[depth] || 3;
+  const estimatedAgentSteps = analysts.length + 7;
 
   // Restore saved config on mount
   useEffect(() => {
@@ -96,6 +139,8 @@ export default function AnalysisForm({ onStart }: Props) {
     if (saved.googleThinking) setGoogleThinking(saved.googleThinking as string);
     if (saved.deepseekThinking) setDeepseekThinking(saved.deepseekThinking as string);
     if (saved.deepseekEffort) setDeepseekEffort(saved.deepseekEffort as string);
+    if (saved.checkpointEnabled) setCheckpointEnabled(Boolean(saved.checkpointEnabled));
+    if (saved.clearCheckpointBeforeRun) setClearCheckpointBeforeRun(Boolean(saved.clearCheckpointBeforeRun));
   }, []);
 
   // Save config on every change, but skip the very first render
@@ -109,10 +154,12 @@ export default function AnalysisForm({ onStart }: Props) {
       ticker, market, depth,
       llmProvider, deepModel, quickModel, backendUrl, apiKey, outputLang,
       openaiEffort, anthropicEffort, googleThinking, deepseekThinking, deepseekEffort,
+      checkpointEnabled, clearCheckpointBeforeRun,
     });
   }, [ticker, market, depth,
       llmProvider, deepModel, quickModel, backendUrl, apiKey, outputLang,
-      openaiEffort, anthropicEffort, googleThinking, deepseekThinking, deepseekEffort]);
+      openaiEffort, anthropicEffort, googleThinking, deepseekThinking, deepseekEffort,
+      checkpointEnabled, clearCheckpointBeforeRun]);
 
   const toggleAnalyst = (value: string) => {
     setAnalysts((prev) =>
@@ -136,6 +183,8 @@ export default function AnalysisForm({ onStart }: Props) {
         backend_url: backendUrl || null,
         api_key: apiKey || null,
         output_language: outputLang,
+        checkpoint_enabled: checkpointEnabled,
+        clear_checkpoint_before_run: clearCheckpointBeforeRun,
       };
       if (llmProvider === "openai") body.openai_reasoning_effort = openaiEffort;
       if (llmProvider === "anthropic") body.anthropic_effort = anthropicEffort;
@@ -280,6 +329,31 @@ export default function AnalysisForm({ onStart }: Props) {
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="llm-readiness-panel">
+          <div>
+            <span className="eyebrow">Model Catalog</span>
+            <strong>{LLM_OPTIONS.find((item) => item.value === llmProvider)?.label || llmProvider}</strong>
+            <small>{providerGuidance.note}</small>
+          </div>
+          <div>
+            <span>推荐深度模型</span>
+            <button type="button" className="mini" onClick={() => setDeepModel(providerGuidance.defaultDeep)}>
+              {providerGuidance.defaultDeep}
+            </button>
+          </div>
+          <div>
+            <span>推荐快速模型</span>
+            <button type="button" className="mini" onClick={() => setQuickModel(providerGuidance.defaultQuick)}>
+              {providerGuidance.defaultQuick}
+            </button>
+          </div>
+          <div>
+            <span>预计链路</span>
+            <strong>{estimatedAgentSteps} Agent · {debateRounds} 轮</strong>
+            <small>用于预估耗时和 token 压力</small>
+          </div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
@@ -471,6 +545,28 @@ export default function AnalysisForm({ onStart }: Props) {
               />
             </div>
           </div>
+        </div>
+
+        <div style={{ padding: 12, background: "var(--bg-secondary)", borderRadius: 8, border: "1px solid var(--border-color)" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>断点恢复</div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <input
+              type="checkbox"
+              checked={checkpointEnabled}
+              onChange={(event) => setCheckpointEnabled(event.target.checked)}
+              style={{ width: 16, height: 16 }}
+            />
+            启用 checkpoint 续跑
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 0 }}>
+            <input
+              type="checkbox"
+              checked={clearCheckpointBeforeRun}
+              onChange={(event) => setClearCheckpointBeforeRun(event.target.checked)}
+              style={{ width: 16, height: 16 }}
+            />
+            运行前清除同股票同日期旧断点
+          </label>
         </div>
 
         <div>
