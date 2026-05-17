@@ -9,6 +9,7 @@ import {
   buildIndicatorPanelReadouts,
   buildManualDrawingGeometry,
   buildPriceAxisScale,
+  buildPriceAdjustedBars,
   buildMeasuredRangeStats,
   buildMomentumIndicators,
   buildPriceGapAnnotations,
@@ -28,6 +29,8 @@ import {
   matchChartPreferencePreset,
   normalizeManualDrawings,
   normalizePriceAxisMode,
+  normalizePriceAdjustmentMode,
+  priceAdjustmentPriceByFactor,
   priceAxisPriceFromY,
   priceAxisValueFromPrice,
   priceAxisYOf,
@@ -445,6 +448,48 @@ function testPriceAxisModeFallsBackForInvalidInput() {
   assertEqual(scale.mode, "price", "invalid percent base falls back to price axis");
   assertApprox(priceAxisValueFromPrice(scale, 20), 20, 0.001, "fallback scale keeps raw price values");
   assertApprox(priceAxisPriceFromY(scale, 80), 20, 0.001, "fallback scale converts y back to raw price");
+}
+
+function testBuildsForwardAdjustedBars() {
+  const result = buildPriceAdjustedBars([
+    { date: "2026-05-01", open: 10, high: 12, low: 9, close: 11, adj_factor: 2 },
+    { date: "2026-05-02", open: 18, high: 22, low: 17, close: 20, adj_factor: 4 },
+  ], "forward");
+
+  assertEqual(result.mode, "forward", "valid forward adjustment mode is used");
+  assertApprox(result.baseFactor, 4, 0.001, "forward adjustment uses the latest factor as base");
+  assertApprox(result.bars[0]?.open, 5, 0.001, "forward adjustment scales earlier open");
+  assertApprox(result.bars[0]?.high, 6, 0.001, "forward adjustment scales earlier high");
+  assertApprox(result.bars[0]?.low, 4.5, 0.001, "forward adjustment scales earlier low");
+  assertApprox(result.bars[0]?.close, 5.5, 0.001, "forward adjustment scales earlier close");
+  assertApprox(result.bars[1]?.close, 20, 0.001, "forward adjustment keeps latest close anchored");
+}
+
+function testBuildsBackwardAdjustedBars() {
+  const result = buildPriceAdjustedBars([
+    { date: "2026-05-01", open: 10, high: 12, low: 9, close: 11, adj_factor: 2 },
+    { date: "2026-05-02", open: 18, high: 22, low: 17, close: 20, adj_factor: 4 },
+  ], "backward");
+
+  assertEqual(result.mode, "backward", "valid backward adjustment mode is used");
+  assertApprox(result.baseFactor, 2, 0.001, "backward adjustment uses the first factor as base");
+  assertApprox(result.bars[0]?.close, 11, 0.001, "backward adjustment keeps first close anchored");
+  assertApprox(result.bars[1]?.close, 40, 0.001, "backward adjustment scales later close");
+  assertApprox(priceAdjustmentPriceByFactor(20, 4, result), 40, 0.001, "single raw price can be adjusted with the same scale");
+}
+
+function testPriceAdjustmentModeFallback() {
+  assertEqual(normalizePriceAdjustmentMode("forward"), "forward", "forward adjustment mode is accepted");
+  assertEqual(normalizePriceAdjustmentMode("hfq"), "none", "unknown adjustment mode falls back to none");
+
+  const result = buildPriceAdjustedBars([
+    { date: "2026-05-01", close: 11, adj_factor: 2 },
+    { date: "2026-05-02", close: 20, adj_factor: null },
+  ], "forward");
+
+  assertEqual(result.mode, "none", "missing factors keep the series unadjusted");
+  assertApprox(result.bars[0]?.close, 11, 0.001, "fallback keeps raw close");
+  assertApprox(priceAdjustmentPriceByFactor(11, 2, result), 11, 0.001, "fallback single price stays raw");
 }
 
 function testBuildsMeasuredRangeStats() {
@@ -964,6 +1009,9 @@ testNormalizesManualDrawingsForStorage();
 testManualDrawingStorageKeyUsesSymbolScope();
 testBuildsPercentPriceAxisScale();
 testPriceAxisModeFallsBackForInvalidInput();
+testBuildsForwardAdjustedBars();
+testBuildsBackwardAdjustedBars();
+testPriceAdjustmentModeFallback();
 testBuildsMeasuredRangeStats();
 testMeasuredRangeStatsKeepSelectionDirection();
 testHandlesMissingBarsExplicitly();

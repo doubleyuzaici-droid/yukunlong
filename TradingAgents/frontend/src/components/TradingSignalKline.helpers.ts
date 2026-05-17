@@ -263,6 +263,28 @@ export interface PriceAxisScale {
   bottom: number;
 }
 
+export type PriceAdjustmentMode = "none" | "forward" | "backward";
+
+export interface PriceAdjustmentScale {
+  mode: PriceAdjustmentMode;
+  baseFactor: number | null;
+  firstFactor: number | null;
+  latestFactor: number | null;
+}
+
+export interface PriceAdjustedBarsResult<T> extends PriceAdjustmentScale {
+  bars: T[];
+  hasAdjustment: boolean;
+}
+
+export interface PriceAdjustmentBarLike {
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  close?: number | null;
+  adj_factor?: number | null;
+}
+
 const MANUAL_DRAWING_STORAGE_PREFIX = "tradingagents.tradeSignalKline.drawings";
 
 export type ChartPreferencePresetKey = "basic" | "trend" | "oscillator" | "volume" | "structure" | "full";
@@ -912,6 +934,80 @@ export function normalizeManualDrawings(value: unknown, maxCount = 80): ManualDr
 
 export function normalizePriceAxisMode(value: unknown): PriceAxisMode {
   return value === "percent" ? "percent" : "price";
+}
+
+export function normalizePriceAdjustmentMode(value: unknown): PriceAdjustmentMode {
+  if (value === "forward" || value === "backward") return value;
+  return "none";
+}
+
+export function priceAdjustmentPriceByFactor(
+  price: number | null | undefined,
+  factor: number | null | undefined,
+  scale: PriceAdjustmentScale,
+): number | null {
+  if (!isFiniteNumber(price)) return null;
+  if (scale.mode === "none") return price;
+  if (!isFiniteNumber(factor) || factor <= 0 || !isFiniteNumber(scale.baseFactor) || scale.baseFactor <= 0) {
+    return price;
+  }
+  return price * (factor / scale.baseFactor);
+}
+
+export function buildPriceAdjustedBars<T extends PriceAdjustmentBarLike>(
+  bars: T[],
+  requestedMode: PriceAdjustmentMode | string | null | undefined,
+): PriceAdjustedBarsResult<T> {
+  const mode = normalizePriceAdjustmentMode(requestedMode);
+  const rawBars = bars.map((bar) => ({ ...bar }) as T);
+  if (mode === "none" || bars.length === 0) {
+    return {
+      bars: rawBars,
+      mode: "none",
+      baseFactor: null,
+      firstFactor: null,
+      latestFactor: null,
+      hasAdjustment: false,
+    };
+  }
+
+  const factors = bars.map((bar) => bar.adj_factor);
+  if (factors.some((factor) => !isFiniteNumber(factor) || factor <= 0)) {
+    return {
+      bars: rawBars,
+      mode: "none",
+      baseFactor: null,
+      firstFactor: null,
+      latestFactor: null,
+      hasAdjustment: false,
+    };
+  }
+
+  const firstFactor = Number(factors[0]);
+  const latestFactor = Number(factors[factors.length - 1]);
+  const baseFactor = mode === "forward" ? latestFactor : firstFactor;
+  const scale: PriceAdjustmentScale = {
+    mode,
+    baseFactor,
+    firstFactor,
+    latestFactor,
+  };
+  const adjustField = (value: number | null | undefined, factor: number) =>
+    isFiniteNumber(value) ? priceAdjustmentPriceByFactor(value, factor, scale) : value;
+  return {
+    bars: bars.map((bar, index) => {
+      const factor = Number(factors[index]);
+      return {
+        ...bar,
+        open: adjustField(bar.open, factor),
+        high: adjustField(bar.high, factor),
+        low: adjustField(bar.low, factor),
+        close: adjustField(bar.close, factor),
+      } as T;
+    }),
+    ...scale,
+    hasAdjustment: true,
+  };
 }
 
 export function buildPriceAxisScale(

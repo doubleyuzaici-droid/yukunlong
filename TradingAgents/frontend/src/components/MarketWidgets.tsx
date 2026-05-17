@@ -19,6 +19,7 @@ import {
   buildIndicatorPanelReadouts,
   buildIndicatorSectionLayout,
   buildManualDrawingGeometry,
+  buildPriceAdjustedBars,
   buildPriceAxisScale,
   buildMeasuredRangeStats,
   buildMomentumIndicators,
@@ -38,7 +39,9 @@ import {
   matchChartParameterPreset,
   matchChartPreferencePreset,
   normalizeManualDrawings,
+  normalizePriceAdjustmentMode,
   normalizePriceAxisMode,
+  priceAdjustmentPriceByFactor,
   priceAxisPriceFromValue,
   priceAxisPriceFromY,
   priceAxisValueFromPrice,
@@ -47,6 +50,8 @@ import {
   type ManualDrawing,
   type ManualDrawingAnchor,
   type ManualDrawingType,
+  type PriceAdjustedBarsResult,
+  type PriceAdjustmentMode,
   type PriceAxisMode,
   type VolumeProfileModel,
 } from "./TradingSignalKline.helpers";
@@ -383,6 +388,12 @@ const CANDLE_PERIODS: { key: CandlePeriod; label: string; unit: string; shortUni
   { key: "daily", label: "日线", unit: "日线", shortUnit: "日" },
   { key: "weekly", label: "周线", unit: "周线", shortUnit: "周" },
   { key: "monthly", label: "月线", unit: "月线", shortUnit: "月" },
+];
+
+const PRICE_ADJUSTMENT_MODES: { key: PriceAdjustmentMode; label: string }[] = [
+  { key: "none", label: "不复权" },
+  { key: "forward", label: "前复权" },
+  { key: "backward", label: "后复权" },
 ];
 
 const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
@@ -1240,6 +1251,11 @@ export function TradingSignalKlinePanel({
     "price",
     normalizePriceAxisMode,
   );
+  const [priceAdjustmentMode, setPriceAdjustmentMode] = usePersistentChartValue<PriceAdjustmentMode>(
+    "tradingagents.tradeSignalKline.priceAdjustmentMode",
+    "none",
+    normalizePriceAdjustmentMode,
+  );
   const [expanded, setExpanded] = useState(false);
   const [paramsOpen, setParamsOpen] = useState(false);
   const [hoveredSignalId, setHoveredSignalId] = useState<string | null>(null);
@@ -1264,19 +1280,30 @@ export function TradingSignalKlinePanel({
   const safeBars = Array.isArray(bars) ? bars : [];
   const safeSignals = Array.isArray(signals) ? signals : [];
   const safeEvidenceEvents = Array.isArray(evidenceEvents) ? evidenceEvents : [];
+  const priceAdjustedHistory = useMemo(
+    () => buildPriceAdjustedBars(safeBars, priceAdjustmentMode),
+    [priceAdjustmentMode, safeBars],
+  );
   const strategySignal = useMemo(
     () => buildStrategyChartSignal(strategyAnalysis, safeBars),
     [safeBars, strategyAnalysis],
   );
-  const mergedSignals = useMemo(
+  const rawMergedSignals = useMemo(
     () => mergeStrategySignals(safeSignals, strategySignal),
     [safeSignals, strategySignal],
   );
-  const periodData = useMemo(
-    () => preparePeriodChartData(safeBars, mergedSignals, period, safeEvidenceEvents),
-    [safeBars, mergedSignals, period, safeEvidenceEvents],
+  const mergedSignals = useMemo(
+    () => adjustChartSignalsForPriceAdjustment(rawMergedSignals, safeBars, priceAdjustedHistory),
+    [priceAdjustedHistory, rawMergedSignals, safeBars],
   );
-  const strategyLevelPrices = useMemo(() => extractStrategyLevelPrices(strategyAnalysis), [strategyAnalysis]);
+  const periodData = useMemo(
+    () => preparePeriodChartData(priceAdjustedHistory.bars, mergedSignals, period, safeEvidenceEvents),
+    [priceAdjustedHistory.bars, mergedSignals, period, safeEvidenceEvents],
+  );
+  const strategyLevelPrices = useMemo(
+    () => adjustLatestPricesForPriceAdjustment(extractStrategyLevelPrices(strategyAnalysis), priceAdjustedHistory),
+    [priceAdjustedHistory, strategyAnalysis],
+  );
   const chart = useMemo(
     () => buildTradingSignalGeometry(
       periodData.bars,
@@ -1485,6 +1512,7 @@ export function TradingSignalKlinePanel({
     setChartPrefs(DEFAULT_TRADING_CHART_PREFS);
     setChartParams(DEFAULT_TRADING_CHART_PARAMS);
     setPriceAxisMode("price");
+    setPriceAdjustmentMode("none");
     setMeasureStartIndex(null);
     setMeasureEndIndex(null);
   };
@@ -1610,7 +1638,8 @@ export function TradingSignalKlinePanel({
             {period === "daily" ? `${safeBars.length} 根日线` : `由 ${safeBars.length} 根日线聚合`} ·{" "}
             策略口径 周线趋势 + 日线执行 ·{" "}
             V2主信号 {strategySignal ? "已接入" : "未生成"} · 历史信号 {safeSignals.length} ·{" "}
-            机会 {summary.opportunity} / 风险 {summary.risk} · 坐标 {priceAxisMode === "percent" ? "涨跌幅" : "价格"} ·{" "}
+            机会 {summary.opportunity} / 风险 {summary.risk} · 复权 {priceAdjustmentStatusLabel(priceAdjustmentMode, priceAdjustedHistory.mode)} ·{" "}
+            坐标 {priceAxisMode === "percent" ? "涨跌幅" : "价格"} ·{" "}
             {rightOffset > 0 ? `向前平移 ${rightOffset} 根` : "最新区间"}
           </span>
         </div>
@@ -1713,6 +1742,12 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.volatility ? "active" : ""} onClick={() => toggleChartPref("volatility")} type="button">ATR/OBV</button>
         <button className={chartPrefs.subCharts ? "active" : ""} onClick={() => toggleChartPref("subCharts")} type="button">分屏</button>
         <button className={chartPrefs.measure ? "active measure" : "measure"} onClick={() => toggleChartPref("measure")} type="button">测距</button>
+        <span>复权</span>
+        {PRICE_ADJUSTMENT_MODES.map((item) => (
+          <button className={priceAdjustmentMode === item.key ? "active" : ""} key={item.key} onClick={() => setPriceAdjustmentMode(item.key)} type="button">
+            {item.label}
+          </button>
+        ))}
         <span>坐标</span>
         <button className={priceAxisMode === "price" ? "active" : ""} onClick={() => setPriceAxisMode("price")} type="button">价格</button>
         <button className={priceAxisMode === "percent" ? "active" : ""} onClick={() => setPriceAxisMode("percent")} type="button">涨跌幅</button>
@@ -3308,6 +3343,16 @@ function candleRangeLabel(
   return `${item.baseLabel || item.key}${unit}`;
 }
 
+function priceAdjustmentLabel(mode: PriceAdjustmentMode) {
+  return PRICE_ADJUSTMENT_MODES.find((item) => item.key === mode)?.label || "不复权";
+}
+
+function priceAdjustmentStatusLabel(requestedMode: PriceAdjustmentMode, actualMode: PriceAdjustmentMode) {
+  if (requestedMode === actualMode) return priceAdjustmentLabel(actualMode);
+  if (requestedMode === "none") return priceAdjustmentLabel(actualMode);
+  return `${priceAdjustmentLabel(requestedMode)}不可用`;
+}
+
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -4547,6 +4592,37 @@ function extractStrategyLevelPrices(analysis?: StrategyKlineAnalysis | null) {
     channels.predict_high_1,
     channels.predict_low_1,
   ].filter(isFiniteNumber);
+}
+
+function adjustChartSignalsForPriceAdjustment(
+  signals: ChartSignalMarker[],
+  bars: MarketHistoryBar[],
+  adjustment: PriceAdjustedBarsResult<MarketHistoryBar>,
+) {
+  if (adjustment.mode === "none") return signals;
+  const factorByDate = new Map(
+    bars
+      .filter((bar) => bar.date && isFiniteNumber(bar.adj_factor) && bar.adj_factor > 0)
+      .map((bar) => [bar.date, bar.adj_factor]),
+  );
+  return signals.map((signal) => {
+    const factor = factorByDate.get(signal.entry_date || signal.date);
+    const entryPrice = priceAdjustmentPriceByFactor(signal.entry_price, factor, adjustment);
+    return {
+      ...signal,
+      entry_price: entryPrice ?? signal.entry_price,
+    };
+  });
+}
+
+function adjustLatestPricesForPriceAdjustment(
+  prices: number[],
+  adjustment: PriceAdjustedBarsResult<MarketHistoryBar>,
+) {
+  if (adjustment.mode === "none") return prices;
+  return prices.map((price) =>
+    priceAdjustmentPriceByFactor(price, adjustment.latestFactor, adjustment) ?? price,
+  );
 }
 
 function chartPriceToY(chart: Record<string, any>, price?: number | null) {

@@ -79,6 +79,7 @@ export interface MarketHistoryBar {
   close?: number | null;
   volume?: number | null;
   amount?: number | null;
+  adj_factor?: number | null;
   source?: string | null;
 }
 
