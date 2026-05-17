@@ -4720,6 +4720,17 @@ function buildTradingSignalGeometry(
       bottom: MOMENTUM_BOTTOM,
       tone: "good",
     },
+    {
+      key: "adx-25",
+      section: "momentum",
+      label: "ADX 25",
+      value: 25,
+      min: 0,
+      max: 60,
+      top: MOMENTUM_TOP,
+      bottom: MOMENTUM_BOTTOM,
+      tone: "neutral",
+    },
   ]);
   const indicatorThresholdZones = buildIndicatorThresholdZones([
     {
