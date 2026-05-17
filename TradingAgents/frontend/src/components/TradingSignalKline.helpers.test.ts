@@ -10,6 +10,7 @@ import {
   buildIndicatorAxisTicks,
   buildIndicatorThresholdGuides,
   buildIndicatorBandAreaPath,
+  buildOverlayPriceLabels,
   buildTrendRibbonAreaSegments,
   buildIchimokuIndicators,
   buildFundFlowOverlayGeometry,
@@ -819,6 +820,24 @@ function testBuildsIndicatorBandAreaPath() {
   );
 }
 
+function testBuildsOverlayPriceLabelsWithoutOverlap() {
+  const labels = buildOverlayPriceLabels(
+    [
+      { key: "ma20", label: "MA20", price: 12.3, y: 100, tone: "info", priority: 1 },
+      { key: "boll", label: "BOLL", price: 12.1, y: 104, tone: "good", priority: 2 },
+      { key: "bad", label: "BAD", price: null, y: 108 },
+      { key: "vwap", label: "VWAP", price: 11.9, y: 108, tone: "neutral", priority: 3 },
+    ],
+    { top: 90, bottom: 140, minGap: 14 },
+  );
+
+  assertEqual(labels.length, 3, "overlay price labels omit missing values");
+  assertEqual(labels.map((label) => label.key).join(","), "ma20,boll,vwap", "labels keep visual order after staggering");
+  assertOk(labels[1]!.labelY - labels[0]!.labelY >= 14, "labels respect min vertical gap");
+  assertOk(labels[2]!.labelY - labels[1]!.labelY >= 14, "all labels are staggered");
+  assertEqual(labels[0]!.tone, "info", "tone preserved");
+}
+
 function testBuildsTrendRibbonAreaSegments() {
   const segments = buildTrendRibbonAreaSegments([
     { x: 10, fastY: 30, slowY: 58, fastValue: 12, slowValue: 10 },
@@ -1286,6 +1305,7 @@ testBuildsIndicatorAxisTicks();
 testBuildsCompactIndicatorAxisTickLabels();
 testBuildsIndicatorThresholdGuides();
 testBuildsIndicatorBandAreaPath();
+testBuildsOverlayPriceLabelsWithoutOverlap();
 testBuildsTrendRibbonAreaSegments();
 testBuildsIchimokuIndicators();
 testBuildsSplitIndicatorPanelReadouts();

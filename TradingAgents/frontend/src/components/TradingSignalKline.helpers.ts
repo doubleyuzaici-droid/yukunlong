@@ -838,6 +838,29 @@ export interface IndicatorThresholdGuide {
   tone: IndicatorThresholdGuideTone;
 }
 
+export type OverlayPriceLabelTone = "good" | "risk" | "neutral" | "info";
+
+export interface OverlayPriceLabelDefinition {
+  key: string;
+  group?: string;
+  label: string;
+  price?: number | null;
+  y?: number | null;
+  tone?: OverlayPriceLabelTone;
+  priority?: number;
+}
+
+export interface OverlayPriceLabel {
+  key: string;
+  group?: string;
+  label: string;
+  price: number;
+  y: number;
+  labelY: number;
+  tone: OverlayPriceLabelTone;
+  priority?: number;
+}
+
 export interface IndicatorBandAreaPoint {
   x?: number | null;
   upperY?: number | null;
@@ -1023,6 +1046,79 @@ export function buildIndicatorThresholdGuides(
       tone: definition.tone ?? "neutral",
     }];
   });
+}
+
+export function buildOverlayPriceLabels(
+  definitions: OverlayPriceLabelDefinition[],
+  options: { top: number; bottom: number; minGap?: number; maxLabels?: number },
+): OverlayPriceLabel[] {
+  const maxLabels = isFiniteNumber(options.maxLabels)
+    ? Math.max(0, Math.floor(options.maxLabels))
+    : definitions.length;
+  if (maxLabels === 0) return [];
+
+  const top = Math.min(options.top, options.bottom);
+  const bottom = Math.max(options.top, options.bottom);
+  const topLimit = top + 9;
+  const bottomLimit = Math.max(topLimit, bottom - 9);
+  const minGap = Math.max(0, options.minGap ?? 16);
+  const candidates = definitions
+    .map((definition, sourceIndex) => ({ definition, sourceIndex }))
+    .filter(({ definition }) => isFiniteNumber(definition.price) && isFiniteNumber(definition.y))
+    .sort((left, right) => {
+      const leftPriority = left.definition.priority ?? 1_000;
+      const rightPriority = right.definition.priority ?? 1_000;
+      if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+      if (left.definition.y !== right.definition.y) return Number(left.definition.y) - Number(right.definition.y);
+      return left.sourceIndex - right.sourceIndex;
+    })
+    .slice(0, maxLabels)
+    .map(({ definition, sourceIndex }) => ({
+      key: definition.key,
+      group: definition.group,
+      label: definition.label,
+      price: Number(definition.price),
+      y: Number(definition.y),
+      labelY: clampNumber(Number(definition.y), topLimit, bottomLimit),
+      tone: definition.tone ?? "neutral",
+      priority: definition.priority,
+      sourceIndex,
+    }))
+    .sort((left, right) => left.y - right.y || left.sourceIndex - right.sourceIndex);
+
+  if (candidates.length <= 1) {
+    return candidates.map(({ sourceIndex: _sourceIndex, ...label }) => label);
+  }
+
+  const availableHeight = Math.max(0, bottomLimit - topLimit);
+  const effectiveGap = Math.min(minGap, availableHeight / Math.max(1, candidates.length - 1));
+  for (let index = 0; index < candidates.length; index += 1) {
+    const previous = candidates[index - 1];
+    const candidate = candidates[index];
+    if (!candidate) continue;
+    candidate.labelY = clampNumber(candidate.labelY, topLimit, bottomLimit);
+    if (previous) {
+      candidate.labelY = Math.max(candidate.labelY, previous.labelY + effectiveGap);
+    }
+  }
+  const last = candidates[candidates.length - 1];
+  if (last) last.labelY = Math.min(last.labelY, bottomLimit);
+  for (let index = candidates.length - 2; index >= 0; index -= 1) {
+    const current = candidates[index];
+    const next = candidates[index + 1];
+    if (!current || !next) continue;
+    current.labelY = Math.min(current.labelY, next.labelY - effectiveGap);
+  }
+  const first = candidates[0];
+  if (first) first.labelY = Math.max(first.labelY, topLimit);
+  for (let index = 1; index < candidates.length; index += 1) {
+    const previous = candidates[index - 1];
+    const candidate = candidates[index];
+    if (!previous || !candidate) continue;
+    candidate.labelY = clampNumber(Math.max(candidate.labelY, previous.labelY + effectiveGap), topLimit, bottomLimit);
+  }
+
+  return candidates.map(({ sourceIndex: _sourceIndex, ...label }) => label);
 }
 
 export function buildIndicatorBandAreaPath(points: IndicatorBandAreaPoint[]): string {

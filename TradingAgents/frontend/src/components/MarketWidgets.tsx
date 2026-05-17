@@ -27,6 +27,7 @@ import {
   buildKlineHoverMetrics,
   buildLimitPriceLines,
   buildManualDrawingGeometry,
+  buildOverlayPriceLabels,
   buildPriceAdjustedBars,
   buildPriceAxisScale,
   buildMeasuredRangeStats,
@@ -66,6 +67,7 @@ import {
   type ManualDrawing,
   type ManualDrawingAnchor,
   type ManualDrawingType,
+  type OverlayPriceLabelDefinition,
   type PriceAdjustedBarsResult,
   type PriceAdjustmentMode,
   type PriceAxisMode,
@@ -1425,6 +1427,19 @@ export function TradingSignalKlinePanel({
     if (guide.section === "momentum") return chartPrefs.momentum || chartPrefs.biasDma || chartPrefs.volumeMomentum;
     return true;
   });
+  const visibleOverlayPriceLabels = buildOverlayPriceLabels(
+    (chart.overlayPriceLabels || []).filter((label: OverlayPriceLabelDefinition) => {
+      if (label.group === "ma") return chartPrefs.ma;
+      if (label.group === "ema") return chartPrefs.ema;
+      if (label.group === "boll") return chartPrefs.boll;
+      if (label.group === "vwap") return chartPrefs.vwap;
+      if (label.group === "sar") return chartPrefs.sar;
+      if (label.group === "bbi") return chartPrefs.bbi;
+      if (label.group === "ichimoku") return chartPrefs.ichimoku;
+      return true;
+    }),
+    { bottom: chart.priceBottom, minGap: 19, top: chart.priceTop },
+  );
   const measuredRange = useMemo(
     () => buildMeasureRange(
       chart.candles,
@@ -2085,6 +2100,16 @@ export function TradingSignalKlinePanel({
               <text className="axis-price-label" x={chart.axisX + 23} y={tick.y - 4}>
                 {formatChartAxisValue(chart, tick.value)}
               </text>
+            </g>
+          ))}
+          {visibleOverlayPriceLabels.map((label) => (
+            <g className={`overlay-price-label ${label.group || "overlay"} ${label.tone}`} key={label.key}>
+              <line x1={chart.plotRight - 5} x2={chart.plotRight + 8} y1={label.y} y2={label.labelY} />
+              <rect height="18" rx="4" width="64" x={chart.plotRight + 8} y={label.labelY - 9} />
+              <text x={chart.plotRight + 40} y={label.labelY + 3.5}>
+                {label.label} {formatChartAxisPrice(chart, label.price)}
+              </text>
+              <title>{label.label} {formatChartAxisPrice(chart, label.price)}</title>
             </g>
           ))}
           {visibleIndicatorThresholdGuides.map((guide) => (
@@ -3936,6 +3961,7 @@ function buildTradingSignalGeometry(
       volumeSignalEvents: [],
       fundFlowOverlay: buildFundFlowOverlayGeometry([], [], { top: VOLUME_TOP, bottom: VOLUME_BOTTOM }),
       indicatorThresholdGuides: [],
+      overlayPriceLabels: [],
       bollBandArea: "",
       maTrendRibbons: [],
       ichimokuCloudSegments: [],
@@ -4769,6 +4795,45 @@ function buildTradingSignalGeometry(
     fastValue: ichimokuSpanAValues[index],
     slowValue: ichimokuSpanBValues[index],
   })));
+  const latestIndicator = candles[candles.length - 1]?.indicators;
+  const overlayPriceLabel = (
+    key: string,
+    group: string,
+    label: string,
+    price: number | null | undefined,
+    tone: "good" | "risk" | "neutral" | "info",
+    priority: number,
+  ) => ({
+    key,
+    group,
+    label,
+    price,
+    y: isFiniteNumber(price) ? yOf(price) : null,
+    tone,
+    priority,
+  });
+  const overlayPriceLabels = buildOverlayPriceLabels([
+    overlayPriceLabel("ma-fast", "ma", `MA${fastPeriod}`, latestIndicator?.ma5, "info", 10),
+    overlayPriceLabel("ma-mid", "ma", `MA${midPeriod}`, latestIndicator?.ma20, "info", 11),
+    overlayPriceLabel("ma-slow", "ma", `MA${slowPeriod}`, latestIndicator?.ma60, "info", 12),
+    overlayPriceLabel("ma-120", "ma", "MA120", latestIndicator?.ma120, "info", 13),
+    overlayPriceLabel("boll-upper", "boll", "BUP", latestIndicator?.bollUpper, "good", 20),
+    overlayPriceLabel("boll-mid", "boll", "BMID", latestIndicator?.bollMid, "good", 21),
+    overlayPriceLabel("boll-lower", "boll", "BDN", latestIndicator?.bollLower, "good", 22),
+    overlayPriceLabel("vwap", "vwap", "VWAP", latestIndicator?.vwap, "neutral", 30),
+    overlayPriceLabel("ema-fast", "ema", `E${macdFast}`, latestIndicator?.emaFast, "info", 40),
+    overlayPriceLabel("ema-slow", "ema", `E${macdSlow}`, latestIndicator?.emaSlow, "info", 41),
+    overlayPriceLabel("sar", "sar", "SAR", latestIndicator?.sar, "risk", 50),
+    overlayPriceLabel("bbi", "bbi", "BBI", latestIndicator?.bbi, "info", 51),
+    overlayPriceLabel("ichimoku-conversion", "ichimoku", "转", latestIndicator?.ichimokuConversion, "info", 60),
+    overlayPriceLabel("ichimoku-base", "ichimoku", "基", latestIndicator?.ichimokuBase, "info", 61),
+    overlayPriceLabel("ichimoku-span-a", "ichimoku", "云A", latestIndicator?.ichimokuSpanA, "neutral", 62),
+    overlayPriceLabel("ichimoku-span-b", "ichimoku", "云B", latestIndicator?.ichimokuSpanB, "neutral", 63),
+  ], {
+    bottom: PRICE_BOTTOM,
+    minGap: 19,
+    top: PRICE_TOP,
+  });
   const macdBars = macdValues.map((value, index) => {
     const y = macdY(value);
     return {
@@ -4927,6 +4992,7 @@ function buildTradingSignalGeometry(
     priceTicks,
     indicatorAxisTicks,
     indicatorThresholdGuides,
+    overlayPriceLabels,
     timeTicks,
     latestIndicators: candles[candles.length - 1]?.indicators || null,
     prevCloseY: isFiniteNumber(candles[candles.length - 1]?.prevClose)

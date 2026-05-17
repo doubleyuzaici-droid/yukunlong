@@ -4823,6 +4823,58 @@ label {
   text-anchor: middle;
 }
 
+.overlay-price-label {
+  pointer-events: none;
+}
+
+.overlay-price-label line {
+  stroke: rgba(203, 213, 225, 0.34);
+  stroke-width: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+
+.overlay-price-label rect {
+  fill: rgba(10, 15, 22, 0.96);
+  stroke: rgba(148, 163, 184, 0.38);
+  stroke-width: 0.75;
+  vector-effect: non-scaling-stroke;
+}
+
+.overlay-price-label text {
+  fill: rgba(248, 250, 252, 0.94) !important;
+  font-size: 8.6px !important;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  paint-order: stroke;
+  stroke: rgba(5, 10, 16, 0.78);
+  stroke-width: 1.35px;
+  text-anchor: middle;
+}
+
+.overlay-price-label.info line,
+.overlay-price-label.info rect {
+  stroke: rgba(143, 179, 255, 0.62);
+}
+
+.overlay-price-label.good line,
+.overlay-price-label.good rect {
+  stroke: rgba(126, 224, 163, 0.66);
+}
+
+.overlay-price-label.risk line,
+.overlay-price-label.risk rect {
+  stroke: rgba(255, 140, 132, 0.66);
+}
+
+.overlay-price-label.good text {
+  fill: rgba(174, 246, 202, 0.96) !important;
+}
+
+.overlay-price-label.risk text {
+  fill: rgba(255, 190, 184, 0.96) !important;
+}
+
 .candle-chart .ma5 {
   stroke: rgba(238, 242, 247, 0.56);
   stroke-width: 1;
