@@ -29,6 +29,7 @@ import {
   buildIndicatorStateSummary,
   buildIchimokuIndicators,
   buildEnvelopeIndicators,
+  buildPsychologicalLineIndicators,
   buildKlineEventDensity,
   buildKlineEventSummary,
   buildKlineRangeNavigator,
@@ -178,6 +179,7 @@ interface TradingIndicatorSnapshot {
   dea?: number | null;
   macd?: number | null;
   rsi14?: number | null;
+  psy?: number | null;
   kdjK?: number | null;
   kdjD?: number | null;
   kdjJ?: number | null;
@@ -285,6 +287,7 @@ interface TradingChartParameters {
   macdSlow: number;
   macdSignal: number;
   rsiPeriod: number;
+  psyPeriod: number;
   kdjPeriod: number;
   crPeriod: number;
   emvPeriod: number;
@@ -487,6 +490,7 @@ const DEFAULT_TRADING_CHART_PARAMS: TradingChartParameters = {
   macdSlow: 26,
   macdSignal: 9,
   rsiPeriod: 14,
+  psyPeriod: 12,
   kdjPeriod: 9,
   crPeriod: 26,
   emvPeriod: 14,
@@ -566,6 +570,7 @@ function normalizeTradingChartParams(value: unknown): TradingChartParameters {
     macdSlow: boundedInteger(next.macdSlow, 18, 60, DEFAULT_TRADING_CHART_PARAMS.macdSlow),
     macdSignal: boundedInteger(next.macdSignal, 4, 20, DEFAULT_TRADING_CHART_PARAMS.macdSignal),
     rsiPeriod: boundedInteger(next.rsiPeriod, 5, 40, DEFAULT_TRADING_CHART_PARAMS.rsiPeriod),
+    psyPeriod: boundedInteger(next.psyPeriod, 3, 80, DEFAULT_TRADING_CHART_PARAMS.psyPeriod),
     kdjPeriod: boundedInteger(next.kdjPeriod, 5, 40, DEFAULT_TRADING_CHART_PARAMS.kdjPeriod),
     crPeriod: boundedInteger(next.crPeriod, 5, 80, DEFAULT_TRADING_CHART_PARAMS.crPeriod),
     emvPeriod: boundedInteger(next.emvPeriod, 5, 60, DEFAULT_TRADING_CHART_PARAMS.emvPeriod),
@@ -1915,7 +1920,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.volume ? "active" : ""} onClick={() => toggleChartPref("volume")} type="button">VOL</button>
         <button className={chartPrefs.volumeSignals ? "active" : ""} onClick={() => toggleChartPref("volumeSignals")} type="button">量信</button>
         <button className={chartPrefs.macd ? "active" : ""} onClick={() => toggleChartPref("macd")} type="button">MACD</button>
-        <button className={chartPrefs.rsi ? "active" : ""} onClick={() => toggleChartPref("rsi")} type="button">RSI</button>
+        <button className={chartPrefs.rsi ? "active" : ""} onClick={() => toggleChartPref("rsi")} type="button">RSI/PSY</button>
         <button className={chartPrefs.kdj ? "active" : ""} onClick={() => toggleChartPref("kdj")} type="button">KDJ</button>
         <button className={chartPrefs.advanced ? "active" : ""} onClick={() => toggleChartPref("advanced")} type="button">CR/ARBR/EMV</button>
         <button className={chartPrefs.momentum ? "active" : ""} onClick={() => toggleChartPref("momentum")} type="button">DMI/CCI/WR</button>
@@ -1977,6 +1982,7 @@ export function TradingSignalKlinePanel({
           <ChartParamInput label="MACD慢" value={chartParams.macdSlow} onChange={updateChartParam("macdSlow")} />
           <ChartParamInput label="MACD信号" value={chartParams.macdSignal} onChange={updateChartParam("macdSignal")} />
           <ChartParamInput label="RSI" value={chartParams.rsiPeriod} onChange={updateChartParam("rsiPeriod")} />
+          <ChartParamInput label="PSY" value={chartParams.psyPeriod} onChange={updateChartParam("psyPeriod")} />
           <ChartParamInput label="KDJ" value={chartParams.kdjPeriod} onChange={updateChartParam("kdjPeriod")} />
           <ChartParamInput label="CR/ARBR" value={chartParams.crPeriod} onChange={updateChartParam("crPeriod")} />
           <ChartParamInput label="EMV均线" value={chartParams.emvPeriod} onChange={updateChartParam("emvPeriod")} />
@@ -2047,9 +2053,9 @@ export function TradingSignalKlinePanel({
           tone={quoteTone(readoutIndicators?.macd)}
         />
         <MarketReadoutStat
-          label={`RSI${chartParams.rsiPeriod} / 量比`}
-          value={`${formatNumber(readoutIndicators?.rsi14, 1)} / ${formatNumber(readoutIndicators?.volumeRatio, 2)}`}
-          sub={rsiStateLabel(readoutIndicators?.rsi14)}
+          label={`RSI${chartParams.rsiPeriod} / PSY${chartParams.psyPeriod}`}
+          value={`${formatNumber(readoutIndicators?.rsi14, 1)} / ${formatNumber(readoutIndicators?.psy, 1)}`}
+          sub={`量比 ${formatNumber(readoutIndicators?.volumeRatio, 2)} · ${rsiStateLabel(readoutIndicators?.rsi14)}`}
         />
         <MarketReadoutStat
           label="BOLL"
@@ -2451,6 +2457,7 @@ export function TradingSignalKlinePanel({
           {chartPrefs.macd && chart.difLine && <polyline className="indicator-line dif" points={chart.difLine} />}
           {chartPrefs.macd && chart.deaLine && <polyline className="indicator-line dea" points={chart.deaLine} />}
           {chartPrefs.rsi && chart.rsiLine && <polyline className="indicator-line rsi" points={chart.rsiLine} />}
+          {chartPrefs.rsi && chart.psyLine && <polyline className="indicator-line psy" points={chart.psyLine} />}
           {chartPrefs.kdj && chart.kdjKLine && <polyline className="indicator-line kdj-k" points={chart.kdjKLine} />}
           {chartPrefs.kdj && chart.kdjDLine && <polyline className="indicator-line kdj-d" points={chart.kdjDLine} />}
           {chartPrefs.kdj && chart.kdjJLine && <polyline className="indicator-line kdj-j" points={chart.kdjJLine} />}
@@ -2868,7 +2875,7 @@ export function TradingSignalKlinePanel({
                 MA {formatNumber(crosshair.candle.ma5, 2)} / {formatNumber(crosshair.candle.ma20, 2)} / {formatNumber(crosshair.candle.ma60, 2)}
               </text>
               <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="244">
-                BOLL {formatNumber(crosshair.candle.indicators.bollMid, 2)} · RSI {formatNumber(crosshair.candle.indicators.rsi14, 1)} · MACD {formatNumber(crosshair.candle.indicators.macd, 2)}
+                BOLL {formatNumber(crosshair.candle.indicators.bollMid, 2)} · RSI {formatNumber(crosshair.candle.indicators.rsi14, 1)} · PSY {formatNumber(crosshair.candle.indicators.psy, 1)}
               </text>
               <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="268">
                 MFI {formatNumber(crosshair.candle.indicators.mfi, 1)} · VR {formatNumber(crosshair.candle.indicators.vr, 1)} · ATR {formatNumber(crosshair.candle.indicators.atr, 2)}
@@ -2942,7 +2949,7 @@ export function TradingSignalKlinePanel({
                 <div className="signal-inspector-grid">
                   <MiniChartStat label="DIF / DEA" value={`${formatNumber(activeIndicators?.dif, 2)} / ${formatNumber(activeIndicators?.dea, 2)}`} />
                   <MiniChartStat label="MACD柱" value={formatNumber(activeIndicators?.macd, 2)} />
-                  <MiniChartStat label="RSI14" value={formatNumber(activeIndicators?.rsi14, 1)} />
+                  <MiniChartStat label="RSI / PSY" value={`${formatNumber(activeIndicators?.rsi14, 1)} / ${formatNumber(activeIndicators?.psy, 1)}`} />
                   <MiniChartStat label="量比" value={formatNumber(activeIndicators?.volumeRatio, 2)} />
                   <MiniChartStat label="BOLL中轨" value={formatNumber(activeIndicators?.bollMid, 2)} />
                   <MiniChartStat label="KDJ J" value={formatNumber(activeIndicators?.kdjJ, 1)} />
@@ -3003,7 +3010,7 @@ export function TradingSignalKlinePanel({
         <span><i className="legend-trend-regime" />趋势背景</span>
         <span><i className="legend-line trend" />SAR/BBI</span>
         <span><i className="legend-ichimoku" />一目均衡</span>
-        <span><i className="legend-line macd" />MACD/RSI</span>
+        <span><i className="legend-line macd" />MACD/RSI/PSY</span>
         <span><i className="legend-line advanced" />CR/ARBR/EMV</span>
         <span><i className="legend-line momentum" />DMI/CCI/WR</span>
         <span><i className="legend-line bias-dma" />BIAS/DMA</span>
@@ -3365,7 +3372,7 @@ function buildStrategySnapshotItems(
       detail: "MACD 方向",
     },
     { label: "MACD柱", value: formatNumber(indicators?.macd, 2), detail: "动能扩散" },
-    { label: "RSI14", value: formatNumber(indicators?.rsi14, 1), detail: "强弱区" },
+    { label: "RSI/PSY", value: `${formatNumber(indicators?.rsi14, 1)} / ${formatNumber(indicators?.psy, 1)}`, detail: "强弱区" },
     { label: "量比", value: formatNumber(indicators?.volumeRatio, 2), detail: "成交活跃度" },
     { label: "止损价", value: formatNumber(channel.stop_price, 2), detail: `距离 ${formatNumber(analysis.position_plan?.stop_distance, 2)}`, tone: "bad" },
     { label: "建议仓位", value: formatPercent(analysis.position_plan?.suggested_position_pct), detail: `${formatCompactNumber(analysis.position_plan?.suggested_shares)} 股`, tone: "good" },
@@ -4212,6 +4219,7 @@ function buildTradingSignalGeometry(
       difLine: "",
       deaLine: "",
       rsiLine: "",
+      psyLine: "",
       kdjKLine: "",
       kdjDLine: "",
       kdjJLine: "",
@@ -4539,6 +4547,10 @@ function buildTradingSignalGeometry(
   const deaValues = emaNumberValues(difValues, params.macdSignal);
   const macdValues = difValues.map((value, index) => (value - deaValues[index]) * 2);
   const rsiValues = rsiNumberValues(closeValues, params.rsiPeriod);
+  const psychologicalValues = buildPsychologicalLineIndicators(visible, {
+    period: params.psyPeriod,
+  });
+  const psyValues = psychologicalValues.map((value) => value.psy);
   const kdjValues = kdjNumberValues(highValues, lowValues, closeValues, params.kdjPeriod);
   const advancedValues = buildAdvancedIndicators(visible, {
     period: params.crPeriod,
@@ -4700,6 +4712,28 @@ function buildTradingSignalGeometry(
       tone: "good",
     },
     {
+      key: "psy-75",
+      section: "oscillator",
+      label: "PSY 75",
+      value: 75,
+      min: 0,
+      max: 100,
+      top: RSI_TOP,
+      bottom: RSI_BOTTOM,
+      tone: "risk",
+    },
+    {
+      key: "psy-25",
+      section: "oscillator",
+      label: "PSY 25",
+      value: 25,
+      min: 0,
+      max: 100,
+      top: RSI_TOP,
+      bottom: RSI_BOTTOM,
+      tone: "good",
+    },
+    {
       key: "kdj-80",
       section: "oscillator",
       label: "KDJ 80",
@@ -4842,6 +4876,30 @@ function buildTradingSignalGeometry(
       label: "KDJ超卖区",
       fromValue: 0,
       toValue: 20,
+      min: 0,
+      max: 100,
+      top: RSI_TOP,
+      bottom: RSI_BOTTOM,
+      tone: "good",
+    },
+    {
+      key: "psy-overheated-zone",
+      section: "oscillator",
+      label: "PSY偏热区",
+      fromValue: 75,
+      toValue: 100,
+      min: 0,
+      max: 100,
+      top: RSI_TOP,
+      bottom: RSI_BOTTOM,
+      tone: "risk",
+    },
+    {
+      key: "psy-cooling-zone",
+      section: "oscillator",
+      label: "PSY偏冷区",
+      fromValue: 0,
+      toValue: 25,
       min: 0,
       max: 100,
       top: RSI_TOP,
@@ -5013,6 +5071,7 @@ function buildTradingSignalGeometry(
         dea: deaValues[index],
         macd: macdValues[index],
         rsi14: rsiValues[index],
+        psy: psyValues[index],
         kdjK: kdjValues[index]?.k ?? null,
         kdjD: kdjValues[index]?.d ?? null,
         kdjJ: kdjValues[index]?.j ?? null,
@@ -5304,9 +5363,10 @@ function buildTradingSignalGeometry(
     indicatorValueLabel("dea", "macd", "macd", "DEA", latestIndicator?.dea, latestIndicator ? macdY(latestIndicator.dea ?? 0) : null, "info", 21, { precision: 2, signed: true }),
     indicatorValueLabel("macd", "macd", "macd", "MACD", latestIndicator?.macd, latestIndicator ? macdY(latestIndicator.macd ?? 0) : null, (latestIndicator?.macd ?? 0) >= 0 ? "good" : "risk", 22, { precision: 2, signed: true }),
     indicatorValueLabel("rsi", "oscillator", "rsi", "RSI", latestIndicator?.rsi14, latestIndicator ? rsiY(latestIndicator.rsi14) : null, (latestIndicator?.rsi14 ?? 50) >= 70 ? "risk" : (latestIndicator?.rsi14 ?? 50) <= 30 ? "good" : "neutral", 30, { precision: 1 }),
-    indicatorValueLabel("kdj-k", "oscillator", "kdj", "K", latestIndicator?.kdjK, latestIndicator ? rsiY(latestIndicator.kdjK) : null, "info", 31, { precision: 1 }),
-    indicatorValueLabel("kdj-d", "oscillator", "kdj", "D", latestIndicator?.kdjD, latestIndicator ? rsiY(latestIndicator.kdjD) : null, "info", 32, { precision: 1 }),
-    indicatorValueLabel("kdj-j", "oscillator", "kdj", "J", latestIndicator?.kdjJ, latestIndicator ? rsiY(latestIndicator.kdjJ) : null, "info", 33, { precision: 1 }),
+    indicatorValueLabel("psy", "oscillator", "rsi", "PSY", latestIndicator?.psy, latestIndicator ? rsiY(latestIndicator.psy) : null, (latestIndicator?.psy ?? 50) >= 75 ? "risk" : (latestIndicator?.psy ?? 50) <= 25 ? "good" : "neutral", 31, { precision: 1 }),
+    indicatorValueLabel("kdj-k", "oscillator", "kdj", "K", latestIndicator?.kdjK, latestIndicator ? rsiY(latestIndicator.kdjK) : null, "info", 32, { precision: 1 }),
+    indicatorValueLabel("kdj-d", "oscillator", "kdj", "D", latestIndicator?.kdjD, latestIndicator ? rsiY(latestIndicator.kdjD) : null, "info", 33, { precision: 1 }),
+    indicatorValueLabel("kdj-j", "oscillator", "kdj", "J", latestIndicator?.kdjJ, latestIndicator ? rsiY(latestIndicator.kdjJ) : null, "info", 34, { precision: 1 }),
     indicatorValueLabel("cr", extraIndicatorSection("advanced"), "advanced", "CR", latestIndicator?.cr, latestIndicator ? advancedY(latestIndicator.cr) : null, "info", 40, { precision: 1 }),
     indicatorValueLabel("ar", extraIndicatorSection("advanced"), "advanced", "AR", latestIndicator?.ar, latestIndicator ? advancedY(latestIndicator.ar) : null, "info", 41, { precision: 1 }),
     indicatorValueLabel("br", extraIndicatorSection("advanced"), "advanced", "BR", latestIndicator?.br, latestIndicator ? advancedY(latestIndicator.br) : null, "info", 42, { precision: 1 }),
@@ -5473,6 +5533,7 @@ function buildTradingSignalGeometry(
     difLine: indicatorPoints(difValues, macdY),
     deaLine: indicatorPoints(deaValues, macdY),
     rsiLine: indicatorPoints(rsiValues, rsiY),
+    psyLine: indicatorPoints(psyValues, rsiY),
     kdjKLine: kdjLine("k"),
     kdjDLine: kdjLine("d"),
     kdjJLine: kdjLine("j"),
@@ -5768,7 +5829,7 @@ function buildSignalHoverTooltip(marker: Record<string, any>, period: CandlePeri
     { label: "方向", value: signalDirectionLabel(signal.direction) },
     { label: "价格/评分", value: `${formatNumber(signalPrice, 2)} / ${formatNumber(signal.score, 1)}` },
     { label: "级别", value: signal.signal_level || "-" },
-    { label: "RSI/MACD", value: `${formatNumber(indicators.rsi14, 1)} / ${formatNumber(indicators.macd, 2)}` },
+    { label: "RSI/PSY/MACD", value: `${formatNumber(indicators.rsi14, 1)} / ${formatNumber(indicators.psy, 1)} / ${formatNumber(indicators.macd, 2)}` },
     { label: "20日/回撤", value: `${formatSignedPercent(signal.ret_20d)} / ${formatSignedPercent(signal.max_adverse_20d)}` },
   ];
   const width = 248;

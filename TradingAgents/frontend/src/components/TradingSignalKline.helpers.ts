@@ -422,6 +422,7 @@ export type ChartParameterName =
   | "macdSlow"
   | "macdSignal"
   | "rsiPeriod"
+  | "psyPeriod"
   | "kdjPeriod"
   | "crPeriod"
   | "emvPeriod"
@@ -541,7 +542,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
   {
     key: "oscillator",
     label: "震荡",
-    description: "聚焦MACD、RSI、KDJ、CCI/WR、BIAS/DMA和背离。",
+    description: "聚焦MACD、RSI/PSY、KDJ、CCI/WR、BIAS/DMA和背离。",
     values: {
       ...BASE_CHART_PRESET_VALUES,
       ema: false,
@@ -652,7 +653,7 @@ const CHART_LAYER_MAIN_OVERLAYS: ChartLayerSummaryOption[] = [
 const CHART_LAYER_SUBCHARTS: ChartLayerSummaryOption[] = [
   ["volume", "VOL"],
   ["macd", "MACD"],
-  ["rsi", "RSI"],
+  ["rsi", "RSI/PSY"],
   ["kdj", "KDJ"],
   ["advanced", "CR/ARBR/EMV"],
   ["momentum", "DMI/CCI/WR"],
@@ -691,6 +692,7 @@ const STANDARD_CHART_PARAMETER_VALUES: Record<ChartParameterName, number> = {
   macdSlow: 26,
   macdSignal: 9,
   rsiPeriod: 14,
+  psyPeriod: 12,
   kdjPeriod: 9,
   crPeriod: 26,
   emvPeriod: 14,
@@ -731,6 +733,7 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       macdSlow: 13,
       macdSignal: 5,
       rsiPeriod: 7,
+      psyPeriod: 6,
       crPeriod: 13,
       emvPeriod: 7,
       momentumPeriod: 10,
@@ -757,6 +760,7 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       bollMultiplier: 2.2,
       enePeriod: 30,
       enePercent: 8,
+      psyPeriod: 24,
       kdjPeriod: 14,
       momentumPeriod: 20,
       biasPeriod: 10,
@@ -777,6 +781,7 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       macdFast: 19,
       macdSlow: 39,
       rsiPeriod: 21,
+      psyPeriod: 24,
       kdjPeriod: 14,
       crPeriod: 42,
       emvPeriod: 21,
@@ -1646,6 +1651,26 @@ export function buildEnvelopeIndicators(
   });
 }
 
+export function buildPsychologicalLineIndicators(
+  bars: VolumeProfileBarLike[],
+  options: { period?: number } = {},
+): PsychologicalLineIndicatorSnapshot[] {
+  const period = clampInteger(options.period ?? 12, 2, 120);
+  const closeValues = bars.map((bar) => normalizeOptionalNumber(bar.close));
+
+  return closeValues.map((_, index) => {
+    if (index < period) return { psy: null };
+    let risingCount = 0;
+    for (let cursor = index - period + 1; cursor <= index; cursor += 1) {
+      const current = closeValues[cursor];
+      const previous = closeValues[cursor - 1];
+      if (!isFiniteNumber(current) || !isFiniteNumber(previous)) return { psy: null };
+      if (current > previous) risingCount += 1;
+    }
+    return { psy: (risingCount / period) * 100 };
+  });
+}
+
 function isTruthyFlag(value: boolean | number | string | null | undefined) {
   return value === true || value === 1 || value === "1" || String(value).toLowerCase() === "true";
 }
@@ -1699,6 +1724,10 @@ export interface EnvelopeIndicatorSnapshot {
   lower: number | null;
 }
 
+export interface PsychologicalLineIndicatorSnapshot {
+  psy: number | null;
+}
+
 export interface VolumeMomentumIndicatorSnapshot {
   vr: number | null;
   mfi: number | null;
@@ -1734,6 +1763,7 @@ export interface IndicatorPanelReadoutSnapshot {
   dea?: number | null;
   macd?: number | null;
   rsi14?: number | null;
+  psy?: number | null;
   kdjK?: number | null;
   kdjD?: number | null;
   kdjJ?: number | null;
@@ -2241,6 +2271,7 @@ export function buildIndicatorPanelReadouts(
 
   const oscillatorItems = [
     item("RSI", snapshot.rsi14, 1),
+    item("PSY", snapshot.psy, 1),
     item("K", snapshot.kdjK, 1),
     item("D", snapshot.kdjD, 1),
     item("J", snapshot.kdjJ, 1),
@@ -2334,6 +2365,7 @@ export function buildIndicatorStateSummary(
   const dea = finiteIndicatorValue(snapshot.dea);
   const macd = finiteIndicatorValue(snapshot.macd);
   const rsi = finiteIndicatorValue(snapshot.rsi14);
+  const psy = finiteIndicatorValue(snapshot.psy);
   const kdjK = finiteIndicatorValue(snapshot.kdjK);
   const cci = finiteIndicatorValue(snapshot.cci);
   const wr = finiteIndicatorValue(snapshot.wr);
@@ -2370,12 +2402,14 @@ export function buildIndicatorStateSummary(
 
   const overboughtScore = [
     rsi != null && rsi >= 70,
+    psy != null && psy >= 75,
     kdjK != null && kdjK >= 80,
     cci != null && cci >= 100,
     wr != null && wr >= -20,
   ].filter(Boolean).length;
   const oversoldScore = [
     rsi != null && rsi <= 30,
+    psy != null && psy <= 25,
     kdjK != null && kdjK <= 20,
     cci != null && cci <= -100,
     wr != null && wr <= -80,
@@ -2460,7 +2494,7 @@ export function buildIndicatorStateSummary(
       key: "momentum",
       label: "动量温度",
       value: momentumValue,
-      detail: `RSI ${formatIndicatorStateNumber(rsi, 1)} / K ${formatIndicatorStateNumber(kdjK, 1)} / WR ${formatIndicatorStateNumber(wr, 1)}`,
+      detail: `RSI ${formatIndicatorStateNumber(rsi, 1)} / PSY ${formatIndicatorStateNumber(psy, 1)} / WR ${formatIndicatorStateNumber(wr, 1)}`,
       tone: momentumTone,
       score: overboughtScore - oversoldScore + directionalMomentumScore - weakMomentumScore,
     },

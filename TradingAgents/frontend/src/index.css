@@ -5466,6 +5466,11 @@ label {
   opacity: 0.76;
 }
 
+.indicator-line.psy {
+  stroke: #8fb3ff;
+  stroke-dasharray: 5 4;
+}
+
 .indicator-line.kdj-k {
   stroke: #42d3c8;
 }
