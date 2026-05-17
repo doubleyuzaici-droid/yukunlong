@@ -556,10 +556,14 @@ export function buildOverviewTechnicalCharts(bars: MarketBarLike[]): MarketAnaly
       missingTechnicalChart("ma-distance", "MA20 偏离"),
       missingTechnicalChart("macd", "MACD 柱"),
       missingTechnicalChart("rsi", "RSI14"),
+      missingTechnicalChart("kdj-j", "KDJ J"),
+      missingTechnicalChart("boll-position", "BOLL %B"),
     ];
   }
 
   const closes = orderedBars.map((bar) => Number(bar.close));
+  const highs = orderedBars.map((bar) => Number(bar.high ?? bar.close ?? 0));
+  const lows = orderedBars.map((bar) => Number(bar.low ?? bar.close ?? 0));
   const ma20 = movingAverageSeries(closes, 20);
   const maDistancePoints = orderedBars.flatMap((bar, index) => {
     const average = ma20[index];
@@ -590,10 +594,26 @@ export function buildOverviewTechnicalCharts(bars: MarketBarLike[]): MarketAnaly
       tone: rsiIndicatorTone(value),
     }];
   }).slice(-32);
+  const kdjPoints = kdjSeries(highs, lows, closes, 9).map((value, index) => ({
+    date: orderedBars[index].date,
+    value: Math.max(0, Math.min(100, value.j)),
+    tone: kdjIndicatorTone(value.j),
+  })).slice(-32);
+  const bollPositionPoints = bollPositionSeries(closes, 20, 2).flatMap((value, index) => {
+    if (value == null) return [];
+    const bounded = Math.max(0, Math.min(100, value));
+    return [{
+      date: orderedBars[index].date,
+      value: bounded,
+      tone: bounded >= 88 ? "warn" as MarketAnalysisTone : bounded <= 12 ? "risk" as MarketAnalysisTone : bounded >= 50 ? "opportunity" as MarketAnalysisTone : "neutral" as MarketAnalysisTone,
+    }];
+  }).slice(-32);
 
   const latestDistance = maDistancePoints[maDistancePoints.length - 1]?.value ?? null;
   const latestMacd = macdPoints[macdPoints.length - 1]?.value ?? null;
   const latestRsi = rsiPoints[rsiPoints.length - 1]?.value ?? null;
+  const latestKdjJ = kdjPoints[kdjPoints.length - 1]?.value ?? null;
+  const latestBollPosition = bollPositionPoints[bollPositionPoints.length - 1]?.value ?? null;
 
   return [
     {
@@ -619,6 +639,26 @@ export function buildOverviewTechnicalCharts(bars: MarketBarLike[]): MarketAnaly
       detail: "70/30 为常用强弱阈值，结合趋势和成交量确认。",
       tone: rsiIndicatorTone(latestRsi),
       points: rsiPoints,
+      scaleMin: 0,
+      scaleMax: 100,
+    },
+    {
+      key: "kdj-j",
+      label: "KDJ J",
+      value: formatNumber(latestKdjJ, 1),
+      detail: "J 值捕捉短线摆动和钝化，80/20 附近重点观察反转风险。",
+      tone: kdjIndicatorTone(latestKdjJ),
+      points: kdjPoints,
+      scaleMin: 0,
+      scaleMax: 100,
+    },
+    {
+      key: "boll-position",
+      label: "BOLL %B",
+      value: formatNumber(latestBollPosition, 1),
+      detail: "%B 表示价格在布林通道中的位置，靠近上下沿时注意突破或回落。",
+      tone: latestBollPosition == null ? "missing" : latestBollPosition >= 88 ? "warn" : latestBollPosition <= 12 ? "risk" : latestBollPosition >= 50 ? "opportunity" : "neutral",
+      points: bollPositionPoints,
       scaleMin: 0,
       scaleMax: 100,
     },
@@ -782,6 +822,29 @@ function rsiSeries(values: number[], period: number): (number | null)[] {
   return values.map((_, index) => {
     if (index < period) return null;
     return rsiSnapshot(values.slice(0, index + 1), period);
+  });
+}
+
+function kdjSeries(highs: number[], lows: number[], closes: number[], period: number) {
+  let k = 50;
+  let d = 50;
+  return closes.map((close, index) => {
+    const start = Math.max(0, index - period + 1);
+    const high = Math.max(...highs.slice(start, index + 1));
+    const low = Math.min(...lows.slice(start, index + 1));
+    const rsv = high === low ? 50 : ((close - low) / (high - low)) * 100;
+    k = (2 / 3) * k + (1 / 3) * rsv;
+    d = (2 / 3) * d + (1 / 3) * k;
+    return { k, d, j: 3 * k - 2 * d };
+  });
+}
+
+function bollPositionSeries(values: number[], period: number, multiplier: number): (number | null)[] {
+  return values.map((close, index) => {
+    if (index + 1 < period) return null;
+    const boll = bollSnapshot(values.slice(0, index + 1), period, multiplier);
+    if (boll.lower == null || boll.upper == null || boll.upper === boll.lower) return null;
+    return ((close - boll.lower) / (boll.upper - boll.lower)) * 100;
   });
 }
 
