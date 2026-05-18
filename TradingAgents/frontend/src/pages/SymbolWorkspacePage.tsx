@@ -687,6 +687,7 @@ export default function SymbolWorkspacePage({
                 bars={history?.bars || []}
                 drawingScope={history?.symbol || symbol}
                 evidenceEvents={chartEvidenceEvents}
+                factorRows={context?.factor_series || []}
                 fundFlowRows={context?.fund_flow_series || []}
                 signals={chartSignals}
                 strategyAnalysis={strategyAnalysis}

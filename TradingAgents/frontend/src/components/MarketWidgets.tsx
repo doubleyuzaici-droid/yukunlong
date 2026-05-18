@@ -1,5 +1,6 @@
 import { type ChangeEvent, type KeyboardEvent, type MouseEvent, type WheelEvent, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  FactorSnapshot,
   FundFlowSnapshot,
   IntradayPayload,
   IntradayPoint,
@@ -43,6 +44,7 @@ import {
   buildOverlayPriceLabels,
   buildPriceAdjustedBars,
   buildPriceAxisScale,
+  buildRelativeStrengthOverlaySeries,
   buildMeasuredRangeStats,
   buildMomentumIndicators,
   buildPriceGapAnnotations,
@@ -1291,6 +1293,7 @@ export function TradingSignalKlinePanel({
   signals = [],
   evidenceEvents = [],
   fundFlowRows = [],
+  factorRows = [],
   strategyAnalysis,
   strategyControls,
   selectedSignalId,
@@ -1301,6 +1304,7 @@ export function TradingSignalKlinePanel({
   signals?: ChartSignalMarker[];
   evidenceEvents?: ChartEvidenceEvent[];
   fundFlowRows?: FundFlowSnapshot[];
+  factorRows?: FactorSnapshot[];
   strategyAnalysis?: StrategyKlineAnalysis | null;
   strategyControls?: StrategyKlineControls;
   selectedSignalId?: string | null;
@@ -1401,9 +1405,10 @@ export function TradingSignalKlinePanel({
       chartPrefs.subCharts,
       periodData.events,
       fundFlowRows,
+      factorRows,
       priceAxisMode,
     ),
-    [chartParams, chartPrefs.subCharts, fundFlowRows, periodData, priceAxisMode, range, rightOffset, strategyLevelPrices],
+    [chartParams, chartPrefs.subCharts, factorRows, fundFlowRows, periodData, priceAxisMode, range, rightOffset, strategyLevelPrices],
   );
   const chartMarkers = chart.markers || [];
   const evidenceEventMarkers = chart.eventMarkers || [];
@@ -2395,10 +2400,21 @@ export function TradingSignalKlinePanel({
           {chartPrefs.relative && chart.relativeLine && (
             <g className="relative-return-layer">
               <line x1={chart.plotLeft} x2={chart.plotRight} y1={chart.relativeZeroY} y2={chart.relativeZeroY} />
-              <polyline points={chart.relativeLine} />
-              <text x={chart.plotRight - 112} y={Math.max(chart.sections[0].top + 16, chart.relativeZeroY - 8)}>
-                相对 {formatSignedPercent(chart.relativeLatest)}
+              <polyline className="relative-stock-line" points={chart.relativeLine} />
+              {chart.relativeStrengthIndexLine && (
+                <polyline className="relative-index-line" points={chart.relativeStrengthIndexLine} />
+              )}
+              {chart.relativeStrengthIndustryLine && (
+                <polyline className="relative-industry-line" points={chart.relativeStrengthIndustryLine} />
+              )}
+              <text x={clampNumber(chart.plotRight - 268, chart.plotLeft + 8, chart.plotRight - 112)} y={Math.max(chart.sections[0].top + 16, chart.relativeZeroY - 8)}>
+                {[
+                  `本股 ${formatSignedPercent(chart.relativeLatest)}`,
+                  isFiniteNumber(chart.relativeStrengthLatestIndex) ? `指数 ${formatSignedPercent(chart.relativeStrengthLatestIndex)}` : null,
+                  isFiniteNumber(chart.relativeStrengthLatestIndustry) ? `行业 ${formatSignedPercent(chart.relativeStrengthLatestIndustry)}` : null,
+                ].filter(Boolean).join(" · ")}
               </text>
+              <title>相对收益叠加：本股、相对指数、相对行业</title>
             </g>
           )}
           {chartPrefs.profile && chart.volumeProfile.bins.length > 0 && (
@@ -4219,6 +4235,7 @@ function buildTradingSignalGeometry(
   splitSubCharts = DEFAULT_TRADING_CHART_PREFS.subCharts,
   evidenceEvents: ChartEvidenceEvent[] = [],
   fundFlowRows: FundFlowSnapshot[] = [],
+  factorRows: FactorSnapshot[] = [],
   priceAxisMode: PriceAxisMode = "price",
 ) {
   const PLOT_LEFT = 48;
@@ -4326,8 +4343,12 @@ function buildTradingSignalGeometry(
       atrLine: "",
       obvLine: "",
       relativeLine: "",
+      relativeStrengthIndexLine: "",
+      relativeStrengthIndustryLine: "",
       relativeZeroY: (PRICE_TOP + PRICE_BOTTOM) / 2,
       relativeLatest: null as number | null,
+      relativeStrengthLatestIndex: null as number | null,
+      relativeStrengthLatestIndustry: null as number | null,
       volumeProfile: buildVolumeProfile([], { currentPrice: null }),
       rangeExtrema: null,
       priceTicks: [],
@@ -4741,7 +4762,19 @@ function buildTradingSignalGeometry(
   const obvY = (value?: number | null) =>
     VOLATILITY_BOTTOM - ((Number(value ?? 0) - obvMin) / obvSpan) * (VOLATILITY_BOTTOM - VOLATILITY_TOP);
   const relativeValues = closeValues.map((close) => (closeValues[0] ? close / closeValues[0] - 1 : 0));
-  const maxRelativeAbs = Math.max(0.01, ...relativeValues.map(Math.abs));
+  const relativeStrengthOverlay = buildRelativeStrengthOverlaySeries(visible, factorRows);
+  const relativeStrengthIndexValues: Array<number | null> = Array.from({ length: visible.length }, () => null);
+  const relativeStrengthIndustryValues: Array<number | null> = Array.from({ length: visible.length }, () => null);
+  relativeStrengthOverlay.points.forEach((point) => {
+    if (point.index < 0 || point.index >= visible.length) return;
+    relativeStrengthIndexValues[point.index] = point.indexValue;
+    relativeStrengthIndustryValues[point.index] = point.industryValue;
+  });
+  const relativeStrengthValues = [
+    ...relativeStrengthIndexValues,
+    ...relativeStrengthIndustryValues,
+  ].filter(isFiniteNumber);
+  const maxRelativeAbs = Math.max(0.01, ...relativeValues.map(Math.abs), ...relativeStrengthValues.map(Math.abs));
   const relativeY = (value: number) =>
     PRICE_BOTTOM - (((value + maxRelativeAbs) / (maxRelativeAbs * 2)) * (PRICE_BOTTOM - PRICE_TOP));
   const volumeProfile = buildVolumeProfile(visible, {
@@ -5382,6 +5415,8 @@ function buildTradingSignalGeometry(
   const kdjLine = (key: "k" | "d" | "j") =>
     indicatorPoints(kdjValues.map((value) => value?.[key] ?? null), rsiY);
   const relativeLine = indicatorPoints(relativeValues, relativeY);
+  const relativeStrengthIndexLine = indicatorPoints(relativeStrengthIndexValues, relativeY);
+  const relativeStrengthIndustryLine = indicatorPoints(relativeStrengthIndustryValues, relativeY);
   const volumeMa5Line = indicatorPoints(volumeMa5Values, volumeY);
   const volumeMa10Line = indicatorPoints(volumeMa10Values, volumeY);
   const volumeMa20Line = indicatorPoints(volumeMa20Values, volumeY);
@@ -5694,8 +5729,12 @@ function buildTradingSignalGeometry(
     atrLine: indicatorPoints(atrValues, atrY),
     obvLine: indicatorPoints(obvValues, obvY),
     relativeLine,
+    relativeStrengthIndexLine,
+    relativeStrengthIndustryLine,
     relativeZeroY: relativeY(0),
     relativeLatest: relativeValues[relativeValues.length - 1] ?? null,
+    relativeStrengthLatestIndex: relativeStrengthOverlay.latestIndex,
+    relativeStrengthLatestIndustry: relativeStrengthOverlay.latestIndustry,
     volumeProfile,
     rangeExtrema,
     priceTicks,

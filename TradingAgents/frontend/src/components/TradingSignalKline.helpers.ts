@@ -1020,6 +1020,31 @@ export interface FundFlowOverlayGeometry {
   latest: FundFlowOverlayRowLike | null;
 }
 
+export interface RelativeStrengthOverlayRowLike {
+  date?: string | null;
+  rel_strength_index20?: number | null;
+  rel_strength_industry20?: number | null;
+}
+
+export interface RelativeStrengthOverlayCandleLike {
+  date?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+}
+
+export interface RelativeStrengthOverlayPoint {
+  index: number;
+  date: string;
+  indexValue: number | null;
+  industryValue: number | null;
+}
+
+export interface RelativeStrengthOverlaySeries {
+  points: RelativeStrengthOverlayPoint[];
+  latestIndex: number | null;
+  latestIndustry: number | null;
+}
+
 export type IndicatorThresholdGuideTone = "good" | "risk" | "neutral";
 
 export interface IndicatorThresholdGuideDefinition {
@@ -1309,6 +1334,45 @@ export function buildFundFlowOverlayGeometry(
     bars,
     zeroY,
     latest: matched.length ? matched[matched.length - 1].row : null,
+  };
+}
+
+export function buildRelativeStrengthOverlaySeries(
+  candles: RelativeStrengthOverlayCandleLike[],
+  rows: RelativeStrengthOverlayRowLike[],
+): RelativeStrengthOverlaySeries {
+  const normalizedRows = rows
+    .flatMap((row) => {
+      const date = normalizeDateKey(row.date);
+      if (!date) return [];
+      const indexValue = normalizeNullableNumber(row.rel_strength_index20);
+      const industryValue = normalizeNullableNumber(row.rel_strength_industry20);
+      if (!isFiniteNumber(indexValue) && !isFiniteNumber(industryValue)) return [];
+      return [{ date, indexValue, industryValue }];
+    })
+    .sort((left, right) => left.date.localeCompare(right.date));
+  const rowByDate = new Map(normalizedRows.map((row) => [row.date, row]));
+  const points: RelativeStrengthOverlayPoint[] = [];
+
+  candles.forEach((candle, index) => {
+    const candleDate = normalizeDateKey(candle.date);
+    const periodStart = normalizeDateKey(candle.period_start);
+    const periodEnd = normalizeDateKey(candle.period_end);
+    const matched = candleDate ? rowByDate.get(candleDate) : undefined;
+    const row = matched || findLatestRelativeStrengthRowInRange(normalizedRows, periodStart, periodEnd);
+    if (!row) return;
+    points.push({
+      index,
+      date: candleDate || periodEnd || row.date,
+      indexValue: row.indexValue,
+      industryValue: row.industryValue,
+    });
+  });
+
+  return {
+    points,
+    latestIndex: latestRelativeStrengthValue(points, "indexValue"),
+    latestIndustry: latestRelativeStrengthValue(points, "industryValue"),
   };
 }
 
@@ -4222,6 +4286,43 @@ function normalizeAdvancedBar(bar: VolumeProfileBarLike) {
 function normalizeOptionalNumber(value: unknown) {
   const next = Number(value);
   return isFiniteNumber(next) ? next : null;
+}
+
+function normalizeNullableNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  return normalizeOptionalNumber(value);
+}
+
+function normalizeDateKey(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function findLatestRelativeStrengthRowInRange(
+  rows: Array<{ date: string; indexValue: number | null; industryValue: number | null }>,
+  periodStart: string | null,
+  periodEnd: string | null,
+) {
+  if (!periodStart || !periodEnd) return null;
+  const start = periodStart <= periodEnd ? periodStart : periodEnd;
+  const end = periodStart <= periodEnd ? periodEnd : periodStart;
+  let matched: { date: string; indexValue: number | null; industryValue: number | null } | null = null;
+  rows.forEach((row) => {
+    if (row.date >= start && row.date <= end) {
+      matched = row;
+    }
+  });
+  return matched;
+}
+
+function latestRelativeStrengthValue(
+  points: RelativeStrengthOverlayPoint[],
+  key: "indexValue" | "industryValue",
+) {
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    const value = points[index]?.[key];
+    if (isFiniteNumber(value)) return value;
+  }
+  return null;
 }
 
 function crossedAbove(

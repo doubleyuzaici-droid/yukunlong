@@ -5793,6 +5793,16 @@ label {
   vector-effect: non-scaling-stroke;
 }
 
+.relative-return-layer .relative-index-line {
+  stroke: #f6b94b;
+  stroke-dasharray: 6 4;
+}
+
+.relative-return-layer .relative-industry-line {
+  stroke: #a78bfa;
+  stroke-dasharray: 2 4;
+}
+
 .relative-return-layer text {
   fill: #9df8ef !important;
   font-size: 11px !important;
@@ -6145,6 +6155,16 @@ label {
   stroke-linejoin: round;
   stroke-width: 1.6;
   vector-effect: non-scaling-stroke;
+}
+
+.relative-return-layer .relative-index-line {
+  stroke: #f6b94b;
+  stroke-dasharray: 6 4;
+}
+
+.relative-return-layer .relative-industry-line {
+  stroke: #a78bfa;
+  stroke-dasharray: 2 4;
 }
 
 .relative-return-layer text {

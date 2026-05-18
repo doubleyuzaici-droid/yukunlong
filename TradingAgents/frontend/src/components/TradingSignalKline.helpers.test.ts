@@ -18,6 +18,7 @@ import {
   buildKlineEventSummary,
   buildKlineEventDensity,
   buildKlineEventBacktestSummary,
+  buildRelativeStrengthOverlaySeries,
   buildLatestPriceLine,
   buildKlineRangeNavigator,
   buildHeikinAshiBars,
@@ -1824,6 +1825,63 @@ function testBuildsKlineEventBacktestSummary() {
   assertEqual(summary[1]?.tone, "good", "positive average forward return is marked constructive");
 }
 
+function testBuildsRelativeStrengthOverlaySeries() {
+  const overlay = buildRelativeStrengthOverlaySeries(
+    [
+      { date: "2026-09-01" },
+      { date: "2026-09-02" },
+      { date: "2026-09-03" },
+    ],
+    [
+      { date: "2026-09-01", rel_strength_index20: 0.02, rel_strength_industry20: 0.01 },
+      { date: "2026-09-03", rel_strength_index20: -0.01, rel_strength_industry20: 0.04 },
+    ],
+  );
+
+  assertEqual(overlay.points.length, 2, "relative strength overlay keeps matched factor rows");
+  assertEqual(overlay.points.map((point) => point.index).join(","), "0,2", "relative strength overlay maps rows to candle indexes");
+  assertApprox(overlay.points[0]?.indexValue, 0.02, 0.0001, "index relative strength is preserved");
+  assertApprox(overlay.points[0]?.industryValue, 0.01, 0.0001, "industry relative strength is preserved");
+  assertApprox(overlay.latestIndex, -0.01, 0.0001, "latest index relative strength comes from newest visible row");
+  assertApprox(overlay.latestIndustry, 0.04, 0.0001, "latest industry relative strength comes from newest visible row");
+}
+
+function testBuildsRelativeStrengthOverlaySeriesForPeriodBars() {
+  const overlay = buildRelativeStrengthOverlaySeries(
+    [
+      { date: "2026-09-07", period_start: "2026-09-01", period_end: "2026-09-07" },
+    ],
+    [
+      { date: "2026-09-02", rel_strength_index20: 0.01, rel_strength_industry20: 0.02 },
+      { date: "2026-09-06", rel_strength_index20: 0.05, rel_strength_industry20: 0.03 },
+      { date: "2026-09-08", rel_strength_index20: 0.09, rel_strength_industry20: 0.08 },
+    ],
+  );
+
+  assertEqual(overlay.points.length, 1, "period relative strength overlay uses rows inside the candle window");
+  assertEqual(overlay.points[0]?.index, 0, "period relative strength overlay maps to the aggregated candle index");
+  assertApprox(overlay.points[0]?.indexValue, 0.05, 0.0001, "period relative strength picks the latest in-window index row");
+  assertApprox(overlay.points[0]?.industryValue, 0.03, 0.0001, "period relative strength picks the latest in-window industry row");
+}
+
+function testBuildsRelativeStrengthOverlaySeriesSkipsMissingValues() {
+  const overlay = buildRelativeStrengthOverlaySeries(
+    [
+      { date: "2026-09-01" },
+      { date: "2026-09-02" },
+    ],
+    [
+      { date: "2026-09-01", rel_strength_index20: null, rel_strength_industry20: null },
+      { date: "2026-09-02", rel_strength_index20: 0.03, rel_strength_industry20: null },
+    ],
+  );
+
+  assertEqual(overlay.points.length, 1, "relative strength overlay skips rows without either strength value");
+  assertEqual(overlay.points[0]?.industryValue, null, "relative strength overlay preserves missing side as null");
+  assertApprox(overlay.latestIndex, 0.03, 0.0001, "relative strength overlay still reports the available latest value");
+  assertEqual(overlay.latestIndustry, null, "relative strength overlay keeps latest missing series explicit");
+}
+
 testBuildsVisibleVolumeDistribution();
 testBuildsLimitPriceLinesFromFinitePrices();
 testMapsClientPointToSplitChartViewBox();
@@ -1917,3 +1975,6 @@ testPriceGapAnnotationsRespectThreshold();
 testBuildsKlineEventSummary();
 testBuildsKlineEventDensity();
 testBuildsKlineEventBacktestSummary();
+testBuildsRelativeStrengthOverlaySeries();
+testBuildsRelativeStrengthOverlaySeriesForPeriodBars();
+testBuildsRelativeStrengthOverlaySeriesSkipsMissingValues();
