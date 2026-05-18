@@ -1208,6 +1208,8 @@ function testBuildsSplitIndicatorPanelReadouts() {
     oscEma: -8.2,
     atr: 1.52,
     obv: 1280000,
+    bollPercentB: 72.4,
+    bollBandwidth: 18.6,
   }, { mode: "split" });
 
   assertEqual(readouts.length, 7, "split readouts cover every visible chart section");
@@ -1216,7 +1218,7 @@ function testBuildsSplitIndicatorPanelReadouts() {
   assertEqual(readouts.find((group) => group.key === "oscillator")?.items.map((item) => item.label).join(","), "RSI,PSY,PSYMA,J", "oscillator readout includes PSY/PSYMA with RSI and KDJ values");
   assertEqual(readouts.find((group) => group.key === "advanced")?.items.map((item) => item.label).join(","), "CR,BR,EMV,MFI,VR", "advanced readout keeps energy and money-flow values");
   assertEqual(readouts.find((group) => group.key === "momentum")?.items.map((item) => item.label).join(","), "+DI,-DI,ADX,CCI,WR,BIAS,DMA,TRIX,OSC,OSCEMA", "momentum readout keeps directional and momentum values");
-  assertEqual(readouts.find((group) => group.key === "volatility")?.items.map((item) => item.label).join(","), "ATR,OBV", "volatility readout keeps range and cumulative volume values");
+  assertEqual(readouts.find((group) => group.key === "volatility")?.items.map((item) => item.label).join(","), "ATR,OBV,%B,BBW", "volatility readout keeps range, cumulative volume, and BOLL-derived values");
 }
 
 function testCompactIndicatorPanelReadoutsFoldExtraIndicators() {
@@ -1410,7 +1412,11 @@ function testVolumeMomentumIndicatorsNeedEnoughSamples() {
 }
 
 function testBuildsVolatilityVolumeIndicators() {
-  const indicators = buildVolatilityVolumeIndicators(trendOverlayBars, { atrPeriod: 3 });
+  const indicators = buildVolatilityVolumeIndicators(trendOverlayBars, {
+    atrPeriod: 3,
+    bollMultiplier: 2,
+    bollPeriod: 3,
+  });
   const latest = indicators[indicators.length - 1];
 
   assertEqual(indicators.length, trendOverlayBars.length, "volatility volume indicators preserve bar count");
@@ -1419,14 +1425,21 @@ function testBuildsVolatilityVolumeIndicators() {
   assertApprox(indicators[2]?.atr, 1.3, 0.001, "ATR averages true range once the period is ready");
   assertApprox(latest?.atr, 1.6667, 0.001, "ATR captures the latest volatility range");
   assertApprox(latest?.obv, -660, 0.001, "OBV accumulates signed volume by close direction");
+  assertApprox(latest?.bollPercentB, 22.2208, 0.001, "volatility indicators expose BOLL percent-b position");
+  assertApprox(latest?.bollBandwidth, 32.4574, 0.001, "volatility indicators expose BOLL bandwidth percent");
 }
 
 function testVolatilityVolumeIndicatorsNeedEnoughSamples() {
-  const indicators = buildVolatilityVolumeIndicators(trendOverlayBars.slice(0, 2), { atrPeriod: 3 });
+  const indicators = buildVolatilityVolumeIndicators(trendOverlayBars.slice(0, 2), {
+    atrPeriod: 3,
+    bollPeriod: 3,
+  });
   const latest = indicators[indicators.length - 1];
 
   assertEqual(latest?.atr, null, "ATR is missing before its period is ready");
   assertApprox(latest?.obv, 300, 0.001, "OBV is available from the first close direction");
+  assertEqual(latest?.bollPercentB, null, "BOLL percent-b is missing before enough close samples");
+  assertEqual(latest?.bollBandwidth, null, "BOLL bandwidth is missing before enough close samples");
 }
 
 function testBuildsVisiblePriceExtrema() {

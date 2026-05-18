@@ -5708,6 +5708,15 @@ label {
   stroke-dasharray: 5 4;
 }
 
+.indicator-line.boll-percent-b {
+  stroke: #a78bfa;
+}
+
+.indicator-line.boll-bandwidth {
+  stroke: #f472b6;
+  stroke-dasharray: 3 5;
+}
+
 .obv-zero-line {
   stroke: rgba(238, 242, 247, 0.18);
   stroke-dasharray: 4 5;

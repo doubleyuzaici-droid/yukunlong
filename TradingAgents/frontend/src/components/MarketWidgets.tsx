@@ -225,6 +225,8 @@ interface TradingIndicatorSnapshot {
   volumeRatio?: number | null;
   atr?: number | null;
   obv?: number | null;
+  bollPercentB?: number | null;
+  bollBandwidth?: number | null;
 }
 
 interface DecisionCheck {
@@ -2186,7 +2188,7 @@ export function TradingSignalKlinePanel({
         <MarketReadoutStat
           label={`ATR${chartParams.atrPeriod} / OBV`}
           value={`${formatNumber(readoutIndicators?.atr, 2)} / ${formatCompactNumber(readoutIndicators?.obv)}`}
-          sub="波动与量能累积"
+          sub={`%B ${formatNumber(readoutIndicators?.bollPercentB, 1)} · BBW ${formatRawPercentNumber(readoutIndicators?.bollBandwidth, 1)}`}
         />
         <MarketReadoutStat
           label="相对起点"
@@ -2588,6 +2590,8 @@ export function TradingSignalKlinePanel({
           {chartPrefs.volatility && <line className="obv-zero-line" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.obvZeroY} y2={chart.obvZeroY} />}
           {chartPrefs.volatility && chart.atrLine && <polyline className="indicator-line atr" points={chart.atrLine} />}
           {chartPrefs.volatility && chart.obvLine && <polyline className="indicator-line obv" points={chart.obvLine} />}
+          {chartPrefs.volatility && chart.bollPercentBLine && <polyline className="indicator-line boll-percent-b" points={chart.bollPercentBLine} />}
+          {chartPrefs.volatility && chart.bollBandwidthLine && <polyline className="indicator-line boll-bandwidth" points={chart.bollBandwidthLine} />}
           {chartPrefs.boll && chart.bollUpper && <polyline className="boll-line upper" points={chart.bollUpper} />}
           {chartPrefs.boll && chart.bollMid && <polyline className="boll-line mid" points={chart.bollMid} />}
           {chartPrefs.boll && chart.bollLower && <polyline className="boll-line lower" points={chart.bollLower} />}
@@ -2999,7 +3003,7 @@ export function TradingSignalKlinePanel({
                 BOLL {formatNumber(crosshair.candle.indicators.bollMid, 2)} · RSI {formatNumber(crosshair.candle.indicators.rsi14, 1)} · PSY {formatNumber(crosshair.candle.indicators.psy, 1)} / {formatNumber(crosshair.candle.indicators.psyMa, 1)}
               </text>
               <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="268">
-                MFI {formatNumber(crosshair.candle.indicators.mfi, 1)} · VR {formatNumber(crosshair.candle.indicators.vr, 1)} · ATR {formatNumber(crosshair.candle.indicators.atr, 2)}
+                MFI {formatNumber(crosshair.candle.indicators.mfi, 1)} · VR {formatNumber(crosshair.candle.indicators.vr, 1)} · ATR {formatNumber(crosshair.candle.indicators.atr, 2)} · %B {formatNumber(crosshair.candle.indicators.bollPercentB, 1)}
               </text>
               <text className="crosshair-readout-row" x={crosshair.labelX + 12} y="292">
                 DMI +DI {formatNumber(crosshair.candle.indicators.pdi, 1)} / -DI {formatNumber(crosshair.candle.indicators.mdi, 1)}
@@ -4410,6 +4414,8 @@ function buildTradingSignalGeometry(
       oscEmaLine: "",
       atrLine: "",
       obvLine: "",
+      bollPercentBLine: "",
+      bollBandwidthLine: "",
       relativeLine: "",
       relativeStrengthIndexLine: "",
       relativeStrengthIndustryLine: "",
@@ -4490,6 +4496,8 @@ function buildTradingSignalGeometry(
   });
   const volatilityValues = buildVolatilityVolumeIndicators(visible, {
     atrPeriod: params.atrPeriod,
+    bollMultiplier: params.bollMultiplier,
+    bollPeriod: params.bollPeriod,
   });
   const sarValues = trendOverlayValues.map((value) => value.sar);
   const bbiValues = trendOverlayValues.map((value) => value.bbi);
@@ -4510,6 +4518,8 @@ function buildTradingSignalGeometry(
   const oscEmaValues = oscillatorValues.map((value) => value.oscEma);
   const atrValues = volatilityValues.map((value) => value.atr);
   const obvValues = volatilityValues.map((value) => value.obv);
+  const bollPercentBValues = volatilityValues.map((value) => value.bollPercentB);
+  const bollBandwidthValues = volatilityValues.map((value) => value.bollBandwidth);
   const bollDomainValues = bollValues.flatMap((value) =>
     value ? [value.upper, value.lower] : [],
   );
@@ -4839,6 +4849,10 @@ function buildTradingSignalGeometry(
   const obvSpan = obvMax - obvMin || 1;
   const obvY = (value?: number | null) =>
     VOLATILITY_BOTTOM - ((Number(value ?? 0) - obvMin) / obvSpan) * (VOLATILITY_BOTTOM - VOLATILITY_TOP);
+  const bollVolatilityY = (value?: number | null) => {
+    const next = clampNumber(Number(value ?? 50), -20, 120);
+    return VOLATILITY_BOTTOM - (((next + 20) / 140) * (VOLATILITY_BOTTOM - VOLATILITY_TOP));
+  };
   const relativeValues = closeValues.map((close) => (closeValues[0] ? close / closeValues[0] - 1 : 0));
   const relativeStrengthOverlay = buildRelativeStrengthOverlaySeries(visible, factorRows);
   const relativeStrengthIndexValues: Array<number | null> = Array.from({ length: visible.length }, () => null);
@@ -5354,6 +5368,8 @@ function buildTradingSignalGeometry(
         volumeRatio,
         atr: atrValues[index],
         obv: obvValues[index],
+        bollPercentB: bollPercentBValues[index],
+        bollBandwidth: bollBandwidthValues[index],
       },
     };
   });
@@ -5638,6 +5654,8 @@ function buildTradingSignalGeometry(
     indicatorValueLabel("osc-ema", extraIndicatorSection("momentum"), "volumeMomentum", "OSCEMA", latestIndicator?.oscEma, latestIndicator ? rocY(latestIndicator.oscEma) : null, "info", 83, { precision: 2, signed: true }),
     indicatorValueLabel("atr", extraIndicatorSection("volatility"), "volatility", "ATR", latestIndicator?.atr, latestIndicator ? atrY(latestIndicator.atr) : null, "neutral", 90, { precision: 2 }),
     indicatorValueLabel("obv", extraIndicatorSection("volatility"), "volatility", "OBV", latestIndicator?.obv, latestIndicator ? obvY(latestIndicator.obv) : null, "info", 91, { compact: true, signed: true }),
+    indicatorValueLabel("boll-percent-b", extraIndicatorSection("volatility"), "volatility", "%B", latestIndicator?.bollPercentB, latestIndicator ? bollVolatilityY(latestIndicator.bollPercentB) : null, "info", 92, { precision: 1 }),
+    indicatorValueLabel("boll-bandwidth", extraIndicatorSection("volatility"), "volatility", "BBW", latestIndicator?.bollBandwidth, latestIndicator ? bollVolatilityY(latestIndicator.bollBandwidth) : null, "neutral", 93, { precision: 1 }),
   ], {
     maxPerSection: splitSubCharts ? 7 : 10,
     minGap: 13,
@@ -5822,6 +5840,8 @@ function buildTradingSignalGeometry(
     oscEmaLine: indicatorPoints(oscEmaValues, rocY),
     atrLine: indicatorPoints(atrValues, atrY),
     obvLine: indicatorPoints(obvValues, obvY),
+    bollPercentBLine: indicatorPoints(bollPercentBValues, bollVolatilityY),
+    bollBandwidthLine: indicatorPoints(bollBandwidthValues, bollVolatilityY),
     relativeLine,
     relativeStrengthIndexLine,
     relativeStrengthIndustryLine,
@@ -6055,6 +6075,10 @@ function formatIndicatorPanelReadout(item: IndicatorPanelReadoutItem) {
   return item.signed
     ? formatSignedNumber(item.value, item.precision)
     : formatNumber(item.value, item.precision);
+}
+
+function formatRawPercentNumber(value?: number | null, digits = 1) {
+  return isFiniteNumber(value) ? `${formatNumber(value, digits)}%` : "-";
 }
 
 function buildTradePlanLevels(analysis: StrategyKlineAnalysis | null | undefined, chart: Record<string, any>) {

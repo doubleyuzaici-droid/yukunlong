@@ -1963,6 +1963,8 @@ export interface VolumeMomentumIndicatorSnapshot {
 export interface VolatilityVolumeIndicatorSnapshot {
   atr: number | null;
   obv: number | null;
+  bollPercentB: number | null;
+  bollBandwidth: number | null;
 }
 
 export type IndicatorSectionLayoutMode = "compact" | "split";
@@ -2009,6 +2011,8 @@ export interface IndicatorPanelReadoutSnapshot {
   oscEma?: number | null;
   atr?: number | null;
   obv?: number | null;
+  bollPercentB?: number | null;
+  bollBandwidth?: number | null;
 }
 
 export type IndicatorStateSummaryTone = "good" | "risk" | "neutral";
@@ -2526,6 +2530,8 @@ export function buildIndicatorPanelReadouts(
   const volatilityItems = [
     item("ATR", snapshot.atr, 2),
     item("OBV", snapshot.obv, 0, { compact: true, signed: true }),
+    item("%B", snapshot.bollPercentB, 1),
+    item("BBW", snapshot.bollBandwidth, 1),
   ];
 
   const groups = [
@@ -2993,10 +2999,14 @@ export function buildVolumeMomentumIndicators(
 
 export function buildVolatilityVolumeIndicators(
   bars: VolumeProfileBarLike[],
-  options: { atrPeriod?: number } = {},
+  options: { atrPeriod?: number; bollPeriod?: number; bollMultiplier?: number } = {},
 ): VolatilityVolumeIndicatorSnapshot[] {
   const normalized = bars.map(normalizeAdvancedBar);
   const atrPeriod = clampInteger(options.atrPeriod ?? 14, 2, 80);
+  const bollPeriod = clampInteger(options.bollPeriod ?? 20, 2, 160);
+  const bollMultiplier = clampNumber(options.bollMultiplier ?? 2, 1, 4);
+  const closeValues = normalized.map((bar) => bar?.close ?? null);
+  const bollDerived = buildBollDerivedValues(closeValues, bollPeriod, bollMultiplier);
   const trueRanges = normalized.map((bar, index) => {
     if (!bar) return null;
     const previous = normalized[index - 1];
@@ -3011,7 +3021,14 @@ export function buildVolatilityVolumeIndicators(
 
   return normalized.map((bar, index) => {
     const previous = normalized[index - 1];
-    if (!bar) return { atr: null, obv: null };
+    if (!bar) {
+      return {
+        atr: null,
+        obv: null,
+        bollPercentB: null,
+        bollBandwidth: null,
+      };
+    }
     if (index > 0 && previous) {
       if (bar.close > previous.close) obv += bar.volume;
       else if (bar.close < previous.close) obv -= bar.volume;
@@ -3023,6 +3040,32 @@ export function buildVolatilityVolumeIndicators(
         ? averageNumbers(rangeWindow)
         : null,
       obv,
+      bollPercentB: bollDerived[index]?.percentB ?? null,
+      bollBandwidth: bollDerived[index]?.bandwidth ?? null,
+    };
+  });
+}
+
+function buildBollDerivedValues(
+  closeValues: Array<number | null>,
+  period: number,
+  multiplier: number,
+): Array<{ percentB: number | null; bandwidth: number | null }> {
+  return closeValues.map((close, index) => {
+    if (!isFiniteNumber(close) || index < period - 1) return { percentB: null, bandwidth: null };
+    const window = closeValues.slice(index - period + 1, index + 1);
+    if (window.length !== period || !window.every(isFiniteNumber)) return { percentB: null, bandwidth: null };
+    const mid = averageNumbers(window);
+    if (!isFiniteNumber(mid) || mid === 0) return { percentB: null, bandwidth: null };
+    const variance = window.reduce((sum, value) => sum + (value - mid) ** 2, 0) / window.length;
+    const width = Math.sqrt(variance) * multiplier;
+    const upper = mid + width;
+    const lower = mid - width;
+    const span = upper - lower;
+    if (!isFiniteNumber(span) || span <= 0) return { percentB: null, bandwidth: null };
+    return {
+      percentB: ((close - lower) / span) * 100,
+      bandwidth: (span / Math.abs(mid)) * 100,
     };
   });
 }
