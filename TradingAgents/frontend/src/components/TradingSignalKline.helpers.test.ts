@@ -134,6 +134,8 @@ const baseChartParams = {
   maFast: 5,
   maMid: 20,
   maSlow: 60,
+  emaFast: 12,
+  emaSlow: 26,
   bollPeriod: 20,
   bollMultiplier: 2,
   macdFast: 12,
@@ -535,6 +537,8 @@ function testAppliesShortTermChartParameterPreset() {
   assertEqual(params.maFast, 3, "short preset uses faster MA fast period");
   assertEqual(params.maMid, 10, "short preset uses faster MA mid period");
   assertEqual(params.maSlow, 30, "short preset uses faster MA slow period");
+  assertEqual(params.emaFast, 6, "short preset uses faster EMA fast period");
+  assertEqual(params.emaSlow, 13, "short preset uses faster EMA slow period");
   assertEqual(params.macdFast, 6, "short preset uses faster MACD fast period");
   assertEqual(params.macdSlow, 13, "short preset uses faster MACD slow period");
   assertEqual(params.macdSignal, 5, "short preset uses faster MACD signal period");
@@ -546,6 +550,7 @@ function testMatchesChartParameterPresetFromValues() {
   const params = applyChartParameterPreset(baseChartParams, "swing");
 
   assertEqual(matchChartParameterPreset(params), "swing", "parameter matcher identifies the current swing preset");
+  assertEqual(matchChartParameterPreset({ ...params, emaFast: 18 }), null, "manual EMA edits make the preset custom");
   assertEqual(matchChartParameterPreset({ ...params, bollMultiplier: 2.3 }), null, "manual parameter edits make the preset custom");
 }
 

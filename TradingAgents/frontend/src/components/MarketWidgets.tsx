@@ -299,6 +299,8 @@ interface TradingChartParameters {
   maFast: number;
   maMid: number;
   maSlow: number;
+  emaFast: number;
+  emaSlow: number;
   bollPeriod: number;
   bollMultiplier: number;
   enePeriod: number;
@@ -509,6 +511,8 @@ const DEFAULT_TRADING_CHART_PARAMS: TradingChartParameters = {
   maFast: 5,
   maMid: 20,
   maSlow: 60,
+  emaFast: 12,
+  emaSlow: 26,
   bollPeriod: 20,
   bollMultiplier: 2,
   enePeriod: 25,
@@ -595,6 +599,8 @@ function normalizeTradingChartParams(value: unknown): TradingChartParameters {
     maFast: boundedInteger(next.maFast, 3, 20, DEFAULT_TRADING_CHART_PARAMS.maFast),
     maMid: boundedInteger(next.maMid, 5, 80, DEFAULT_TRADING_CHART_PARAMS.maMid),
     maSlow: boundedInteger(next.maSlow, 20, 250, DEFAULT_TRADING_CHART_PARAMS.maSlow),
+    emaFast: boundedInteger(next.emaFast, 3, 80, DEFAULT_TRADING_CHART_PARAMS.emaFast),
+    emaSlow: boundedInteger(next.emaSlow, 5, 250, DEFAULT_TRADING_CHART_PARAMS.emaSlow),
     bollPeriod: boundedInteger(next.bollPeriod, 10, 80, DEFAULT_TRADING_CHART_PARAMS.bollPeriod),
     bollMultiplier: boundedNumber(next.bollMultiplier, 1, 4, DEFAULT_TRADING_CHART_PARAMS.bollMultiplier),
     enePeriod: boundedInteger(next.enePeriod, 5, 160, DEFAULT_TRADING_CHART_PARAMS.enePeriod),
@@ -2028,6 +2034,8 @@ export function TradingSignalKlinePanel({
           <ChartParamInput label="MA快" value={chartParams.maFast} onChange={updateChartParam("maFast")} />
           <ChartParamInput label="MA中" value={chartParams.maMid} onChange={updateChartParam("maMid")} />
           <ChartParamInput label="MA慢" value={chartParams.maSlow} onChange={updateChartParam("maSlow")} />
+          <ChartParamInput label="EMA快" value={chartParams.emaFast} onChange={updateChartParam("emaFast")} />
+          <ChartParamInput label="EMA慢" value={chartParams.emaSlow} onChange={updateChartParam("emaSlow")} />
           <ChartParamInput label="BOLL周期" value={chartParams.bollPeriod} onChange={updateChartParam("bollPeriod")} />
           <ChartParamInput label="BOLL倍数" value={chartParams.bollMultiplier} step="0.1" onChange={updateChartParam("bollMultiplier")} />
           <ChartParamInput label="ENE周期" value={chartParams.enePeriod} onChange={updateChartParam("enePeriod")} />
@@ -2100,7 +2108,7 @@ export function TradingSignalKlinePanel({
           sub={`MA${chartParams.maSlow} ${formatNumber(readoutIndicators?.ma60, 2)} · MA120 ${formatNumber(readoutIndicators?.ma120, 2)}`}
         />
         <MarketReadoutStat
-          label="EMA / VWAP"
+          label={`EMA ${chartParams.emaFast}/${chartParams.emaSlow}`}
           value={`${formatNumber(readoutIndicators?.emaFast, 2)} / ${formatNumber(readoutIndicators?.emaSlow, 2)}`}
           sub={`VWAP ${formatNumber(readoutIndicators?.vwap, 2)}`}
         />
@@ -4466,6 +4474,8 @@ function buildTradingSignalGeometry(
   const fastPeriod = Math.min(params.maFast, params.maMid, params.maSlow);
   const midPeriod = [params.maFast, params.maMid, params.maSlow].sort((left, right) => left - right)[1];
   const slowPeriod = Math.max(params.maFast, params.maMid, params.maSlow);
+  const emaFastPeriod = Math.min(params.emaFast, params.emaSlow - 1);
+  const emaSlowPeriod = Math.max(params.emaSlow, emaFastPeriod + 1);
   const macdFast = Math.min(params.macdFast, params.macdSlow - 1);
   const macdSlow = Math.max(params.macdSlow, macdFast + 1);
   const bollValues = bollNumberValues(closeValues, params.bollPeriod, params.bollMultiplier);
@@ -4474,8 +4484,10 @@ function buildTradingSignalGeometry(
     period: params.enePeriod,
   });
   const mikeValues = buildMikeIndicators(visible, { period: params.mikePeriod });
-  const emaFastValues = emaNumberValues(closeValues, macdFast);
-  const emaSlowValues = emaNumberValues(closeValues, macdSlow);
+  const emaFastValues = emaNumberValues(closeValues, emaFastPeriod);
+  const emaSlowValues = emaNumberValues(closeValues, emaSlowPeriod);
+  const macdFastValues = emaNumberValues(closeValues, macdFast);
+  const macdSlowValues = emaNumberValues(closeValues, macdSlow);
   const vwapValues = vwapNumberValues(visible);
   const trendOverlayValues = buildTrendOverlayIndicators(visible, {
     biasPeriod: params.biasPeriod,
@@ -4756,7 +4768,7 @@ function buildTradingSignalGeometry(
     if (slice.length < Math.min(windowSize, 5)) return null;
     return slice.reduce((sum, item) => sum + Number(item.close || 0), 0) / slice.length;
   };
-  const difValues = closeValues.map((_, index) => emaFastValues[index] - emaSlowValues[index]);
+  const difValues = closeValues.map((_, index) => macdFastValues[index] - macdSlowValues[index]);
   const deaValues = emaNumberValues(difValues, params.macdSignal);
   const macdValues = difValues.map((value, index) => (value - deaValues[index]) * 2);
   const rsiValues = rsiNumberValues(closeValues, params.rsiPeriod);
@@ -5581,8 +5593,8 @@ function buildTradingSignalGeometry(
     overlayPriceLabel("mike-wr", "mike", "M-WR", latestIndicator?.mikeWeakResistance, "risk", 27),
     overlayPriceLabel("mike-ws", "mike", "M-WS", latestIndicator?.mikeWeakSupport, "good", 28),
     overlayPriceLabel("vwap", "vwap", "VWAP", latestIndicator?.vwap, "neutral", 30),
-    overlayPriceLabel("ema-fast", "ema", `E${macdFast}`, latestIndicator?.emaFast, "info", 40),
-    overlayPriceLabel("ema-slow", "ema", `E${macdSlow}`, latestIndicator?.emaSlow, "info", 41),
+    overlayPriceLabel("ema-fast", "ema", `E${emaFastPeriod}`, latestIndicator?.emaFast, "info", 40),
+    overlayPriceLabel("ema-slow", "ema", `E${emaSlowPeriod}`, latestIndicator?.emaSlow, "info", 41),
     overlayPriceLabel("sar", "sar", "SAR", latestIndicator?.sar, "risk", 50),
     overlayPriceLabel("bbi", "bbi", "BBI", latestIndicator?.bbi, "info", 51),
     overlayPriceLabel("ichimoku-conversion", "ichimoku", "转", latestIndicator?.ichimokuConversion, "info", 60),

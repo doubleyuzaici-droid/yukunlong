@@ -458,6 +458,8 @@ export type ChartParameterName =
   | "maFast"
   | "maMid"
   | "maSlow"
+  | "emaFast"
+  | "emaSlow"
   | "bollPeriod"
   | "bollMultiplier"
   | "enePeriod"
@@ -743,6 +745,8 @@ const STANDARD_CHART_PARAMETER_VALUES: Record<ChartParameterName, number> = {
   maFast: 5,
   maMid: 20,
   maSlow: 60,
+  emaFast: 12,
+  emaSlow: 26,
   bollPeriod: 20,
   bollMultiplier: 2,
   enePeriod: 25,
@@ -789,6 +793,8 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       maFast: 3,
       maMid: 10,
       maSlow: 30,
+      emaFast: 6,
+      emaSlow: 13,
       bollPeriod: 14,
       enePeriod: 10,
       enePercent: 5,
@@ -824,6 +830,8 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       maFast: 10,
       maMid: 30,
       maSlow: 120,
+      emaFast: 20,
+      emaSlow: 60,
       bollMultiplier: 2.2,
       enePeriod: 30,
       enePercent: 8,
@@ -844,6 +852,8 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       maFast: 20,
       maMid: 60,
       maSlow: 120,
+      emaFast: 30,
+      emaSlow: 120,
       bollPeriod: 30,
       enePeriod: 55,
       enePercent: 10,
