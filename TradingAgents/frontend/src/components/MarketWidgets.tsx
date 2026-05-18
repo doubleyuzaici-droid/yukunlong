@@ -63,6 +63,7 @@ import {
   buildVolumeMomentumIndicators,
   buildVolatilityVolumeIndicators,
   buildVolumeProfile,
+  buildMikeIndicators,
   matchChartParameterPreset,
   matchChartPreferencePreset,
   mapClientPointToChartViewBox,
@@ -195,6 +196,12 @@ interface TradingIndicatorSnapshot {
   bollLower?: number | null;
   sar?: number | null;
   bbi?: number | null;
+  mikeWeakResistance?: number | null;
+  mikeMediumResistance?: number | null;
+  mikeStrongResistance?: number | null;
+  mikeWeakSupport?: number | null;
+  mikeMediumSupport?: number | null;
+  mikeStrongSupport?: number | null;
   bias?: number | null;
   dma?: number | null;
   ama?: number | null;
@@ -252,6 +259,7 @@ interface TradingChartPreferences {
   ema: boolean;
   boll: boolean;
   ene: boolean;
+  mike: boolean;
   vwap: boolean;
   levels: boolean;
   limitLines: boolean;
@@ -293,6 +301,7 @@ interface TradingChartParameters {
   bollMultiplier: number;
   enePeriod: number;
   enePercent: number;
+  mikePeriod: number;
   macdFast: number;
   macdSlow: number;
   macdSignal: number;
@@ -460,6 +469,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   ema: false,
   boll: true,
   ene: false,
+  mike: false,
   vwap: false,
   levels: true,
   limitLines: true,
@@ -501,6 +511,7 @@ const DEFAULT_TRADING_CHART_PARAMS: TradingChartParameters = {
   bollMultiplier: 2,
   enePeriod: 25,
   enePercent: 6,
+  mikePeriod: 12,
   macdFast: 12,
   macdSlow: 26,
   macdSignal: 9,
@@ -540,6 +551,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     ema: typeof next.ema === "boolean" ? next.ema : DEFAULT_TRADING_CHART_PREFS.ema,
     boll: typeof next.boll === "boolean" ? next.boll : DEFAULT_TRADING_CHART_PREFS.boll,
     ene: typeof next.ene === "boolean" ? next.ene : DEFAULT_TRADING_CHART_PREFS.ene,
+    mike: typeof next.mike === "boolean" ? next.mike : DEFAULT_TRADING_CHART_PREFS.mike,
     vwap: typeof next.vwap === "boolean" ? next.vwap : DEFAULT_TRADING_CHART_PREFS.vwap,
     levels: typeof next.levels === "boolean" ? next.levels : DEFAULT_TRADING_CHART_PREFS.levels,
     limitLines: typeof next.limitLines === "boolean" ? next.limitLines : DEFAULT_TRADING_CHART_PREFS.limitLines,
@@ -585,6 +597,7 @@ function normalizeTradingChartParams(value: unknown): TradingChartParameters {
     bollMultiplier: boundedNumber(next.bollMultiplier, 1, 4, DEFAULT_TRADING_CHART_PARAMS.bollMultiplier),
     enePeriod: boundedInteger(next.enePeriod, 5, 160, DEFAULT_TRADING_CHART_PARAMS.enePeriod),
     enePercent: boundedNumber(next.enePercent, 0.5, 30, DEFAULT_TRADING_CHART_PARAMS.enePercent),
+    mikePeriod: boundedInteger(next.mikePeriod, 3, 120, DEFAULT_TRADING_CHART_PARAMS.mikePeriod),
     macdFast: boundedInteger(next.macdFast, 5, 24, DEFAULT_TRADING_CHART_PARAMS.macdFast),
     macdSlow: boundedInteger(next.macdSlow, 18, 60, DEFAULT_TRADING_CHART_PARAMS.macdSlow),
     macdSignal: boundedInteger(next.macdSignal, 4, 20, DEFAULT_TRADING_CHART_PARAMS.macdSignal),
@@ -1516,6 +1529,7 @@ export function TradingSignalKlinePanel({
       if (label.group === "ema") return chartPrefs.ema;
       if (label.group === "boll") return chartPrefs.boll;
       if (label.group === "ene") return chartPrefs.ene;
+      if (label.group === "mike") return chartPrefs.mike;
       if (label.group === "vwap") return chartPrefs.vwap;
       if (label.group === "sar") return chartPrefs.sar;
       if (label.group === "bbi") return chartPrefs.bbi;
@@ -1934,6 +1948,7 @@ export function TradingSignalKlinePanel({
         <button className={chartPrefs.ema ? "active" : ""} onClick={() => toggleChartPref("ema")} type="button">EMA</button>
         <button className={chartPrefs.boll ? "active" : ""} onClick={() => toggleChartPref("boll")} type="button">BOLL</button>
         <button className={chartPrefs.ene ? "active" : ""} onClick={() => toggleChartPref("ene")} type="button">ENE</button>
+        <button className={chartPrefs.mike ? "active" : ""} onClick={() => toggleChartPref("mike")} type="button">MIKE</button>
         <button className={chartPrefs.vwap ? "active" : ""} onClick={() => toggleChartPref("vwap")} type="button">VWAP</button>
         <button className={chartPrefs.levels ? "active" : ""} onClick={() => toggleChartPref("levels")} type="button">价位线</button>
         <button className={chartPrefs.limitLines ? "active" : ""} onClick={() => toggleChartPref("limitLines")} type="button">涨跌停</button>
@@ -2015,6 +2030,7 @@ export function TradingSignalKlinePanel({
           <ChartParamInput label="BOLL倍数" value={chartParams.bollMultiplier} step="0.1" onChange={updateChartParam("bollMultiplier")} />
           <ChartParamInput label="ENE周期" value={chartParams.enePeriod} onChange={updateChartParam("enePeriod")} />
           <ChartParamInput label="ENE幅度" value={chartParams.enePercent} step="0.1" onChange={updateChartParam("enePercent")} />
+          <ChartParamInput label="MIKE周期" value={chartParams.mikePeriod} onChange={updateChartParam("mikePeriod")} />
           <ChartParamInput label="MACD快" value={chartParams.macdFast} onChange={updateChartParam("macdFast")} />
           <ChartParamInput label="MACD慢" value={chartParams.macdSlow} onChange={updateChartParam("macdSlow")} />
           <ChartParamInput label="MACD信号" value={chartParams.macdSignal} onChange={updateChartParam("macdSignal")} />
@@ -2101,6 +2117,11 @@ export function TradingSignalKlinePanel({
           label="BOLL"
           value={formatNumber(readoutIndicators?.bollMid, 2)}
           sub={`上 ${formatNumber(readoutIndicators?.bollUpper, 2)} / 下 ${formatNumber(readoutIndicators?.bollLower, 2)}`}
+        />
+        <MarketReadoutStat
+          label={`MIKE${chartParams.mikePeriod}`}
+          value={`WR ${formatNumber(readoutIndicators?.mikeWeakResistance, 2)} / WS ${formatNumber(readoutIndicators?.mikeWeakSupport, 2)}`}
+          sub={`SR ${formatNumber(readoutIndicators?.mikeStrongResistance, 2)} / SS ${formatNumber(readoutIndicators?.mikeStrongSupport, 2)}`}
         />
         <MarketReadoutStat
           label="SAR / BBI"
@@ -2573,6 +2594,12 @@ export function TradingSignalKlinePanel({
           {chartPrefs.ene && chart.eneUpper && <polyline className="ene-line upper" points={chart.eneUpper} />}
           {chartPrefs.ene && chart.eneMid && <polyline className="ene-line mid" points={chart.eneMid} />}
           {chartPrefs.ene && chart.eneLower && <polyline className="ene-line lower" points={chart.eneLower} />}
+          {chartPrefs.mike && chart.mikeWeakResistanceLine && <polyline className="mike-line weak-resistance" points={chart.mikeWeakResistanceLine} />}
+          {chartPrefs.mike && chart.mikeMediumResistanceLine && <polyline className="mike-line medium-resistance" points={chart.mikeMediumResistanceLine} />}
+          {chartPrefs.mike && chart.mikeStrongResistanceLine && <polyline className="mike-line strong-resistance" points={chart.mikeStrongResistanceLine} />}
+          {chartPrefs.mike && chart.mikeWeakSupportLine && <polyline className="mike-line weak-support" points={chart.mikeWeakSupportLine} />}
+          {chartPrefs.mike && chart.mikeMediumSupportLine && <polyline className="mike-line medium-support" points={chart.mikeMediumSupportLine} />}
+          {chartPrefs.mike && chart.mikeStrongSupportLine && <polyline className="mike-line strong-support" points={chart.mikeStrongSupportLine} />}
           {chartPrefs.vwap && chart.vwapLine && <polyline className="vwap-line" points={chart.vwapLine} />}
           {chartPrefs.ema && chart.emaFastLine && <polyline className="ema-line fast" points={chart.emaFastLine} />}
           {chartPrefs.ema && chart.emaSlowLine && <polyline className="ema-line slow" points={chart.emaSlowLine} />}
@@ -4343,6 +4370,12 @@ function buildTradingSignalGeometry(
       bollUpper: "",
       bollMid: "",
       bollLower: "",
+      mikeWeakResistanceLine: "",
+      mikeMediumResistanceLine: "",
+      mikeStrongResistanceLine: "",
+      mikeWeakSupportLine: "",
+      mikeMediumSupportLine: "",
+      mikeStrongSupportLine: "",
       volumeMa5Line: "",
       volumeMa10Line: "",
       volumeMa20Line: "",
@@ -4434,6 +4467,7 @@ function buildTradingSignalGeometry(
     percent: params.enePercent,
     period: params.enePeriod,
   });
+  const mikeValues = buildMikeIndicators(visible, { period: params.mikePeriod });
   const emaFastValues = emaNumberValues(closeValues, macdFast);
   const emaSlowValues = emaNumberValues(closeValues, macdSlow);
   const vwapValues = vwapNumberValues(visible);
@@ -4482,6 +4516,14 @@ function buildTradingSignalGeometry(
   const eneDomainValues = eneValues.flatMap((value) =>
     [value.upper, value.mid, value.lower].filter(isFiniteNumber),
   );
+  const mikeDomainValues = mikeValues.flatMap((value) => [
+    value.weakResistance,
+    value.mediumResistance,
+    value.strongResistance,
+    value.weakSupport,
+    value.mediumSupport,
+    value.strongSupport,
+  ].filter(isFiniteNumber));
   const levelDomainValues = levelPrices.filter(isFiniteNumber);
   const limitDomainValues = visible.flatMap((bar) => [bar.limit_up, bar.limit_down]).filter(isFiniteNumber);
   const rawPriceStructureTrendLines = buildPriceStructureTrendLines(visible, {
@@ -4499,6 +4541,7 @@ function buildTradingSignalGeometry(
   const overlayDomainValues = [
     ...bollDomainValues,
     ...eneDomainValues,
+    ...mikeDomainValues,
     ...emaFastValues,
     ...emaSlowValues,
     ...vwapValues.filter(isFiniteNumber),
@@ -5272,6 +5315,12 @@ function buildTradingSignalGeometry(
         bollUpper: bollValues[index]?.upper ?? null,
         bollMid: bollValues[index]?.mid ?? null,
         bollLower: bollValues[index]?.lower ?? null,
+        mikeWeakResistance: mikeValues[index]?.weakResistance ?? null,
+        mikeMediumResistance: mikeValues[index]?.mediumResistance ?? null,
+        mikeStrongResistance: mikeValues[index]?.strongResistance ?? null,
+        mikeWeakSupport: mikeValues[index]?.weakSupport ?? null,
+        mikeMediumSupport: mikeValues[index]?.mediumSupport ?? null,
+        mikeStrongSupport: mikeValues[index]?.strongSupport ?? null,
         eneUpper: eneValues[index]?.upper ?? null,
         eneMid: eneValues[index]?.mid ?? null,
         eneLower: eneValues[index]?.lower ?? null,
@@ -5447,6 +5496,8 @@ function buildTradingSignalGeometry(
     indicatorPoints(bollValues.map((value) => value?.[key] ?? null), yOf);
   const eneLine = (key: "upper" | "mid" | "lower") =>
     indicatorPoints(eneValues.map((value) => value?.[key] ?? null), yOf);
+  const mikeLine = (key: keyof ReturnType<typeof buildMikeIndicators>[number]) =>
+    indicatorPoints(mikeValues.map((value) => value?.[key] ?? null), yOf);
   const kdjLine = (key: "k" | "d" | "j") =>
     indicatorPoints(kdjValues.map((value) => value?.[key] ?? null), rsiY);
   const relativeLine = indicatorPoints(relativeValues, relativeY);
@@ -5511,6 +5562,8 @@ function buildTradingSignalGeometry(
     overlayPriceLabel("ene-upper", "ene", "EUP", latestIndicator?.eneUpper, "neutral", 24),
     overlayPriceLabel("ene-mid", "ene", "ENE", latestIndicator?.eneMid, "neutral", 25),
     overlayPriceLabel("ene-lower", "ene", "EDN", latestIndicator?.eneLower, "neutral", 26),
+    overlayPriceLabel("mike-wr", "mike", "M-WR", latestIndicator?.mikeWeakResistance, "risk", 27),
+    overlayPriceLabel("mike-ws", "mike", "M-WS", latestIndicator?.mikeWeakSupport, "good", 28),
     overlayPriceLabel("vwap", "vwap", "VWAP", latestIndicator?.vwap, "neutral", 30),
     overlayPriceLabel("ema-fast", "ema", `E${macdFast}`, latestIndicator?.emaFast, "info", 40),
     overlayPriceLabel("ema-slow", "ema", `E${macdSlow}`, latestIndicator?.emaSlow, "info", 41),
@@ -5729,6 +5782,12 @@ function buildTradingSignalGeometry(
     eneUpper: eneLine("upper"),
     eneMid: eneLine("mid"),
     eneLower: eneLine("lower"),
+    mikeWeakResistanceLine: mikeLine("weakResistance"),
+    mikeMediumResistanceLine: mikeLine("mediumResistance"),
+    mikeStrongResistanceLine: mikeLine("strongResistance"),
+    mikeWeakSupportLine: mikeLine("weakSupport"),
+    mikeMediumSupportLine: mikeLine("mediumSupport"),
+    mikeStrongSupportLine: mikeLine("strongSupport"),
     volumeMa5Line,
     volumeMa10Line,
     volumeMa20Line,

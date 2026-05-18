@@ -403,6 +403,7 @@ export type ChartPreferenceName =
   | "ema"
   | "boll"
   | "ene"
+  | "mike"
   | "vwap"
   | "levels"
   | "limitLines"
@@ -461,6 +462,7 @@ export type ChartParameterName =
   | "bollMultiplier"
   | "enePeriod"
   | "enePercent"
+  | "mikePeriod"
   | "macdFast"
   | "macdSlow"
   | "macdSignal"
@@ -495,6 +497,7 @@ const BASE_CHART_PRESET_VALUES: Record<ChartPreferenceName, boolean> = {
   ema: false,
   boll: true,
   ene: false,
+  mike: false,
   vwap: false,
   levels: true,
   limitLines: true,
@@ -569,6 +572,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
       ...BASE_CHART_PRESET_VALUES,
       ema: true,
       ene: true,
+      mike: true,
       ichimoku: true,
       vwap: false,
       relative: false,
@@ -681,6 +685,7 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
       ema: true,
       ene: true,
       ichimoku: true,
+      mike: true,
       vwap: true,
       relative: true,
       fibonacci: true,
@@ -696,6 +701,7 @@ const CHART_LAYER_MAIN_OVERLAYS: ChartLayerSummaryOption[] = [
   ["ema", "EMA"],
   ["boll", "BOLL"],
   ["ene", "ENE"],
+  ["mike", "MIKE"],
   ["vwap", "VWAP"],
   ["sar", "SAR"],
   ["bbi", "BBI"],
@@ -741,6 +747,7 @@ const STANDARD_CHART_PARAMETER_VALUES: Record<ChartParameterName, number> = {
   bollMultiplier: 2,
   enePeriod: 25,
   enePercent: 6,
+  mikePeriod: 12,
   macdFast: 12,
   macdSlow: 26,
   macdSignal: 9,
@@ -785,6 +792,7 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       bollPeriod: 14,
       enePeriod: 10,
       enePercent: 5,
+      mikePeriod: 10,
       macdFast: 6,
       macdSlow: 13,
       macdSignal: 5,
@@ -819,6 +827,7 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       bollMultiplier: 2.2,
       enePeriod: 30,
       enePercent: 8,
+      mikePeriod: 20,
       psyPeriod: 24,
       psyMaPeriod: 6,
       kdjPeriod: 14,
@@ -838,6 +847,7 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       bollPeriod: 30,
       enePeriod: 55,
       enePercent: 10,
+      mikePeriod: 30,
       macdFast: 19,
       macdSlow: 39,
       rsiPeriod: 21,
@@ -1789,6 +1799,42 @@ export function buildEnvelopeIndicators(
   });
 }
 
+export function buildMikeIndicators(
+  bars: VolumeProfileBarLike[],
+  options: { period?: number } = {},
+): MikeIndicatorSnapshot[] {
+  const period = clampInteger(options.period ?? 12, 2, 120);
+  const normalized = bars.map(normalizeAdvancedBar);
+
+  return normalized.map((bar, index) => {
+    const empty = {
+      weakResistance: null,
+      mediumResistance: null,
+      strongResistance: null,
+      weakSupport: null,
+      mediumSupport: null,
+      strongSupport: null,
+    };
+    if (!bar || index < period - 1) return empty;
+    const window = normalized.slice(index - period + 1, index + 1);
+    if (!window.every(Boolean)) return empty;
+    const highs = window.map((item) => item?.high).filter(isFiniteNumber);
+    const lows = window.map((item) => item?.low).filter(isFiniteNumber);
+    if (highs.length !== period || lows.length !== period) return empty;
+    const highestHigh = Math.max(...highs);
+    const lowestLow = Math.min(...lows);
+    const typicalPrice = (bar.high + bar.low + bar.close) / 3;
+    return {
+      weakResistance: typicalPrice * 2 - lowestLow,
+      mediumResistance: typicalPrice + highestHigh - lowestLow,
+      strongResistance: highestHigh * 2 - lowestLow,
+      weakSupport: typicalPrice * 2 - highestHigh,
+      mediumSupport: typicalPrice - (highestHigh - lowestLow),
+      strongSupport: lowestLow * 2 - highestHigh,
+    };
+  });
+}
+
 export function buildPsychologicalLineIndicators(
   bars: VolumeProfileBarLike[],
   options: { period?: number; maPeriod?: number } = {},
@@ -1885,6 +1931,15 @@ export interface EnvelopeIndicatorSnapshot {
   upper: number | null;
   mid: number | null;
   lower: number | null;
+}
+
+export interface MikeIndicatorSnapshot {
+  weakResistance: number | null;
+  mediumResistance: number | null;
+  strongResistance: number | null;
+  weakSupport: number | null;
+  mediumSupport: number | null;
+  strongSupport: number | null;
 }
 
 export interface PsychologicalLineIndicatorSnapshot {

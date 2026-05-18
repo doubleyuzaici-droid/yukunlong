@@ -26,6 +26,7 @@ import {
   buildTrendRibbonAreaSegments,
   buildIchimokuIndicators,
   buildEnvelopeIndicators,
+  buildMikeIndicators,
   buildPsychologicalLineIndicators,
   buildOscillatorIndicators,
   buildFundFlowOverlayGeometry,
@@ -96,6 +97,7 @@ const baseChartPrefs = {
   ema: true,
   boll: true,
   vwap: true,
+  mike: true,
   levels: true,
   limitLines: true,
   signals: true,
@@ -471,7 +473,7 @@ function testBuildsChartLayerSummary() {
 
   assertEqual(summary.length, 5, "layer summary exposes preset plus layer groups");
   assertEqual(preset?.value, "趋势", "layer summary names matched preset");
-  assertEqual(overlays?.value, "7项", "layer summary counts active main overlays");
+  assertEqual(overlays?.value, "8项", "layer summary counts active main overlays");
   assertOk(overlays?.detail.includes("ENE"), "trend overlay summary includes ENE");
   assertOk(overlays?.detail.includes("一目"), "trend overlay summary includes Ichimoku");
   assertOk((subcharts?.enabledCount || 0) > 0, "layer summary counts active subcharts");
@@ -1290,6 +1292,21 @@ function testEnvelopeIndicatorsNeedEnoughSamples() {
   assertEqual(latest?.lower, null, "ENE lower is missing before enough moving average samples");
 }
 
+function testBuildsMikeIndicators() {
+  const indicators = buildMikeIndicators(bars, { period: 3 });
+  const latest = indicators[indicators.length - 1];
+
+  assertEqual(indicators.length, bars.length, "MIKE overlay preserves bar count");
+  assertEqual(indicators[1]?.weakResistance, null, "MIKE waits for the configured lookback window");
+  assertOk(latest, "latest MIKE indicator exists");
+  assertApprox(latest?.weakResistance, 14.0667, 0.001, "MIKE WR uses typical price over the recent low");
+  assertApprox(latest?.mediumResistance, 14.7333, 0.001, "MIKE MR uses the recent high-low range");
+  assertApprox(latest?.strongResistance, 15.4, 0.001, "MIKE SR projects the full upper range");
+  assertApprox(latest?.weakSupport, 11.6667, 0.001, "MIKE WS mirrors typical price below the recent high");
+  assertApprox(latest?.mediumSupport, 9.9333, 0.001, "MIKE MS subtracts the recent high-low range");
+  assertApprox(latest?.strongSupport, 8.2, 0.001, "MIKE SS projects the full lower range");
+}
+
 function testBuildsPsychologicalLineIndicators() {
   const indicators = buildPsychologicalLineIndicators(trendOverlayBars, {
     maPeriod: 3,
@@ -1947,6 +1964,7 @@ testSelectsCursorIndicatorReadoutSnapshot();
 testBuildsTrendOverlayIndicators();
 testBuildsEnvelopeIndicators();
 testEnvelopeIndicatorsNeedEnoughSamples();
+testBuildsMikeIndicators();
 testBuildsPsychologicalLineIndicators();
 testPsychologicalLineIndicatorsNeedEnoughSamples();
 testBuildsOscillatorIndicators();

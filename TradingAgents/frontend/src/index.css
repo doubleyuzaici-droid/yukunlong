@@ -5731,6 +5731,14 @@ label {
   vector-effect: non-scaling-stroke;
 }
 
+.mike-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 0.95;
+  vector-effect: non-scaling-stroke;
+}
+
 .boll-band-area {
   fill: rgba(126, 224, 163, 0.08);
   pointer-events: none;
@@ -5757,6 +5765,23 @@ label {
 
 .ene-line.mid {
   stroke: rgba(143, 179, 255, 0.78);
+}
+
+.mike-line.weak-resistance,
+.mike-line.weak-support {
+  stroke: rgba(246, 185, 75, 0.74);
+}
+
+.mike-line.medium-resistance,
+.mike-line.medium-support {
+  stroke: rgba(244, 114, 182, 0.55);
+  stroke-dasharray: 6 4;
+}
+
+.mike-line.strong-resistance,
+.mike-line.strong-support {
+  stroke: rgba(167, 139, 250, 0.5);
+  stroke-dasharray: 2 5;
 }
 
 .ma-trend-ribbon {
