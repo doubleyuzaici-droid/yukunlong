@@ -6248,6 +6248,23 @@ label {
   stroke-width: 2px;
 }
 
+.volume-profile-cost-range rect {
+  fill: rgba(246, 185, 75, 0.1);
+  stroke: rgba(246, 185, 75, 0.34);
+  stroke-dasharray: 4 3;
+  stroke-width: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+
+.volume-profile-cost-range text {
+  fill: #f6b94b !important;
+  font-size: 9.5px !important;
+  font-weight: 900;
+  paint-order: stroke;
+  stroke: rgba(8, 12, 17, 0.88);
+  stroke-width: 2px;
+}
+
 .volume-profile-bar {
   fill: rgba(94, 234, 212, 0.34);
 }

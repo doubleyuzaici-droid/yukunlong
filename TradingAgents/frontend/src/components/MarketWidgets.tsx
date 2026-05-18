@@ -3220,6 +3220,18 @@ function VolumeProfileSummary({ profile }: { profile: VolumeProfileModel }) {
       detail: `可视区成交 ${formatCompactNumber(profile.totalVolume)}`,
     },
     {
+      key: "winner",
+      label: "获利/套牢",
+      value: formatPercent(profile.winningVolumeRatio),
+      detail: `套牢 ${formatPercent(profile.lockedVolumeRatio)} · 现价 ${formatNumber(profile.currentPrice, 2)}`,
+    },
+    {
+      key: "cost70",
+      label: "70%成本区",
+      value: profileCostRangeLabel(profile.costRange70),
+      detail: `集中度 ${formatPercent(profile.costRange70?.concentrationRatio)} · 90% ${profileCostRangeLabel(profile.costRange90)}`,
+    },
+    {
       key: "support",
       label: "下方支撑",
       value: profileRangeLabel(profile.supportBin),
@@ -3256,6 +3268,8 @@ function VolumeProfileLayer({
   const panelWidth = 116;
   const panelLeft = panelRight - panelWidth;
   const averageY = chartPriceToY(chart, profile.weightedAveragePrice);
+  const cost70TopY = chartPriceToY(chart, profile.costRange70?.high);
+  const cost70BottomY = chartPriceToY(chart, profile.costRange70?.low);
   const profileLevels = buildVolumeProfileLevelAnnotations(profile);
   return (
     <g className="volume-profile-layer">
@@ -3277,6 +3291,22 @@ function VolumeProfileLayer({
       })}
       <rect className="volume-profile-panel" x={panelLeft - 8} y={chart.priceTop + 2} width={panelWidth + 14} height={chart.priceBottom - chart.priceTop - 4} rx="8" />
       <text className="volume-profile-title" x={panelLeft} y={chart.priceTop + 18}>筹码分布</text>
+      {isFiniteNumber(cost70TopY) && isFiniteNumber(cost70BottomY) && (
+        <g className="volume-profile-cost-range cost70">
+          <rect
+            height={Math.max(2, Math.abs(cost70BottomY - cost70TopY))}
+            width={panelWidth + 6}
+            x={panelLeft - 4}
+            y={Math.min(cost70TopY, cost70BottomY)}
+          />
+          <text x={panelLeft} y={clampNumber(Math.min(cost70TopY, cost70BottomY) + 12, chart.priceTop + 32, chart.priceBottom - 8)}>
+            70%成本
+          </text>
+          <title>
+            70%成本区 {profileCostRangeLabel(profile.costRange70)} · 集中度 {formatPercent(profile.costRange70?.concentrationRatio)}
+          </title>
+        </g>
+      )}
       {profile.bins.map((bin) => {
         const topY = chartPriceToY(chart, bin.high);
         const bottomY = chartPriceToY(chart, bin.low);
@@ -3312,6 +3342,11 @@ function VolumeProfileLayer({
 function profileRangeLabel(bin?: { low: number; high: number } | null) {
   if (!bin) return "-";
   return `${formatNumber(bin.low, 2)}-${formatNumber(bin.high, 2)}`;
+}
+
+function profileCostRangeLabel(range?: { low: number; high: number } | null) {
+  if (!range) return "-";
+  return `${formatNumber(range.low, 2)}-${formatNumber(range.high, 2)}`;
 }
 
 function ChartDiagnosticsStrip({

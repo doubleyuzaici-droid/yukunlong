@@ -903,6 +903,13 @@ export interface VolumeProfileBin {
   isPointOfControl: boolean;
 }
 
+export interface VolumeProfileCostRange {
+  low: number;
+  high: number;
+  percent: number;
+  concentrationRatio: number | null;
+}
+
 export interface VolumeProfileModel {
   bins: VolumeProfileBin[];
   totalVolume: number;
@@ -916,6 +923,10 @@ export interface VolumeProfileModel {
   pointOfControl: VolumeProfileBin | null;
   supportBin: VolumeProfileBin | null;
   resistanceBin: VolumeProfileBin | null;
+  winningVolumeRatio: number | null;
+  lockedVolumeRatio: number | null;
+  costRange70: VolumeProfileCostRange | null;
+  costRange90: VolumeProfileCostRange | null;
 }
 
 export interface LimitPriceBarLike {
@@ -3966,6 +3977,18 @@ export function buildVolumeProfile(
   const resistanceBin = currentPrice == null
     ? null
     : bins.filter((bin) => bin.low > currentPrice).sort((left, right) => right.volume - left.volume)[0] || null;
+  const winningVolume = currentPrice == null
+    ? null
+    : bins.reduce((sum, bin) => sum + volumeBelowPriceInBin(bin, currentPrice), 0);
+  const winningVolumeRatio = totalVolume > 0 && winningVolume != null ? winningVolume / totalVolume : null;
+  const lockedVolumeRatio = winningVolumeRatio == null ? null : Math.max(0, 1 - winningVolumeRatio);
+  const rangeBasis = isFiniteNumber(currentPrice) && currentPrice > 0
+    ? currentPrice
+    : totalVolume > 0
+      ? totalAmount / totalVolume
+      : null;
+  const costRange70 = buildVolumeProfileCostRange(bins, totalVolume, 0.7, rangeBasis);
+  const costRange90 = buildVolumeProfileCostRange(bins, totalVolume, 0.9, rangeBasis);
 
   return {
     bins,
@@ -3980,6 +4003,10 @@ export function buildVolumeProfile(
     pointOfControl,
     supportBin,
     resistanceBin,
+    winningVolumeRatio,
+    lockedVolumeRatio,
+    costRange70,
+    costRange90,
   };
 }
 
@@ -4003,6 +4030,54 @@ function normalizeVolumeProfileBar(bar: VolumeProfileBarLike) {
     volume,
     amount,
   };
+}
+
+function volumeBelowPriceInBin(bin: VolumeProfileBin, price: number) {
+  if (!isFiniteNumber(price) || bin.volume <= 0) return 0;
+  if (price >= bin.high) return bin.volume;
+  if (price <= bin.low) return 0;
+  const span = Math.max(bin.high - bin.low, 0.000001);
+  return bin.volume * clampNumber((price - bin.low) / span, 0, 1);
+}
+
+function buildVolumeProfileCostRange(
+  bins: VolumeProfileBin[],
+  totalVolume: number,
+  percent: number,
+  basisPrice: number | null,
+): VolumeProfileCostRange | null {
+  const targetPercent = clampNumber(percent, 0.1, 0.98);
+  if (bins.length === 0 || totalVolume <= 0) return null;
+  const lowerTail = (1 - targetPercent) / 2;
+  const low = priceAtVolumeProfilePercentile(bins, totalVolume, lowerTail);
+  const high = priceAtVolumeProfilePercentile(bins, totalVolume, 1 - lowerTail);
+  if (!isFiniteNumber(low) || !isFiniteNumber(high) || high <= low) return null;
+  return {
+    low,
+    high,
+    percent: targetPercent,
+    concentrationRatio: isFiniteNumber(basisPrice) && basisPrice > 0 ? (high - low) / basisPrice : null,
+  };
+}
+
+function priceAtVolumeProfilePercentile(
+  bins: VolumeProfileBin[],
+  totalVolume: number,
+  percentile: number,
+) {
+  if (bins.length === 0 || totalVolume <= 0) return null;
+  const targetVolume = clampNumber(percentile, 0, 1) * totalVolume;
+  let cumulative = 0;
+  for (const bin of bins) {
+    const nextCumulative = cumulative + bin.volume;
+    if (targetVolume <= nextCumulative || bin === bins[bins.length - 1]) {
+      if (bin.volume <= 0) return bin.low;
+      const ratio = clampNumber((targetVolume - cumulative) / bin.volume, 0, 1);
+      return bin.low + (bin.high - bin.low) * ratio;
+    }
+    cumulative = nextCumulative;
+  }
+  return bins[bins.length - 1]?.high ?? null;
 }
 
 function normalizePriceExtremaBar(bar: PriceExtremaBarLike, index: number) {
@@ -4795,6 +4870,10 @@ function emptyVolumeProfile(currentPrice: number | null): VolumeProfileModel {
     pointOfControl: null,
     supportBin: null,
     resistanceBin: null,
+    winningVolumeRatio: null,
+    lockedVolumeRatio: null,
+    costRange70: null,
+    costRange90: null,
   };
 }
 

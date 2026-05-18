@@ -330,6 +330,13 @@ function testBuildsVisibleVolumeDistribution() {
   assertOk(profile.supportBin, "profile locates nearest support chip area");
   assertOk(profile.resistanceBin, "profile locates nearest resistance chip area");
   assertEqual(profile.bins.some((bin) => bin.widthPercent === 100), true, "largest bin is normalized to 100 width");
+  assertApprox(profile.winningVolumeRatio, 0.5228, 0.001, "profile estimates winning chip ratio below current price");
+  assertApprox(profile.lockedVolumeRatio, 0.4772, 0.001, "profile estimates locked chip ratio above current price");
+  assertApprox(profile.costRange70?.percent, 0.7, 0.001, "profile exposes Futu-style 70 percent cost range");
+  assertApprox(profile.costRange70?.low, 10.897, 0.001, "profile 70 percent cost range lower edge uses volume quantile");
+  assertApprox(profile.costRange70?.high, 12.531, 0.001, "profile 70 percent cost range upper edge uses volume quantile");
+  assertApprox(profile.costRange70?.concentrationRatio, 0.1385, 0.001, "profile 70 percent concentration is relative to current price");
+  assertApprox(profile.costRange90?.percent, 0.9, 0.001, "profile exposes Futu-style 90 percent cost range");
 }
 
 function testBuildsLimitPriceLinesFromFinitePrices() {
@@ -793,6 +800,8 @@ function testHandlesMissingBarsExplicitly() {
   assertEqual(profile.totalVolume, 0, "empty input has zero volume");
   assertEqual(profile.pointOfControl, null, "empty input has no peak chip area");
   assertEqual(profile.currentBin, null, "empty input has no current bin");
+  assertEqual(profile.winningVolumeRatio, null, "empty input has no winning chip ratio");
+  assertEqual(profile.costRange70, null, "empty input has no 70 percent cost range");
 }
 
 function testBuildsVolumeProfileLevelAnnotations() {
