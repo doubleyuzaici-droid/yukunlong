@@ -60,7 +60,7 @@ class BootstrapWatchlistRequest(BaseModel):
 class SyncBarsRequest(BaseModel):
     start: str | None = None
     end: str | None = None
-    source: str | None = Field(default=None, pattern="^(akshare|tushare|auto)$")
+    source: str | None = Field(default=None, pattern="^(akshare|tushare|futu|auto)$")
 
 
 class SyncIndicesRequest(SyncBarsRequest):
@@ -245,6 +245,10 @@ def _rate_limit_policies() -> dict:
             "quota_status": "credential_dependent",
             "rate_limit_hint": "额度由 TUSHARE_TOKEN 账户等级决定",
         },
+        "futu": {
+            "quota_status": "opend_session_dependent",
+            "rate_limit_hint": "需本机或局域网 Futu OpenD 在线，行情权限和频率以登录账号为准",
+        },
         "auto": {
             "quota_status": "composite",
             "rate_limit_hint": "按 akshare -> tushare 顺序回退",
@@ -310,12 +314,39 @@ def _research_sources_payload() -> dict:
     return {
         "supported_sources": list(DATA_SOURCES),
         "active_source": os.getenv("TRADINGAGENTS_DATA_SOURCE", "akshare"),
+        "source_catalog": {
+            "akshare": {
+                "label": "AkShare",
+                "requires": "public network",
+                "usage": "默认 A/H 日线同步源",
+            },
+            "tushare": {
+                "label": "TuShare",
+                "requires": "TUSHARE_TOKEN",
+                "usage": "A/H 日线备选同步源",
+            },
+            "futu": {
+                "label": "Futu OpenAPI",
+                "requires": "Futu OpenD",
+                "usage": "通过 source=futu 同步历史 K 线；通过 TRADINGAGENTS_QUOTE_PROVIDER=futu 拉取实时快照",
+            },
+            "auto": {
+                "label": "Auto fallback",
+                "requires": "akshare/tushare availability",
+                "usage": "按现有公共源顺序回退，不主动连接富途 OpenD",
+            },
+        },
         "rate_limit_policies": _rate_limit_policies(),
         "credential_readiness": [
             {
                 "source": "tushare",
                 "env": "TUSHARE_TOKEN",
                 "configured": bool(os.getenv("TUSHARE_TOKEN")),
+            },
+            {
+                "source": "futu",
+                "env": "TRADINGAGENTS_FUTU_HOST/TRADINGAGENTS_FUTU_PORT",
+                "configured": bool(os.getenv("TRADINGAGENTS_FUTU_HOST") or os.getenv("TRADINGAGENTS_QUOTE_PROVIDER") == "futu"),
             },
             {
                 "source": "akshare",

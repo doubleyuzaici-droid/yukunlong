@@ -25,6 +25,7 @@ import {
   buildIndicatorSectionLayout,
   buildIndicatorThresholdGuides,
   buildIndicatorThresholdZones,
+  buildIntradayMinuteBars,
   buildIndicatorValueLabels,
   buildChartLayerSummary,
   buildIndicatorStateSummary,
@@ -33,6 +34,7 @@ import {
   buildPsychologicalLineIndicators,
   buildOscillatorIndicators,
   buildKlineEventDensity,
+  buildCompactAnnotationDisplay,
   buildKlineEventBacktestSummary,
   buildKlineEventSummary,
   buildKlineRangeNavigator,
@@ -49,6 +51,8 @@ import {
   buildMomentumIndicators,
   buildPriceGapAnnotations,
   buildPriceStructureTrendLines,
+  buildReadableStrategyDecisionCopy,
+  buildReadableStrategyGateText,
   buildSupportResistanceLevels,
   buildTdsSequentialAnnotations,
   buildTechnicalDivergenceAnnotations,
@@ -63,6 +67,7 @@ import {
   buildVolumeMomentumIndicators,
   buildVolatilityVolumeIndicators,
   buildVolumeProfile,
+  DEFAULT_DENSE_CHART_LAYER_SELECTION,
   buildMikeIndicators,
   matchChartParameterPreset,
   matchChartPreferencePreset,
@@ -79,6 +84,9 @@ import {
   rightOffsetFromKlineNavigatorX,
   resolveLimitCandleState,
   selectIndicatorReadoutSnapshot,
+  shouldRenderDenseChartLayer,
+  type CompactAnnotationEvent,
+  type DenseChartLayerSelection,
   type IndicatorAxisTick,
   type IndicatorPanelReadoutItem,
   type IndicatorValueLabel,
@@ -93,6 +101,12 @@ import {
   type PriceAxisMode,
   type VolumeProfileModel,
 } from "./TradingSignalKline.helpers";
+import { buildMarketMicrostructureModel, type MarketMicrostructureModel } from "../pages/SymbolWorkspacePage.helpers";
+import {
+  isTickerRealtimeQuote,
+  mergeRealtimeTickerQuotes,
+  type TickerQuote,
+} from "./MarketTicker.helpers";
 import {
   formatCompactNumber,
   formatMoney,
@@ -154,7 +168,8 @@ export interface ChartEvidenceEvent {
 type QuoteSortKey = "symbol" | "price" | "change_pct" | "volume" | "freshness";
 type SortDirection = "asc" | "desc";
 type CandleRange = "60" | "120" | "260" | "520" | "780" | "all";
-type CandlePeriod = "daily" | "weekly" | "monthly";
+type CandlePeriod = "minute1" | "minute5" | "minute15" | "minute30" | "hourly" | "daily" | "weekly" | "monthly";
+type AnnotationLabelMode = "compact" | "all";
 type DecisionTone = "opportunity" | "risk" | "neutral";
 type StrategyWorkbenchTone = "good" | "warn" | "bad" | "neutral";
 
@@ -450,10 +465,17 @@ const CANDLE_RANGES: { key: CandleRange; baseLabel?: string; label?: string }[] 
 ];
 
 const CANDLE_PERIODS: { key: CandlePeriod; label: string; unit: string; shortUnit: string }[] = [
+  { key: "minute1", label: "1分", unit: "1分钟", shortUnit: "分" },
+  { key: "minute5", label: "5分", unit: "5分钟", shortUnit: "分" },
+  { key: "minute15", label: "15分", unit: "15分钟", shortUnit: "分" },
+  { key: "minute30", label: "30分", unit: "30分钟", shortUnit: "分" },
+  { key: "hourly", label: "60分", unit: "60分钟", shortUnit: "时" },
   { key: "daily", label: "日线", unit: "日线", shortUnit: "日" },
   { key: "weekly", label: "周线", unit: "周线", shortUnit: "周" },
   { key: "monthly", label: "月线", unit: "月线", shortUnit: "月" },
 ];
+
+const HISTORICAL_CANDLE_PERIODS = CANDLE_PERIODS.filter((item) => !isIntradayPeriod(item.key));
 
 const PRICE_ADJUSTMENT_MODES: { key: PriceAdjustmentMode; label: string }[] = [
   { key: "none", label: "不复权" },
@@ -547,6 +569,43 @@ function isCandleRange(value: unknown): value is CandleRange {
 
 function isCandlePeriod(value: unknown): value is CandlePeriod {
   return CANDLE_PERIODS.some((item) => item.key === value);
+}
+
+function isIntradayPeriod(period: CandlePeriod) {
+  return period === "minute1" || period === "minute5" || period === "minute15" || period === "minute30" || period === "hourly";
+}
+
+function normalizeAnnotationLabelMode(value: unknown): AnnotationLabelMode {
+  return value === "all" ? "all" : "compact";
+}
+
+type DenseLayerControlKey = keyof DenseChartLayerSelection;
+
+const DENSE_CHART_LAYER_CONTROLS: { key: DenseLayerControlKey; label: string; title: string }[] = [
+  { key: "signals", label: "信号点", title: "显示 TDS9、技术信号、背离、形态和量价异动点" },
+  { key: "structure", label: "结构线", title: "显示缺口、支撑压力、趋势线、斐波、ENE/MIKE/一目结构" },
+  { key: "profile", label: "筹码", title: "显示筹码分布和成本区域" },
+  { key: "secondaryIndicators", label: "高级副图", title: "显示 KDJ、DMI、CCI、WR、MFI、VR、ATR、OBV 等复杂指标" },
+  { key: "trendRegime", label: "背景", title: "显示趋势状态背景和阶段标签" },
+];
+
+function normalizeDenseChartLayerSelection(value: unknown): DenseChartLayerSelection {
+  if (!value || typeof value !== "object") return { ...DEFAULT_DENSE_CHART_LAYER_SELECTION };
+  const next = value as Partial<Record<DenseLayerControlKey, unknown>>;
+  return {
+    profile: typeof next.profile === "boolean" ? next.profile : DEFAULT_DENSE_CHART_LAYER_SELECTION.profile,
+    secondaryIndicators:
+      typeof next.secondaryIndicators === "boolean"
+        ? next.secondaryIndicators
+        : DEFAULT_DENSE_CHART_LAYER_SELECTION.secondaryIndicators,
+    signals: typeof next.signals === "boolean" ? next.signals : DEFAULT_DENSE_CHART_LAYER_SELECTION.signals,
+    structure: typeof next.structure === "boolean" ? next.structure : DEFAULT_DENSE_CHART_LAYER_SELECTION.structure,
+    trendRegime: typeof next.trendRegime === "boolean" ? next.trendRegime : DEFAULT_DENSE_CHART_LAYER_SELECTION.trendRegime,
+  };
+}
+
+function hasSelectedDenseChartLayers(selection: DenseChartLayerSelection) {
+  return DENSE_CHART_LAYER_CONTROLS.some((item) => selection[item.key]);
 }
 
 function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
@@ -668,7 +727,7 @@ export function MarketTickerStrip({
 }: {
   onSelect?: (symbol: string) => void;
 }) {
-  const [quotes, setQuotes] = useState<MarketQuote[]>([]);
+  const [quotes, setQuotes] = useState<TickerQuote[]>([]);
   const [message, setMessage] = useState("读取中");
 
   const load = async () => {
@@ -676,8 +735,22 @@ export function MarketTickerStrip({
       const response = await fetch("/api/market/pulse");
       const payload = (await response.json()) as ApiResponse<PulseLite>;
       if (payload.success) {
-        setQuotes(payload.data.quotes.filter((quote) => quote.status === "ok").slice(0, 10));
-        setMessage(payload.data.quotes.length ? "" : "暂无行情");
+        const pulseQuotes = payload.data.quotes.filter((quote) => quote.status === "ok").slice(0, 10);
+        const symbols = pulseQuotes.map((quote) => quote.symbol).filter(Boolean).join(",");
+        let displayQuotes: TickerQuote[] = pulseQuotes;
+        if (symbols) {
+          try {
+            const realtimeResponse = await fetch(`/api/market/realtime/quotes?${new URLSearchParams({ symbols }).toString()}`);
+            const realtimePayload = (await realtimeResponse.json()) as ApiResponse<RealtimeQuotePayload>;
+            if (realtimePayload.success) {
+              displayQuotes = mergeRealtimeTickerQuotes(pulseQuotes, realtimePayload.data.quotes);
+            }
+          } catch {
+            displayQuotes = pulseQuotes;
+          }
+        }
+        setQuotes(displayQuotes);
+        setMessage(pulseQuotes.length ? "" : "暂无行情");
       } else {
         setMessage("行情不可用");
       }
@@ -706,7 +779,7 @@ export function MarketTickerStrip({
           <i className={quoteTone(quote.change_pct)}>{directionMark(quote.change_pct)}</i>
           <span>{formatNumber(quote.price, 2)}</span>
           <b className={quoteTone(quote.change_pct)}>{formatSignedPercent(quote.change_pct)}</b>
-          <em className={`freshness-dot ${freshnessTone(quote.freshness_status)}`} />
+          <em className={`freshness-dot ${freshnessTone(isTickerRealtimeQuote(quote) ? "fresh" : quote.freshness_status)}`} />
         </button>
       ))}
       {quotes.length === 0 && <span className="market-strip-empty">{message}</span>}
@@ -763,7 +836,13 @@ function QuoteStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function RealtimeMarketPanel({ symbol }: { symbol: string }) {
+export function RealtimeMarketPanel({
+  symbol,
+  onDataChange,
+}: {
+  symbol: string;
+  onDataChange?: (payload: { quote: RealtimeQuote | null; intraday: IntradayPayload | null }) => void;
+}) {
   const [quote, setQuote] = useState<RealtimeQuote | null>(null);
   const [intraday, setIntraday] = useState<IntradayPayload | null>(null);
   const [message, setMessage] = useState("连接准实时行情");
@@ -785,8 +864,12 @@ export function RealtimeMarketPanel({ symbol }: { symbol: string }) {
       const nextIntraday = intradayPayload.success ? intradayPayload.data : null;
       setQuote(nextQuote);
       setIntraday(nextIntraday);
+      onDataChange?.({ quote: nextQuote, intraday: nextIntraday });
       setMessage(nextQuote?.status_text || nextIntraday?.status_text || "准实时行情已更新");
     } catch {
+      setQuote(null);
+      setIntraday(null);
+      onDataChange?.({ quote: null, intraday: null });
       setMessage("准实时行情服务未连接");
     }
     setLoading(false);
@@ -812,6 +895,10 @@ export function RealtimeMarketPanel({ symbol }: { symbol: string }) {
       ? "fallback"
       : "unavailable";
   const timestamp = effectiveQuote?.timestamp || intraday?.generated_at || "-";
+  const microstructure = useMemo(
+    () => buildMarketMicrostructureModel({ quote: effectiveQuote, intraday }),
+    [effectiveQuote, intraday],
+  );
 
   return (
     <div className={`realtime-market-panel ${statusTone}`}>
@@ -890,6 +977,71 @@ export function RealtimeMarketPanel({ symbol }: { symbol: string }) {
           )}
           {chart.points.length === 0 && <text className="intraday-empty-text" x="48" y="168">分时数据暂不可用</text>}
         </svg>
+      </div>
+
+      <MarketMicrostructurePanel model={microstructure} />
+    </div>
+  );
+}
+
+function MarketMicrostructurePanel({ model }: { model: MarketMicrostructureModel }) {
+  return (
+    <div className="microstructure-panel">
+      <div className="microstructure-head">
+        <div>
+          <strong>交易型行情深度</strong>
+          <span>
+            快照 {model.quoteSource} · 分时 {model.intradaySource} · {model.sameSource ? "同源" : "异源/待校验"}
+          </span>
+        </div>
+        <span className={`realtime-status ${model.statusTone}`}>{model.providerLabel}</span>
+      </div>
+      <div className="microstructure-grid">
+        <div className="microstructure-block">
+          <span className="microstructure-block-title">盘口</span>
+          {model.depthRows.map((row) => (
+            <div className={`microstructure-row ${row.tone}`} key={row.key}>
+              <span>{row.label}</span>
+              <strong>{row.value}</strong>
+              <em>{row.detail}</em>
+            </div>
+          ))}
+        </div>
+        <div className="microstructure-block">
+          <span className="microstructure-block-title">逐笔</span>
+          <div className="microstructure-tape">
+            <div className="microstructure-tape-head">
+              <span>时间</span>
+              <span>价</span>
+              <span>量</span>
+              <span>额</span>
+            </div>
+            {model.tapeRows.map((row) => (
+              <div className={`microstructure-tape-row ${row.tone}`} key={row.key}>
+                <span>{row.time}</span>
+                <strong>{row.price}</strong>
+                <span>{row.volume}</span>
+                <span>{row.amount}</span>
+              </div>
+            ))}
+            {model.tapeRows.length === 0 && <p className="microstructure-empty">暂无分时点</p>}
+          </div>
+        </div>
+        <div className="microstructure-block">
+          <span className="microstructure-block-title">经纪商</span>
+          {model.brokerRows.map((row) => (
+            <div className={`microstructure-row ${row.tone}`} key={row.key}>
+              <span>{row.label}</span>
+              <strong>{row.value}</strong>
+              <em>{row.detail}</em>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="microstructure-warnings">
+        {model.warnings.map((warning) => (
+          <span key={warning}>{warning}</span>
+        ))}
       </div>
     </div>
   );
@@ -1153,7 +1305,7 @@ export function PriceHistoryChart({
           <div className="chart-control-cluster period-control-cluster">
             <span className="chart-control-label">周期</span>
             <div className="chart-range-toggle chart-period-toggle" role="group" aria-label="K线周期">
-              {CANDLE_PERIODS.map((item) => (
+              {HISTORICAL_CANDLE_PERIODS.map((item) => (
                 <button
                   className={period === item.key ? "active" : ""}
                   key={item.key}
@@ -1315,6 +1467,9 @@ export function TradingSignalKlinePanel({
   evidenceEvents = [],
   fundFlowRows = [],
   factorRows = [],
+  intradayPoints = [],
+  realtimeQuote = null,
+  intradaySource = null,
   strategyAnalysis,
   strategyControls,
   selectedSignalId,
@@ -1326,6 +1481,9 @@ export function TradingSignalKlinePanel({
   evidenceEvents?: ChartEvidenceEvent[];
   fundFlowRows?: FundFlowSnapshot[];
   factorRows?: FactorSnapshot[];
+  intradayPoints?: IntradayPoint[];
+  realtimeQuote?: RealtimeQuote | null;
+  intradaySource?: string | null;
   strategyAnalysis?: StrategyKlineAnalysis | null;
   strategyControls?: StrategyKlineControls;
   selectedSignalId?: string | null;
@@ -1367,10 +1525,22 @@ export function TradingSignalKlinePanel({
     "candle",
     normalizeKlineRenderMode,
   );
+  const [annotationLabelMode, setAnnotationLabelMode] = usePersistentChartValue<AnnotationLabelMode>(
+    "tradingagents.tradeSignalKline.annotationLabelMode",
+    "compact",
+    normalizeAnnotationLabelMode,
+  );
+  const [denseLayerSelection, setDenseLayerSelection] = usePersistentChartValue<DenseChartLayerSelection>(
+    "tradingagents.tradeSignalKline.denseLayerSelection",
+    DEFAULT_DENSE_CHART_LAYER_SELECTION,
+    normalizeDenseChartLayerSelection,
+  );
   const [expanded, setExpanded] = useState(false);
   const [paramsOpen, setParamsOpen] = useState(false);
+  const [advancedToolsOpen, setAdvancedToolsOpen] = useState(false);
   const [hoveredSignalId, setHoveredSignalId] = useState<string | null>(null);
   const [hoveredEvidenceEventId, setHoveredEvidenceEventId] = useState<string | null>(null);
+  const [hoveredAnnotationKey, setHoveredAnnotationKey] = useState<string | null>(null);
   const [hoveredTradePlanLevelKey, setHoveredTradePlanLevelKey] = useState<string | null>(null);
   const [rightOffset, setRightOffset] = useState(0);
   const [measureStartIndex, setMeasureStartIndex] = useState<number | null>(null);
@@ -1391,30 +1561,65 @@ export function TradingSignalKlinePanel({
   const safeBars = Array.isArray(bars) ? bars : [];
   const safeSignals = Array.isArray(signals) ? signals : [];
   const safeEvidenceEvents = Array.isArray(evidenceEvents) ? evidenceEvents : [];
-  const priceAdjustedHistory = useMemo(
-    () => buildPriceAdjustedBars(safeBars, priceAdjustmentMode),
-    [priceAdjustmentMode, safeBars],
+  const safeIntradayPoints = Array.isArray(intradayPoints) ? intradayPoints : [];
+  const usingIntradayPeriod = isIntradayPeriod(period);
+  const intradayBars = useMemo<MarketHistoryBar[]>(
+    () =>
+      buildIntradayMinuteBars(safeIntradayPoints, {
+        symbol: drawingScope || realtimeQuote?.symbol || safeBars[safeBars.length - 1]?.symbol,
+        market: realtimeQuote?.market || safeBars[safeBars.length - 1]?.market,
+        prevClose: realtimeQuote?.prev_close,
+        source: intradaySource || undefined,
+      }) as MarketHistoryBar[],
+    [drawingScope, intradaySource, realtimeQuote?.market, realtimeQuote?.prev_close, realtimeQuote?.symbol, safeBars, safeIntradayPoints],
+  );
+  const priceAdjustedHistory = useMemo<PriceAdjustedBarsResult<MarketHistoryBar>>(
+    () => {
+      if (usingIntradayPeriod) {
+        return {
+          bars: intradayBars,
+          mode: "none",
+          baseFactor: null,
+          firstFactor: null,
+          latestFactor: null,
+          hasAdjustment: false,
+        };
+      }
+      return buildPriceAdjustedBars(safeBars, priceAdjustmentMode);
+    },
+    [intradayBars, priceAdjustmentMode, safeBars, usingIntradayPeriod],
   );
   const strategySignal = useMemo(
-    () => buildStrategyChartSignal(strategyAnalysis, safeBars),
-    [safeBars, strategyAnalysis],
+    () => (usingIntradayPeriod ? null : buildStrategyChartSignal(strategyAnalysis, safeBars)),
+    [safeBars, strategyAnalysis, usingIntradayPeriod],
   );
   const rawMergedSignals = useMemo(
-    () => mergeStrategySignals(safeSignals, strategySignal),
-    [safeSignals, strategySignal],
+    () => (usingIntradayPeriod ? [] : mergeStrategySignals(safeSignals, strategySignal)),
+    [safeSignals, strategySignal, usingIntradayPeriod],
   );
   const mergedSignals = useMemo(
-    () => adjustChartSignalsForPriceAdjustment(rawMergedSignals, safeBars, priceAdjustedHistory),
-    [priceAdjustedHistory, rawMergedSignals, safeBars],
+    () => (usingIntradayPeriod ? [] : adjustChartSignalsForPriceAdjustment(rawMergedSignals, safeBars, priceAdjustedHistory)),
+    [priceAdjustedHistory, rawMergedSignals, safeBars, usingIntradayPeriod],
   );
   const periodData = useMemo(
-    () => preparePeriodChartData(priceAdjustedHistory.bars, mergedSignals, period, safeEvidenceEvents),
-    [priceAdjustedHistory.bars, mergedSignals, period, safeEvidenceEvents],
+    () => preparePeriodChartData(priceAdjustedHistory.bars, mergedSignals, period, usingIntradayPeriod ? [] : safeEvidenceEvents),
+    [priceAdjustedHistory.bars, mergedSignals, period, safeEvidenceEvents, usingIntradayPeriod],
   );
   const strategyLevelPrices = useMemo(
-    () => adjustLatestPricesForPriceAdjustment(extractStrategyLevelPrices(strategyAnalysis), priceAdjustedHistory),
-    [priceAdjustedHistory, strategyAnalysis],
+    () =>
+      usingIntradayPeriod
+        ? []
+        : adjustLatestPricesForPriceAdjustment(extractStrategyLevelPrices(strategyAnalysis), priceAdjustedHistory),
+    [priceAdjustedHistory, strategyAnalysis, usingIntradayPeriod],
   );
+  const chartFundFlowRows = useMemo(() => (usingIntradayPeriod ? [] : fundFlowRows), [fundFlowRows, usingIntradayPeriod]);
+  const chartFactorRows = useMemo(() => (usingIntradayPeriod ? [] : factorRows), [factorRows, usingIntradayPeriod]);
+  const hasCustomDenseLayers = hasSelectedDenseChartLayers(denseLayerSelection);
+  const cleanChartLayersActive = annotationLabelMode === "compact" && !hasCustomDenseLayers;
+  const allChartLayersActive = annotationLabelMode === "all";
+  const effectiveSplitSubCharts =
+    chartPrefs.subCharts &&
+    (allChartLayersActive || denseLayerSelection.secondaryIndicators);
   const chart = useMemo(
     () => buildTradingSignalGeometry(
       periodData.bars,
@@ -1423,16 +1628,100 @@ export function TradingSignalKlinePanel({
       rightOffset,
       chartParams,
       strategyLevelPrices,
-      chartPrefs.subCharts,
+      effectiveSplitSubCharts,
       periodData.events,
-      fundFlowRows,
-      factorRows,
+      chartFundFlowRows,
+      chartFactorRows,
       priceAxisMode,
     ),
-    [chartParams, chartPrefs.subCharts, factorRows, fundFlowRows, periodData, priceAxisMode, range, rightOffset, strategyLevelPrices],
+    [chartFactorRows, chartFundFlowRows, chartParams, effectiveSplitSubCharts, periodData, priceAxisMode, range, rightOffset, strategyLevelPrices],
   );
   const chartMarkers = chart.markers || [];
   const evidenceEventMarkers = chart.eventMarkers || [];
+  const showDenseAnnotations = shouldRenderDenseChartLayer(annotationLabelMode, "annotations", denseLayerSelection);
+  const showDenseProfile = shouldRenderDenseChartLayer(annotationLabelMode, "profile", denseLayerSelection);
+  const showDenseAutoLevels = shouldRenderDenseChartLayer(annotationLabelMode, "autoLevels", denseLayerSelection);
+  const showDenseTrendRegime = shouldRenderDenseChartLayer(annotationLabelMode, "trendRegime", denseLayerSelection);
+  const showDenseSecondaryIndicators = shouldRenderDenseChartLayer(annotationLabelMode, "secondaryIndicators", denseLayerSelection);
+  const showDenseClusterBadges = shouldRenderDenseChartLayer(annotationLabelMode, "clusterBadges", denseLayerSelection);
+  const indicatorPanelReadoutLimit = annotationLabelMode === "compact" ? 3 : effectiveSplitSubCharts ? 8 : 10;
+  const compactAnnotationEvents = useMemo<CompactAnnotationEvent[]>(() => [
+    ...(chartPrefs.patterns
+      ? chart.candlestickPatterns.map((event) => ({
+          key: event.key,
+          layer: `price-${event.tone}`,
+          label: event.label,
+          tone: event.tone,
+          x: event.x,
+          y: event.markerY,
+        }))
+      : []),
+    ...(chartPrefs.tds9
+      ? chart.tdsSequentialEvents.map((event) => ({
+          key: event.key,
+          layer: `price-${event.tone}`,
+          label: `TDS${event.count}`,
+          tone: event.tone,
+          x: event.x,
+          y: event.markerY,
+        }))
+      : []),
+    ...(chartPrefs.indicatorSignals
+      ? chart.technicalIndicatorEvents.map((event) => ({
+          key: event.key,
+          layer: `price-${event.tone}`,
+          label: event.label,
+          tone: event.tone,
+          x: event.x,
+          y: event.markerY,
+        }))
+      : []),
+    ...(chartPrefs.divergences
+      ? chart.technicalDivergenceEvents.map((event) => ({
+          key: event.key,
+          layer: `price-${event.tone}`,
+          label: event.label,
+          tone: event.tone,
+          x: event.x,
+          y: event.markerY,
+        }))
+      : []),
+    ...(chartPrefs.volume && chartPrefs.volumeSignals
+      ? chart.volumeSignalEvents.map((event) => ({
+          key: event.key,
+          layer: `volume-${event.tone}`,
+          label: event.label,
+          tone: event.tone,
+          x: event.x,
+          y: event.markerY,
+        }))
+      : []),
+  ], [
+    chart.candlestickPatterns,
+    chart.tdsSequentialEvents,
+    chart.technicalDivergenceEvents,
+    chart.technicalIndicatorEvents,
+    chart.volumeSignalEvents,
+    chartPrefs.divergences,
+    chartPrefs.indicatorSignals,
+    chartPrefs.patterns,
+    chartPrefs.tds9,
+    chartPrefs.volume,
+    chartPrefs.volumeSignals,
+  ]);
+  const compactAnnotationDisplay = useMemo(
+    () =>
+      buildCompactAnnotationDisplay(compactAnnotationEvents, {
+        activeKey: hoveredAnnotationKey,
+        minClusterGap: chart.visibleCount <= 80 ? 14 : 22,
+        mode: annotationLabelMode,
+      }),
+    [annotationLabelMode, chart.visibleCount, compactAnnotationEvents, hoveredAnnotationKey],
+  );
+  const visibleAnnotationLabelKeys = useMemo(
+    () => new Set(compactAnnotationDisplay.labelKeys),
+    [compactAnnotationDisplay.labelKeys],
+  );
   const activeChartPreset = useMemo(() => matchChartPreferencePreset(chartPrefs), [chartPrefs]);
   const chartLayerSummary = useMemo(() => buildChartLayerSummary(chartPrefs), [chartPrefs]);
   const activeChartParameterPreset = useMemo(() => matchChartParameterPreset(chartParams), [chartParams]);
@@ -1452,8 +1741,8 @@ export function TradingSignalKlinePanel({
     ? `游标 ${shortDateLabel(crosshair.candle.periodLabel || crosshair.candle.date)}`
     : "最新";
   const indicatorPanelReadouts = useMemo(
-    () => buildIndicatorPanelReadouts(indicatorReadoutSnapshot, { mode: chartPrefs.subCharts ? "split" : "compact" }),
-    [indicatorReadoutSnapshot, chartPrefs.subCharts],
+    () => buildIndicatorPanelReadouts(indicatorReadoutSnapshot, { mode: effectiveSplitSubCharts ? "split" : "compact" }),
+    [effectiveSplitSubCharts, indicatorReadoutSnapshot],
   );
   const indicatorPanelReadoutMap = useMemo(
     () => new Map(indicatorPanelReadouts.map((group) => [group.key, group])),
@@ -1517,14 +1806,16 @@ export function TradingSignalKlinePanel({
     volumeEvents: chart.volumeSignalEvents,
   });
   const visibleIndicatorThresholdGuides = chart.indicatorThresholdGuides.filter((guide) => {
-    if (!chartPrefs.subCharts && guide.section !== "oscillator") return false;
+    if (!showDenseSecondaryIndicators) return false;
+    if (!effectiveSplitSubCharts && guide.section !== "oscillator") return false;
     if (guide.section === "oscillator") return chartPrefs.rsi || chartPrefs.kdj;
     if (guide.section === "advanced") return chartPrefs.advanced || chartPrefs.volumeMomentum;
     if (guide.section === "momentum") return chartPrefs.momentum || chartPrefs.biasDma || chartPrefs.volumeMomentum;
     return true;
   });
   const visibleIndicatorThresholdZones = chart.indicatorThresholdZones.filter((zone) => {
-    if (!chartPrefs.subCharts && zone.section !== "oscillator") return false;
+    if (!showDenseSecondaryIndicators) return false;
+    if (!effectiveSplitSubCharts && zone.section !== "oscillator") return false;
     if (zone.section === "oscillator") return chartPrefs.rsi || chartPrefs.kdj;
     if (zone.section === "advanced") return chartPrefs.advanced || chartPrefs.volumeMomentum;
     if (zone.section === "momentum") return chartPrefs.momentum || chartPrefs.biasDma || chartPrefs.volumeMomentum;
@@ -1536,6 +1827,7 @@ export function TradingSignalKlinePanel({
       if (label.group === "ma") return chartPrefs.ma;
       if (label.group === "ema") return chartPrefs.ema;
       if (label.group === "boll") return chartPrefs.boll;
+      if (!showDenseAutoLevels && (label.group === "ene" || label.group === "mike" || label.group === "ichimoku")) return false;
       if (label.group === "ene") return chartPrefs.ene;
       if (label.group === "mike") return chartPrefs.mike;
       if (label.group === "vwap") return chartPrefs.vwap;
@@ -1550,8 +1842,17 @@ export function TradingSignalKlinePanel({
     (chart.indicatorValueLabels || []).filter((label: IndicatorValueLabelDefinition) => {
       if (label.group === "volume") return chartPrefs.volume;
       if (label.group === "macd") return chartPrefs.macd;
+      if (!showDenseSecondaryIndicators && label.group === "rsi") return chartPrefs.rsi && label.key === "rsi";
       if (label.group === "rsi") return chartPrefs.rsi;
+      if (!showDenseSecondaryIndicators && label.group === "kdj") return false;
       if (label.group === "kdj") return chartPrefs.kdj;
+      if (!showDenseSecondaryIndicators && (
+        label.group === "advanced" ||
+        label.group === "momentum" ||
+        label.group === "biasDma" ||
+        label.group === "volumeMomentum" ||
+        label.group === "volatility"
+      )) return false;
       if (label.group === "advanced") return chartPrefs.advanced;
       if (label.group === "momentum") return chartPrefs.momentum;
       if (label.group === "biasDma") return chartPrefs.biasDma;
@@ -1560,7 +1861,7 @@ export function TradingSignalKlinePanel({
       return true;
     }),
     {
-      maxPerSection: chartPrefs.subCharts ? 7 : 10,
+      maxPerSection: annotationLabelMode === "compact" ? (effectiveSplitSubCharts ? 4 : 5) : effectiveSplitSubCharts ? 7 : 10,
       minGap: 13,
       sections: Object.fromEntries(chart.sections.map((section: { key: string; top: number; bottom: number }) => [
         section.key,
@@ -1655,6 +1956,7 @@ export function TradingSignalKlinePanel({
   const setRangeFromControl = (nextRange: CandleRange) => {
     setRange(nextRange);
     setRightOffset((value) => Math.min(value, maxRightOffsetForRange(periodData.bars.length, nextRange)));
+    setHoveredAnnotationKey(null);
     setCrosshair(null);
   };
 
@@ -1710,6 +2012,26 @@ export function TradingSignalKlinePanel({
     setChartParams((value) => applyChartParameterPreset(value, key));
   };
 
+  const showCleanChartLayers = () => {
+    setAnnotationLabelMode("compact");
+    setDenseLayerSelection({ ...DEFAULT_DENSE_CHART_LAYER_SELECTION });
+    setHoveredAnnotationKey(null);
+  };
+
+  const showAllChartLayers = () => {
+    setAnnotationLabelMode("all");
+    setHoveredAnnotationKey(null);
+  };
+
+  const toggleDenseChartLayer = (key: DenseLayerControlKey) => {
+    setAnnotationLabelMode("compact");
+    setDenseLayerSelection((value) => ({
+      ...value,
+      [key]: !value[key],
+    }));
+    setHoveredAnnotationKey(null);
+  };
+
   const selectDrawingTool = (tool: ManualDrawingType) => {
     const nextTool = drawingTool === tool ? "none" : tool;
     setDrawingTool(nextTool);
@@ -1733,6 +2055,9 @@ export function TradingSignalKlinePanel({
     setPriceAxisMode("price");
     setPriceAdjustmentMode("none");
     setKlineRenderMode("candle");
+    setAnnotationLabelMode("compact");
+    setDenseLayerSelection({ ...DEFAULT_DENSE_CHART_LAYER_SELECTION });
+    setHoveredAnnotationKey(null);
     setMeasureStartIndex(null);
     setMeasureEndIndex(null);
   };
@@ -1748,6 +2073,9 @@ export function TradingSignalKlinePanel({
   const chooseSignal = (signalId: string) => {
     onSelectSignal?.(signalId);
   };
+  const showAnnotationLabel = (key: string) => visibleAnnotationLabelKeys.has(key);
+  const showAnnotation = (key: string) => setHoveredAnnotationKey(key);
+  const hideAnnotation = () => setHoveredAnnotationKey(null);
 
   const handleMarkerKey = (event: KeyboardEvent<SVGGElement>, signalId: string) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -1856,6 +2184,15 @@ export function TradingSignalKlinePanel({
       return currentStart;
     });
   };
+  const dataScopeText = usingIntradayPeriod
+    ? `${safeIntradayPoints.length} 个分时点`
+    : period === "daily"
+      ? `${safeBars.length} 根日线`
+      : `由 ${safeBars.length} 根日线聚合`;
+  const strategyScopeText = usingIntradayPeriod ? "分时复核" : "策略口径 周线趋势 + 日线执行";
+  const priceAdjustmentText = usingIntradayPeriod
+    ? "分时不复权"
+    : priceAdjustmentStatusLabel(priceAdjustmentMode, priceAdjustedHistory.mode);
 
   return (
     <div className={`chart-panel trade-signal-panel ${expanded ? "expanded" : ""}`}>
@@ -1864,10 +2201,10 @@ export function TradingSignalKlinePanel({
           <strong>V2策略信号K线</strong>
           <span>
             {chart.visibleCount || periodData.bars.length} / {periodData.bars.length} 根{periodData.unit} ·{" "}
-            {period === "daily" ? `${safeBars.length} 根日线` : `由 ${safeBars.length} 根日线聚合`} ·{" "}
-            策略口径 周线趋势 + 日线执行 ·{" "}
+            {dataScopeText} ·{" "}
+            {strategyScopeText} ·{" "}
             V2主信号 {strategySignal ? "已接入" : "未生成"} · 历史信号 {safeSignals.length} ·{" "}
-            机会 {summary.opportunity} / 风险 {summary.risk} · 复权 {priceAdjustmentStatusLabel(priceAdjustmentMode, priceAdjustedHistory.mode)} ·{" "}
+            机会 {summary.opportunity} / 风险 {summary.risk} · 复权 {priceAdjustmentText} ·{" "}
             图形 {KLINE_RENDER_MODES.find((item) => item.key === klineRenderMode)?.label || "蜡烛"} ·{" "}
             坐标 {priceAxisMode === "percent" ? "涨跌幅" : "价格"} ·{" "}
             {rightOffset > 0 ? `向前平移 ${rightOffset} 根` : "最新区间"}
@@ -1886,6 +2223,7 @@ export function TradingSignalKlinePanel({
                     setRightOffset(0);
                     setHoveredSignalId(null);
                     setHoveredEvidenceEventId(null);
+                    setHoveredAnnotationKey(null);
                     setHoveredTradePlanLevelKey(null);
                     setCrosshair(null);
                   }}
@@ -1921,149 +2259,6 @@ export function TradingSignalKlinePanel({
           )}
         </div>
       </div>
-
-      <div className="chart-tool-strip chart-preset-strip" aria-label="交易信号K线指标预设">
-        <span>预设</span>
-        {CHART_PREFERENCE_PRESETS.map((preset) => (
-          <button
-            aria-pressed={activeChartPreset === preset.key}
-            className={activeChartPreset === preset.key ? "active" : ""}
-            key={preset.key}
-            onClick={() => applyChartPreset(preset.key)}
-            title={preset.description}
-            type="button"
-          >
-            {preset.label}
-          </button>
-        ))}
-        <span>{activeChartPreset ? "当前组合" : "自定义组合"}</span>
-      </div>
-
-      <div className="chart-layer-summary" aria-label="交易信号K线图层摘要">
-        <span className="chart-layer-summary-label">图层摘要</span>
-        {chartLayerSummary.map((item) => (
-          <div className={`chart-layer-summary-card ${item.key}`} key={item.key} title={item.detail}>
-            <span>{item.label}</span>
-            <strong>{item.value}</strong>
-            <em>{item.detail}</em>
-          </div>
-        ))}
-      </div>
-
-      <div className="chart-tool-strip" aria-label="交易信号K线指标与工具">
-        <span>指标·主图</span>
-        <button className={chartPrefs.ma ? "active" : ""} onClick={() => toggleChartPref("ma")} type="button">MA</button>
-        <button className={chartPrefs.ema ? "active" : ""} onClick={() => toggleChartPref("ema")} type="button">EMA</button>
-        <button className={chartPrefs.boll ? "active" : ""} onClick={() => toggleChartPref("boll")} type="button">BOLL</button>
-        <button className={chartPrefs.ene ? "active" : ""} onClick={() => toggleChartPref("ene")} type="button">ENE</button>
-        <button className={chartPrefs.mike ? "active" : ""} onClick={() => toggleChartPref("mike")} type="button">MIKE</button>
-        <button className={chartPrefs.vwap ? "active" : ""} onClick={() => toggleChartPref("vwap")} type="button">VWAP</button>
-        <button className={chartPrefs.levels ? "active" : ""} onClick={() => toggleChartPref("levels")} type="button">价位线</button>
-        <button className={chartPrefs.limitLines ? "active" : ""} onClick={() => toggleChartPref("limitLines")} type="button">涨跌停</button>
-        <button className={chartPrefs.signals ? "active" : ""} onClick={() => toggleChartPref("signals")} type="button">信号</button>
-        <button className={chartPrefs.events ? "active" : ""} onClick={() => toggleChartPref("events")} type="button">事件</button>
-        <button className={chartPrefs.relative ? "active" : ""} onClick={() => toggleChartPref("relative")} type="button">相对</button>
-        <button className={chartPrefs.trendRegime ? "active" : ""} onClick={() => toggleChartPref("trendRegime")} type="button">趋势带</button>
-        <button className={chartPrefs.profile ? "active" : ""} onClick={() => toggleChartPref("profile")} type="button">筹码</button>
-        <button className={chartPrefs.fundFlow ? "active" : ""} onClick={() => toggleChartPref("fundFlow")} type="button">资金流</button>
-        <button className={chartPrefs.fibonacci ? "active" : ""} onClick={() => toggleChartPref("fibonacci")} type="button">斐波</button>
-        <button className={chartPrefs.supportResistance ? "active" : ""} onClick={() => toggleChartPref("supportResistance")} type="button">支阻</button>
-        <button className={chartPrefs.trendLines ? "active" : ""} onClick={() => toggleChartPref("trendLines")} type="button">趋势线</button>
-        <button className={chartPrefs.patterns ? "active" : ""} onClick={() => toggleChartPref("patterns")} type="button">形态</button>
-        <button className={chartPrefs.tds9 ? "active" : ""} onClick={() => toggleChartPref("tds9")} type="button">TDS9</button>
-        <button className={chartPrefs.indicatorSignals ? "active" : ""} onClick={() => toggleChartPref("indicatorSignals")} type="button">技信</button>
-        <button className={chartPrefs.divergences ? "active" : ""} onClick={() => toggleChartPref("divergences")} type="button">背离</button>
-        <button className={chartPrefs.sar ? "active" : ""} onClick={() => toggleChartPref("sar")} type="button">SAR</button>
-        <button className={chartPrefs.bbi ? "active" : ""} onClick={() => toggleChartPref("bbi")} type="button">BBI</button>
-        <button className={chartPrefs.ichimoku ? "active" : ""} onClick={() => toggleChartPref("ichimoku")} type="button">一目</button>
-        <span>指标·副图</span>
-        <button className={chartPrefs.volume ? "active" : ""} onClick={() => toggleChartPref("volume")} type="button">VOL</button>
-        <button className={chartPrefs.volumeSignals ? "active" : ""} onClick={() => toggleChartPref("volumeSignals")} type="button">量信</button>
-        <button className={chartPrefs.macd ? "active" : ""} onClick={() => toggleChartPref("macd")} type="button">MACD</button>
-        <button className={chartPrefs.rsi ? "active" : ""} onClick={() => toggleChartPref("rsi")} type="button">RSI/PSY</button>
-        <button className={chartPrefs.kdj ? "active" : ""} onClick={() => toggleChartPref("kdj")} type="button">KDJ</button>
-        <button className={chartPrefs.advanced ? "active" : ""} onClick={() => toggleChartPref("advanced")} type="button">CR/ARBR/EMV</button>
-        <button className={chartPrefs.momentum ? "active" : ""} onClick={() => toggleChartPref("momentum")} type="button">DMI/CCI/WR</button>
-        <button className={chartPrefs.biasDma ? "active" : ""} onClick={() => toggleChartPref("biasDma")} type="button">BIAS/DMA</button>
-        <button className={chartPrefs.volumeMomentum ? "active" : ""} onClick={() => toggleChartPref("volumeMomentum")} type="button">VR/MFI/TRIX/OSC</button>
-        <button className={chartPrefs.volatility ? "active" : ""} onClick={() => toggleChartPref("volatility")} type="button">ATR/OBV</button>
-        <button className={chartPrefs.subCharts ? "active" : ""} onClick={() => toggleChartPref("subCharts")} type="button">分屏</button>
-        <button className={chartPrefs.measure ? "active measure" : "measure"} onClick={() => toggleChartPref("measure")} type="button">测距</button>
-        <span>图形</span>
-        {KLINE_RENDER_MODES.map((item) => (
-          <button className={klineRenderMode === item.key ? "active" : ""} key={item.key} onClick={() => setKlineRenderMode(item.key)} type="button">
-            {item.label}
-          </button>
-        ))}
-        <span>复权</span>
-        {PRICE_ADJUSTMENT_MODES.map((item) => (
-          <button className={priceAdjustmentMode === item.key ? "active" : ""} key={item.key} onClick={() => setPriceAdjustmentMode(item.key)} type="button">
-            {item.label}
-          </button>
-        ))}
-        <span>坐标</span>
-        <button className={priceAxisMode === "price" ? "active" : ""} onClick={() => setPriceAxisMode("price")} type="button">价格</button>
-        <button className={priceAxisMode === "percent" ? "active" : ""} onClick={() => setPriceAxisMode("percent")} type="button">涨跌幅</button>
-        <span>画线</span>
-        <button className={drawingTool === "horizontal" ? "active drawing" : "drawing"} onClick={() => selectDrawingTool("horizontal")} type="button">水平线</button>
-        <button className={drawingTool === "trend" ? "active drawing" : "drawing"} onClick={() => selectDrawingTool("trend")} type="button">趋势线</button>
-        <button disabled={manualDrawings.length === 0 && !pendingTrendAnchor} onClick={clearManualDrawings} type="button">清空画线</button>
-        <span>{drawingTool === "trend" && pendingTrendAnchor ? "选第二点" : manualDrawings.length ? `已画 ${manualDrawings.length}` : "未画线"}</span>
-        <button className={paramsOpen ? "active" : ""} onClick={() => setParamsOpen((value) => !value)} type="button">参数</button>
-        <button onClick={resetChartPrefs} type="button">重置</button>
-      </div>
-
-      {paramsOpen && (
-        <div className="chart-param-panel" aria-label="交易信号K线指标参数">
-          <div className="chart-param-preset-strip" aria-label="交易信号K线指标参数预设">
-            <span>参数预设</span>
-            {CHART_PARAMETER_PRESETS.map((preset) => (
-              <button
-                aria-pressed={activeChartParameterPreset === preset.key}
-                className={activeChartParameterPreset === preset.key ? "active" : ""}
-                key={preset.key}
-                onClick={() => applyChartParameterPresetValue(preset.key)}
-                title={preset.description}
-                type="button"
-              >
-                {preset.label}
-              </button>
-            ))}
-            <span>{activeChartParameterPreset ? "当前参数" : "自定义参数"}</span>
-          </div>
-          <ChartParamInput label="MA快" value={chartParams.maFast} onChange={updateChartParam("maFast")} />
-          <ChartParamInput label="MA中" value={chartParams.maMid} onChange={updateChartParam("maMid")} />
-          <ChartParamInput label="MA慢" value={chartParams.maSlow} onChange={updateChartParam("maSlow")} />
-          <ChartParamInput label="EMA快" value={chartParams.emaFast} onChange={updateChartParam("emaFast")} />
-          <ChartParamInput label="EMA慢" value={chartParams.emaSlow} onChange={updateChartParam("emaSlow")} />
-          <ChartParamInput label="BOLL周期" value={chartParams.bollPeriod} onChange={updateChartParam("bollPeriod")} />
-          <ChartParamInput label="BOLL倍数" value={chartParams.bollMultiplier} step="0.1" onChange={updateChartParam("bollMultiplier")} />
-          <ChartParamInput label="ENE周期" value={chartParams.enePeriod} onChange={updateChartParam("enePeriod")} />
-          <ChartParamInput label="ENE幅度" value={chartParams.enePercent} step="0.1" onChange={updateChartParam("enePercent")} />
-          <ChartParamInput label="MIKE周期" value={chartParams.mikePeriod} onChange={updateChartParam("mikePeriod")} />
-          <ChartParamInput label="MACD快" value={chartParams.macdFast} onChange={updateChartParam("macdFast")} />
-          <ChartParamInput label="MACD慢" value={chartParams.macdSlow} onChange={updateChartParam("macdSlow")} />
-          <ChartParamInput label="MACD信号" value={chartParams.macdSignal} onChange={updateChartParam("macdSignal")} />
-          <ChartParamInput label="RSI" value={chartParams.rsiPeriod} onChange={updateChartParam("rsiPeriod")} />
-          <ChartParamInput label="PSY" value={chartParams.psyPeriod} onChange={updateChartParam("psyPeriod")} />
-          <ChartParamInput label="PSYMA" value={chartParams.psyMaPeriod} onChange={updateChartParam("psyMaPeriod")} />
-          <ChartParamInput label="KDJ" value={chartParams.kdjPeriod} onChange={updateChartParam("kdjPeriod")} />
-          <ChartParamInput label="CR/ARBR" value={chartParams.crPeriod} onChange={updateChartParam("crPeriod")} />
-          <ChartParamInput label="EMV均线" value={chartParams.emvPeriod} onChange={updateChartParam("emvPeriod")} />
-          <ChartParamInput label="DMI/CCI/WR" value={chartParams.momentumPeriod} onChange={updateChartParam("momentumPeriod")} />
-          <ChartParamInput label="BIAS" value={chartParams.biasPeriod} onChange={updateChartParam("biasPeriod")} />
-          <ChartParamInput label="DMA快" value={chartParams.dmaFast} onChange={updateChartParam("dmaFast")} />
-          <ChartParamInput label="DMA慢" value={chartParams.dmaSlow} onChange={updateChartParam("dmaSlow")} />
-          <ChartParamInput label="AMA" value={chartParams.dmaSignal} onChange={updateChartParam("dmaSignal")} />
-          <ChartParamInput label="VR/MFI" value={chartParams.volumeMomentumPeriod} onChange={updateChartParam("volumeMomentumPeriod")} />
-          <ChartParamInput label="ROC" value={chartParams.rocPeriod} onChange={updateChartParam("rocPeriod")} />
-          <ChartParamInput label="OSC" value={chartParams.oscPeriod} onChange={updateChartParam("oscPeriod")} />
-          <ChartParamInput label="OSCEMA" value={chartParams.oscEmaPeriod} onChange={updateChartParam("oscEmaPeriod")} />
-          <ChartParamInput label="TRIX" value={chartParams.trixPeriod} onChange={updateChartParam("trixPeriod")} />
-          <ChartParamInput label="TRMA" value={chartParams.trixSignal} onChange={updateChartParam("trixSignal")} />
-          <ChartParamInput label="ATR" value={chartParams.atrPeriod} onChange={updateChartParam("atrPeriod")} />
-        </div>
-      )}
 
       <div className="trade-signal-readout" aria-label="交易信号K线核心指标">
         <MarketReadoutStat
@@ -2250,8 +2445,197 @@ export function TradingSignalKlinePanel({
       )}
 
       <div className="trade-signal-stage">
+        <div className="trade-signal-chart-frame">
+          <div className="trade-signal-chart-controls" aria-label="交易信号K线图层选择">
+            <div className="chart-tool-strip chart-preset-strip" aria-label="交易信号K线指标预设">
+              <span>预设</span>
+              {CHART_PREFERENCE_PRESETS.map((preset) => (
+                <button
+                  aria-pressed={activeChartPreset === preset.key}
+                  className={activeChartPreset === preset.key ? "active" : ""}
+                  key={preset.key}
+                  onClick={() => applyChartPreset(preset.key)}
+                  title={preset.description}
+                  type="button"
+                >
+                  {preset.label}
+                </button>
+              ))}
+              <span>{activeChartPreset ? "当前组合" : "自定义组合"}</span>
+            </div>
+
+            <div className="chart-layer-summary" aria-label="交易信号K线图层摘要">
+              <span className="chart-layer-summary-label">图层摘要</span>
+              {chartLayerSummary.map((item) => (
+                <div className={`chart-layer-summary-card ${item.key}`} key={item.key} title={item.detail}>
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                  <em>{item.detail}</em>
+                </div>
+              ))}
+            </div>
+
+            <div className="chart-tool-strip chart-primary-tool-strip" aria-label="交易信号K线常用指标与工具">
+              <span>指标·主图</span>
+              <button className={chartPrefs.ma ? "active" : ""} onClick={() => toggleChartPref("ma")} type="button">MA</button>
+              <button className={chartPrefs.ema ? "active" : ""} onClick={() => toggleChartPref("ema")} type="button">EMA</button>
+              <button className={chartPrefs.boll ? "active" : ""} onClick={() => toggleChartPref("boll")} type="button">BOLL</button>
+              <button className={chartPrefs.vwap ? "active" : ""} onClick={() => toggleChartPref("vwap")} type="button">VWAP</button>
+              <button className={chartPrefs.levels ? "active" : ""} onClick={() => toggleChartPref("levels")} type="button">价位线</button>
+              <button className={chartPrefs.signals ? "active" : ""} onClick={() => toggleChartPref("signals")} type="button">信号</button>
+              <button className={chartPrefs.events ? "active" : ""} onClick={() => toggleChartPref("events")} type="button">事件</button>
+              <span>图层</span>
+              <button
+                className={cleanChartLayersActive ? "active" : ""}
+                onClick={showCleanChartLayers}
+                title="只显示价格、核心均线、BOLL、价位线、VOL、MACD、RSI"
+                type="button"
+              >
+                清爽
+              </button>
+              <button
+                className={allChartLayersActive ? "active" : ""}
+                onClick={showAllChartLayers}
+                title="显示全部覆盖层，适合排查和深挖，不建议默认阅读"
+                type="button"
+              >
+                全量
+              </button>
+              {DENSE_CHART_LAYER_CONTROLS.map((item) => (
+                <button
+                  className={allChartLayersActive || denseLayerSelection[item.key] ? "active" : ""}
+                  key={item.key}
+                  onClick={() => toggleDenseChartLayer(item.key)}
+                  title={item.title}
+                  type="button"
+                >
+                  {item.label}
+                </button>
+              ))}
+              <button className={chartPrefs.relative ? "active" : ""} onClick={() => toggleChartPref("relative")} type="button">相对</button>
+              <button className={chartPrefs.fundFlow ? "active" : ""} onClick={() => toggleChartPref("fundFlow")} type="button">资金流</button>
+              <span>指标·副图</span>
+              <button className={chartPrefs.volume ? "active" : ""} onClick={() => toggleChartPref("volume")} type="button">VOL</button>
+              <button className={chartPrefs.macd ? "active" : ""} onClick={() => toggleChartPref("macd")} type="button">MACD</button>
+              <button className={chartPrefs.rsi ? "active" : ""} onClick={() => toggleChartPref("rsi")} type="button">RSI/PSY</button>
+              <button className={chartPrefs.kdj ? "active" : ""} onClick={() => toggleChartPref("kdj")} type="button">KDJ</button>
+              <button className={chartPrefs.subCharts ? "active" : ""} onClick={() => toggleChartPref("subCharts")} type="button">分屏</button>
+              <button className={chartPrefs.measure ? "active measure" : "measure"} onClick={() => toggleChartPref("measure")} type="button">测距</button>
+              <span>图形</span>
+              {KLINE_RENDER_MODES.map((item) => (
+                <button className={klineRenderMode === item.key ? "active" : ""} key={item.key} onClick={() => setKlineRenderMode(item.key)} type="button">
+                  {item.label}
+                </button>
+              ))}
+              <span>复权</span>
+              {PRICE_ADJUSTMENT_MODES.map((item) => (
+                <button className={priceAdjustmentMode === item.key ? "active" : ""} key={item.key} onClick={() => setPriceAdjustmentMode(item.key)} type="button">
+                  {item.label}
+                </button>
+              ))}
+              <span>坐标</span>
+              <button className={priceAxisMode === "price" ? "active" : ""} onClick={() => setPriceAxisMode("price")} type="button">价格</button>
+              <button className={priceAxisMode === "percent" ? "active" : ""} onClick={() => setPriceAxisMode("percent")} type="button">涨跌幅</button>
+              <span>画线</span>
+              <button className={drawingTool === "horizontal" ? "active drawing" : "drawing"} onClick={() => selectDrawingTool("horizontal")} type="button">水平线</button>
+              <button className={drawingTool === "trend" ? "active drawing" : "drawing"} onClick={() => selectDrawingTool("trend")} type="button">趋势线</button>
+              <button disabled={manualDrawings.length === 0 && !pendingTrendAnchor} onClick={clearManualDrawings} type="button">清空画线</button>
+              <span>{drawingTool === "trend" && pendingTrendAnchor ? "选第二点" : manualDrawings.length ? `已画 ${manualDrawings.length}` : "未画线"}</span>
+              <button className={paramsOpen ? "active" : ""} onClick={() => setParamsOpen((value) => !value)} type="button">参数</button>
+              <button
+                aria-expanded={advancedToolsOpen}
+                className={advancedToolsOpen ? "active" : ""}
+                onClick={() => setAdvancedToolsOpen((value) => !value)}
+                type="button"
+              >
+                高级{advancedToolsOpen ? "收起" : "展开"}
+              </button>
+              <button onClick={resetChartPrefs} type="button">重置</button>
+            </div>
+
+            {advancedToolsOpen && (
+              <div className="chart-tool-strip chart-advanced-tool-strip" aria-label="交易信号K线高级指标">
+                <span>高级·主图</span>
+                <button className={chartPrefs.ene ? "active" : ""} onClick={() => toggleChartPref("ene")} type="button">ENE</button>
+                <button className={chartPrefs.mike ? "active" : ""} onClick={() => toggleChartPref("mike")} type="button">MIKE</button>
+                <button className={chartPrefs.limitLines ? "active" : ""} onClick={() => toggleChartPref("limitLines")} type="button">涨跌停</button>
+                <button className={chartPrefs.trendRegime ? "active" : ""} onClick={() => toggleChartPref("trendRegime")} type="button">趋势带</button>
+                <button className={chartPrefs.profile ? "active" : ""} onClick={() => toggleChartPref("profile")} type="button">筹码</button>
+                <button className={chartPrefs.fibonacci ? "active" : ""} onClick={() => toggleChartPref("fibonacci")} type="button">斐波</button>
+                <button className={chartPrefs.supportResistance ? "active" : ""} onClick={() => toggleChartPref("supportResistance")} type="button">支阻</button>
+                <button className={chartPrefs.trendLines ? "active" : ""} onClick={() => toggleChartPref("trendLines")} type="button">趋势线</button>
+                <button className={chartPrefs.patterns ? "active" : ""} onClick={() => toggleChartPref("patterns")} type="button">形态</button>
+                <button className={chartPrefs.tds9 ? "active" : ""} onClick={() => toggleChartPref("tds9")} type="button">TDS9</button>
+                <button className={chartPrefs.indicatorSignals ? "active" : ""} onClick={() => toggleChartPref("indicatorSignals")} type="button">技信</button>
+                <button className={chartPrefs.divergences ? "active" : ""} onClick={() => toggleChartPref("divergences")} type="button">背离</button>
+                <button className={chartPrefs.sar ? "active" : ""} onClick={() => toggleChartPref("sar")} type="button">SAR</button>
+                <button className={chartPrefs.bbi ? "active" : ""} onClick={() => toggleChartPref("bbi")} type="button">BBI</button>
+                <button className={chartPrefs.ichimoku ? "active" : ""} onClick={() => toggleChartPref("ichimoku")} type="button">一目</button>
+                <span>高级·副图</span>
+                <button className={chartPrefs.volumeSignals ? "active" : ""} onClick={() => toggleChartPref("volumeSignals")} type="button">量信</button>
+                <button className={chartPrefs.advanced ? "active" : ""} onClick={() => toggleChartPref("advanced")} type="button">CR/ARBR/EMV</button>
+                <button className={chartPrefs.momentum ? "active" : ""} onClick={() => toggleChartPref("momentum")} type="button">DMI/CCI/WR</button>
+                <button className={chartPrefs.biasDma ? "active" : ""} onClick={() => toggleChartPref("biasDma")} type="button">BIAS/DMA</button>
+                <button className={chartPrefs.volumeMomentum ? "active" : ""} onClick={() => toggleChartPref("volumeMomentum")} type="button">VR/MFI/TRIX/OSC</button>
+                <button className={chartPrefs.volatility ? "active" : ""} onClick={() => toggleChartPref("volatility")} type="button">ATR/OBV</button>
+              </div>
+            )}
+
+            {paramsOpen && (
+              <div className="chart-param-panel" aria-label="交易信号K线指标参数">
+                <div className="chart-param-preset-strip" aria-label="交易信号K线指标参数预设">
+                  <span>参数预设</span>
+                  {CHART_PARAMETER_PRESETS.map((preset) => (
+                    <button
+                      aria-pressed={activeChartParameterPreset === preset.key}
+                      className={activeChartParameterPreset === preset.key ? "active" : ""}
+                      key={preset.key}
+                      onClick={() => applyChartParameterPresetValue(preset.key)}
+                      title={preset.description}
+                      type="button"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <span>{activeChartParameterPreset ? "当前参数" : "自定义参数"}</span>
+                </div>
+                <ChartParamInput label="MA快" value={chartParams.maFast} onChange={updateChartParam("maFast")} />
+                <ChartParamInput label="MA中" value={chartParams.maMid} onChange={updateChartParam("maMid")} />
+                <ChartParamInput label="MA慢" value={chartParams.maSlow} onChange={updateChartParam("maSlow")} />
+                <ChartParamInput label="EMA快" value={chartParams.emaFast} onChange={updateChartParam("emaFast")} />
+                <ChartParamInput label="EMA慢" value={chartParams.emaSlow} onChange={updateChartParam("emaSlow")} />
+                <ChartParamInput label="BOLL周期" value={chartParams.bollPeriod} onChange={updateChartParam("bollPeriod")} />
+                <ChartParamInput label="BOLL倍数" value={chartParams.bollMultiplier} step="0.1" onChange={updateChartParam("bollMultiplier")} />
+                <ChartParamInput label="ENE周期" value={chartParams.enePeriod} onChange={updateChartParam("enePeriod")} />
+                <ChartParamInput label="ENE幅度" value={chartParams.enePercent} step="0.1" onChange={updateChartParam("enePercent")} />
+                <ChartParamInput label="MIKE周期" value={chartParams.mikePeriod} onChange={updateChartParam("mikePeriod")} />
+                <ChartParamInput label="MACD快" value={chartParams.macdFast} onChange={updateChartParam("macdFast")} />
+                <ChartParamInput label="MACD慢" value={chartParams.macdSlow} onChange={updateChartParam("macdSlow")} />
+                <ChartParamInput label="MACD信号" value={chartParams.macdSignal} onChange={updateChartParam("macdSignal")} />
+                <ChartParamInput label="RSI" value={chartParams.rsiPeriod} onChange={updateChartParam("rsiPeriod")} />
+                <ChartParamInput label="PSY" value={chartParams.psyPeriod} onChange={updateChartParam("psyPeriod")} />
+                <ChartParamInput label="PSYMA" value={chartParams.psyMaPeriod} onChange={updateChartParam("psyMaPeriod")} />
+                <ChartParamInput label="KDJ" value={chartParams.kdjPeriod} onChange={updateChartParam("kdjPeriod")} />
+                <ChartParamInput label="CR/ARBR" value={chartParams.crPeriod} onChange={updateChartParam("crPeriod")} />
+                <ChartParamInput label="EMV均线" value={chartParams.emvPeriod} onChange={updateChartParam("emvPeriod")} />
+                <ChartParamInput label="DMI/CCI/WR" value={chartParams.momentumPeriod} onChange={updateChartParam("momentumPeriod")} />
+                <ChartParamInput label="BIAS" value={chartParams.biasPeriod} onChange={updateChartParam("biasPeriod")} />
+                <ChartParamInput label="DMA快" value={chartParams.dmaFast} onChange={updateChartParam("dmaFast")} />
+                <ChartParamInput label="DMA慢" value={chartParams.dmaSlow} onChange={updateChartParam("dmaSlow")} />
+                <ChartParamInput label="AMA" value={chartParams.dmaSignal} onChange={updateChartParam("dmaSignal")} />
+                <ChartParamInput label="VR/MFI" value={chartParams.volumeMomentumPeriod} onChange={updateChartParam("volumeMomentumPeriod")} />
+                <ChartParamInput label="ROC" value={chartParams.rocPeriod} onChange={updateChartParam("rocPeriod")} />
+                <ChartParamInput label="OSC" value={chartParams.oscPeriod} onChange={updateChartParam("oscPeriod")} />
+                <ChartParamInput label="OSCEMA" value={chartParams.oscEmaPeriod} onChange={updateChartParam("oscEmaPeriod")} />
+                <ChartParamInput label="TRIX" value={chartParams.trixPeriod} onChange={updateChartParam("trixPeriod")} />
+                <ChartParamInput label="TRMA" value={chartParams.trixSignal} onChange={updateChartParam("trixSignal")} />
+                <ChartParamInput label="ATR" value={chartParams.atrPeriod} onChange={updateChartParam("atrPeriod")} />
+              </div>
+            )}
+          </div>
+
         <svg
-          className={`price-history-chart trade-signal-chart ${chartPrefs.subCharts ? "split-indicators" : "compact-indicators"} ${dragStart.current ? "dragging" : ""} ${chartPrefs.measure ? "measuring" : ""} ${drawingTool !== "none" ? "drawing" : ""}`}
+            className={`price-history-chart trade-signal-chart ${effectiveSplitSubCharts ? "split-indicators" : "compact-indicators"} ${annotationLabelMode === "compact" ? "compact-annotations" : "full-annotations"} ${dragStart.current ? "dragging" : ""} ${chartPrefs.measure ? "measuring" : ""} ${drawingTool !== "none" ? "drawing" : ""}`}
           onMouseDown={(event) => {
             if (chartPrefs.measure || drawingTool !== "none") return;
             dragStart.current = { x: event.clientX, offset: rightOffset };
@@ -2272,7 +2656,7 @@ export function TradingSignalKlinePanel({
           preserveAspectRatio="none"
           viewBox={`0 0 1000 ${chart.viewBoxHeight}`}
         >
-          {chartPrefs.trendRegime && chart.trendRegimeBands.map((band) => (
+          {chartPrefs.trendRegime && showDenseTrendRegime && chart.trendRegimeBands.map((band) => (
             <g className={`trend-regime-band ${band.tone}`} key={band.key}>
               <rect height={chart.priceBottom - chart.priceTop} width={band.width} x={band.x} y={chart.priceTop} />
               {band.showLabel && (
@@ -2296,7 +2680,7 @@ export function TradingSignalKlinePanel({
               {indicatorPanelReadoutMap.get(section.key) && (
                 <text className="indicator-section-readout" x={chart.plotLeft + 170} y={section.top + 16}>
                   <tspan>{indicatorReadoutLabel}</tspan>
-                  {indicatorPanelReadoutMap.get(section.key)?.items.slice(0, chartPrefs.subCharts ? 8 : 10).map((item, index) => (
+                  {indicatorPanelReadoutMap.get(section.key)?.items.slice(0, indicatorPanelReadoutLimit).map((item, index) => (
                     <tspan className={item.signed ? quoteTone(item.value) : ""} dx={index === 0 ? 12 : 10} key={item.label}>
                       {item.label} {formatIndicatorPanelReadout(item)}
                     </tspan>
@@ -2448,10 +2832,10 @@ export function TradingSignalKlinePanel({
               <title>相对收益叠加：本股、相对指数、相对行业</title>
             </g>
           )}
-          {chartPrefs.profile && chart.volumeProfile.bins.length > 0 && (
+          {chartPrefs.profile && showDenseProfile && chart.volumeProfile.bins.length > 0 && (
             <VolumeProfileLayer chart={chart} profile={chart.volumeProfile} />
           )}
-          {chartPrefs.fibonacci && chart.fibonacciLevels.map((level) => (
+          {chartPrefs.fibonacci && showDenseAutoLevels && chart.fibonacciLevels.map((level) => (
             <g className={`fibonacci-level ${level.ratio === 0 || level.ratio === 1 ? "edge" : ""}`} key={level.key}>
               <line x1={chart.plotLeft} x2={chart.plotRight} y1={level.y} y2={level.y} />
               <text x={level.labelX} y={level.labelY}>
@@ -2460,7 +2844,7 @@ export function TradingSignalKlinePanel({
               <title>斐波回撤 {level.label} {formatNumber(level.price, 2)}</title>
             </g>
           ))}
-          {chartPrefs.supportResistance && chart.supportResistanceLevels.map((level) => (
+          {chartPrefs.supportResistance && showDenseAutoLevels && chart.supportResistanceLevels.map((level) => (
             <g className={`support-resistance-level ${level.type}`} key={level.key}>
               <line x1={chart.plotLeft} x2={chart.plotRight} y1={level.y} y2={level.y} />
               <circle cx={level.type === "support" ? chart.plotLeft + 4 : chart.plotRight - 4} cy={level.y} r="3" />
@@ -2472,7 +2856,7 @@ export function TradingSignalKlinePanel({
               </title>
             </g>
           ))}
-          {chartPrefs.trendLines && chart.priceStructureTrendLines.map((line) => (
+          {chartPrefs.trendLines && showDenseAutoLevels && chart.priceStructureTrendLines.map((line) => (
             <g className={`price-structure-trend-line ${line.tone}`} key={line.key}>
               <line x1={line.x1} x2={line.x2} y1={line.y1} y2={line.y2} />
               <circle cx={line.anchorStartX} cy={line.anchorStartY} r="3" />
@@ -2485,7 +2869,7 @@ export function TradingSignalKlinePanel({
               </title>
             </g>
           ))}
-          {chart.priceGaps.map((gap) => (
+          {showDenseAutoLevels && chart.priceGaps.map((gap) => (
             <g className={`price-gap-layer ${gap.direction}`} key={gap.key}>
               <rect height={gap.height} width={gap.width} x={gap.x} y={gap.y} />
               <line x1={gap.x} x2={chart.plotRight} y1={gap.y} y2={gap.y} />
@@ -2541,7 +2925,7 @@ export function TradingSignalKlinePanel({
           {chartPrefs.ma && chart.maTrendRibbons.map((ribbon) => (
             <path className={`ma-trend-ribbon ${ribbon.tone}`} d={ribbon.path} key={ribbon.key} />
           ))}
-          {chartPrefs.ichimoku && chart.ichimokuCloudSegments.map((segment) => (
+          {chartPrefs.ichimoku && showDenseAutoLevels && chart.ichimokuCloudSegments.map((segment) => (
             <path className={`ichimoku-cloud ${segment.tone}`} d={segment.path} key={segment.key} />
           ))}
           {chartPrefs.macd && chart.macdBars.map((bar) => (
@@ -2557,71 +2941,71 @@ export function TradingSignalKlinePanel({
           {chartPrefs.macd && chart.difLine && <polyline className="indicator-line dif" points={chart.difLine} />}
           {chartPrefs.macd && chart.deaLine && <polyline className="indicator-line dea" points={chart.deaLine} />}
           {chartPrefs.rsi && chart.rsiLine && <polyline className="indicator-line rsi" points={chart.rsiLine} />}
-          {chartPrefs.rsi && chart.psyLine && <polyline className="indicator-line psy" points={chart.psyLine} />}
-          {chartPrefs.rsi && chart.psyMaLine && <polyline className="indicator-line psy-ma" points={chart.psyMaLine} />}
-          {chartPrefs.kdj && chart.kdjKLine && <polyline className="indicator-line kdj-k" points={chart.kdjKLine} />}
-          {chartPrefs.kdj && chart.kdjDLine && <polyline className="indicator-line kdj-d" points={chart.kdjDLine} />}
-          {chartPrefs.kdj && chart.kdjJLine && <polyline className="indicator-line kdj-j" points={chart.kdjJLine} />}
-          {chartPrefs.advanced && (
+          {chartPrefs.rsi && showDenseSecondaryIndicators && chart.psyLine && <polyline className="indicator-line psy" points={chart.psyLine} />}
+          {chartPrefs.rsi && showDenseSecondaryIndicators && chart.psyMaLine && <polyline className="indicator-line psy-ma" points={chart.psyMaLine} />}
+          {chartPrefs.kdj && showDenseSecondaryIndicators && chart.kdjKLine && <polyline className="indicator-line kdj-k" points={chart.kdjKLine} />}
+          {chartPrefs.kdj && showDenseSecondaryIndicators && chart.kdjDLine && <polyline className="indicator-line kdj-d" points={chart.kdjDLine} />}
+          {chartPrefs.kdj && showDenseSecondaryIndicators && chart.kdjJLine && <polyline className="indicator-line kdj-j" points={chart.kdjJLine} />}
+          {chartPrefs.advanced && showDenseSecondaryIndicators && (
             <>
               <line className="advanced-indicator-baseline" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.advanced100Y} y2={chart.advanced100Y} />
               <line className="advanced-emv-zero-line" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.emvZeroY} y2={chart.emvZeroY} />
             </>
           )}
-          {chartPrefs.advanced && chart.crLine && <polyline className="indicator-line cr" points={chart.crLine} />}
-          {chartPrefs.advanced && chart.arLine && <polyline className="indicator-line ar" points={chart.arLine} />}
-          {chartPrefs.advanced && chart.brLine && <polyline className="indicator-line br" points={chart.brLine} />}
-          {chartPrefs.advanced && chart.emvLine && <polyline className="indicator-line emv" points={chart.emvLine} />}
-          {chartPrefs.advanced && chart.emvMaLine && <polyline className="indicator-line emv-ma" points={chart.emvMaLine} />}
-          {chartPrefs.momentum && <line className="momentum-zero-line" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.momentumZeroY} y2={chart.momentumZeroY} />}
-          {chartPrefs.momentum && chart.pdiLine && <polyline className="indicator-line pdi" points={chart.pdiLine} />}
-          {chartPrefs.momentum && chart.mdiLine && <polyline className="indicator-line mdi" points={chart.mdiLine} />}
-          {chartPrefs.momentum && chart.adxLine && <polyline className="indicator-line adx" points={chart.adxLine} />}
-          {chartPrefs.momentum && chart.cciLine && <polyline className="indicator-line cci" points={chart.cciLine} />}
-          {chartPrefs.momentum && chart.wrLine && <polyline className="indicator-line wr" points={chart.wrLine} />}
-          {chartPrefs.biasDma && chart.biasLine && <polyline className="indicator-line bias" points={chart.biasLine} />}
-          {chartPrefs.biasDma && chart.dmaLine && <polyline className="indicator-line dma" points={chart.dmaLine} />}
-          {chartPrefs.biasDma && chart.amaLine && <polyline className="indicator-line ama" points={chart.amaLine} />}
-          {chartPrefs.volumeMomentum && (
+          {chartPrefs.advanced && showDenseSecondaryIndicators && chart.crLine && <polyline className="indicator-line cr" points={chart.crLine} />}
+          {chartPrefs.advanced && showDenseSecondaryIndicators && chart.arLine && <polyline className="indicator-line ar" points={chart.arLine} />}
+          {chartPrefs.advanced && showDenseSecondaryIndicators && chart.brLine && <polyline className="indicator-line br" points={chart.brLine} />}
+          {chartPrefs.advanced && showDenseSecondaryIndicators && chart.emvLine && <polyline className="indicator-line emv" points={chart.emvLine} />}
+          {chartPrefs.advanced && showDenseSecondaryIndicators && chart.emvMaLine && <polyline className="indicator-line emv-ma" points={chart.emvMaLine} />}
+          {chartPrefs.momentum && showDenseSecondaryIndicators && <line className="momentum-zero-line" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.momentumZeroY} y2={chart.momentumZeroY} />}
+          {chartPrefs.momentum && showDenseSecondaryIndicators && chart.pdiLine && <polyline className="indicator-line pdi" points={chart.pdiLine} />}
+          {chartPrefs.momentum && showDenseSecondaryIndicators && chart.mdiLine && <polyline className="indicator-line mdi" points={chart.mdiLine} />}
+          {chartPrefs.momentum && showDenseSecondaryIndicators && chart.adxLine && <polyline className="indicator-line adx" points={chart.adxLine} />}
+          {chartPrefs.momentum && showDenseSecondaryIndicators && chart.cciLine && <polyline className="indicator-line cci" points={chart.cciLine} />}
+          {chartPrefs.momentum && showDenseSecondaryIndicators && chart.wrLine && <polyline className="indicator-line wr" points={chart.wrLine} />}
+          {chartPrefs.biasDma && showDenseSecondaryIndicators && chart.biasLine && <polyline className="indicator-line bias" points={chart.biasLine} />}
+          {chartPrefs.biasDma && showDenseSecondaryIndicators && chart.dmaLine && <polyline className="indicator-line dma" points={chart.dmaLine} />}
+          {chartPrefs.biasDma && showDenseSecondaryIndicators && chart.amaLine && <polyline className="indicator-line ama" points={chart.amaLine} />}
+          {chartPrefs.volumeMomentum && showDenseSecondaryIndicators && (
             <>
               <line className="advanced-indicator-baseline" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.moneyFlow100Y} y2={chart.moneyFlow100Y} />
               <line className="volume-momentum-zero-line" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.volumeMomentumZeroY} y2={chart.volumeMomentumZeroY} />
             </>
           )}
-          {chartPrefs.volumeMomentum && chart.mfiLine && <polyline className="indicator-line mfi" points={chart.mfiLine} />}
-          {chartPrefs.volumeMomentum && chart.vrLine && <polyline className="indicator-line vr" points={chart.vrLine} />}
-          {chartPrefs.volumeMomentum && chart.rocLine && <polyline className="indicator-line roc" points={chart.rocLine} />}
-          {chartPrefs.volumeMomentum && chart.trixLine && <polyline className="indicator-line trix" points={chart.trixLine} />}
-          {chartPrefs.volumeMomentum && chart.trmaLine && <polyline className="indicator-line trma" points={chart.trmaLine} />}
-          {chartPrefs.volumeMomentum && chart.oscLine && <polyline className="indicator-line osc" points={chart.oscLine} />}
-          {chartPrefs.volumeMomentum && chart.oscEmaLine && <polyline className="indicator-line osc-ema" points={chart.oscEmaLine} />}
-          {chartPrefs.volatility && <line className="obv-zero-line" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.obvZeroY} y2={chart.obvZeroY} />}
-          {chartPrefs.volatility && chart.atrLine && <polyline className="indicator-line atr" points={chart.atrLine} />}
-          {chartPrefs.volatility && chart.obvLine && <polyline className="indicator-line obv" points={chart.obvLine} />}
-          {chartPrefs.volatility && chart.bollPercentBLine && <polyline className="indicator-line boll-percent-b" points={chart.bollPercentBLine} />}
-          {chartPrefs.volatility && chart.bollBandwidthLine && <polyline className="indicator-line boll-bandwidth" points={chart.bollBandwidthLine} />}
+          {chartPrefs.volumeMomentum && showDenseSecondaryIndicators && chart.mfiLine && <polyline className="indicator-line mfi" points={chart.mfiLine} />}
+          {chartPrefs.volumeMomentum && showDenseSecondaryIndicators && chart.vrLine && <polyline className="indicator-line vr" points={chart.vrLine} />}
+          {chartPrefs.volumeMomentum && showDenseSecondaryIndicators && chart.rocLine && <polyline className="indicator-line roc" points={chart.rocLine} />}
+          {chartPrefs.volumeMomentum && showDenseSecondaryIndicators && chart.trixLine && <polyline className="indicator-line trix" points={chart.trixLine} />}
+          {chartPrefs.volumeMomentum && showDenseSecondaryIndicators && chart.trmaLine && <polyline className="indicator-line trma" points={chart.trmaLine} />}
+          {chartPrefs.volumeMomentum && showDenseSecondaryIndicators && chart.oscLine && <polyline className="indicator-line osc" points={chart.oscLine} />}
+          {chartPrefs.volumeMomentum && showDenseSecondaryIndicators && chart.oscEmaLine && <polyline className="indicator-line osc-ema" points={chart.oscEmaLine} />}
+          {chartPrefs.volatility && showDenseSecondaryIndicators && <line className="obv-zero-line" x1={chart.plotLeft} x2={chart.plotRight} y1={chart.obvZeroY} y2={chart.obvZeroY} />}
+          {chartPrefs.volatility && showDenseSecondaryIndicators && chart.atrLine && <polyline className="indicator-line atr" points={chart.atrLine} />}
+          {chartPrefs.volatility && showDenseSecondaryIndicators && chart.obvLine && <polyline className="indicator-line obv" points={chart.obvLine} />}
+          {chartPrefs.volatility && showDenseSecondaryIndicators && chart.bollPercentBLine && <polyline className="indicator-line boll-percent-b" points={chart.bollPercentBLine} />}
+          {chartPrefs.volatility && showDenseSecondaryIndicators && chart.bollBandwidthLine && <polyline className="indicator-line boll-bandwidth" points={chart.bollBandwidthLine} />}
           {chartPrefs.boll && chart.bollUpper && <polyline className="boll-line upper" points={chart.bollUpper} />}
           {chartPrefs.boll && chart.bollMid && <polyline className="boll-line mid" points={chart.bollMid} />}
           {chartPrefs.boll && chart.bollLower && <polyline className="boll-line lower" points={chart.bollLower} />}
-          {chartPrefs.ene && chart.eneUpper && <polyline className="ene-line upper" points={chart.eneUpper} />}
-          {chartPrefs.ene && chart.eneMid && <polyline className="ene-line mid" points={chart.eneMid} />}
-          {chartPrefs.ene && chart.eneLower && <polyline className="ene-line lower" points={chart.eneLower} />}
-          {chartPrefs.mike && chart.mikeWeakResistanceLine && <polyline className="mike-line weak-resistance" points={chart.mikeWeakResistanceLine} />}
-          {chartPrefs.mike && chart.mikeMediumResistanceLine && <polyline className="mike-line medium-resistance" points={chart.mikeMediumResistanceLine} />}
-          {chartPrefs.mike && chart.mikeStrongResistanceLine && <polyline className="mike-line strong-resistance" points={chart.mikeStrongResistanceLine} />}
-          {chartPrefs.mike && chart.mikeWeakSupportLine && <polyline className="mike-line weak-support" points={chart.mikeWeakSupportLine} />}
-          {chartPrefs.mike && chart.mikeMediumSupportLine && <polyline className="mike-line medium-support" points={chart.mikeMediumSupportLine} />}
-          {chartPrefs.mike && chart.mikeStrongSupportLine && <polyline className="mike-line strong-support" points={chart.mikeStrongSupportLine} />}
+          {chartPrefs.ene && showDenseAutoLevels && chart.eneUpper && <polyline className="ene-line upper" points={chart.eneUpper} />}
+          {chartPrefs.ene && showDenseAutoLevels && chart.eneMid && <polyline className="ene-line mid" points={chart.eneMid} />}
+          {chartPrefs.ene && showDenseAutoLevels && chart.eneLower && <polyline className="ene-line lower" points={chart.eneLower} />}
+          {chartPrefs.mike && showDenseAutoLevels && chart.mikeWeakResistanceLine && <polyline className="mike-line weak-resistance" points={chart.mikeWeakResistanceLine} />}
+          {chartPrefs.mike && showDenseAutoLevels && chart.mikeMediumResistanceLine && <polyline className="mike-line medium-resistance" points={chart.mikeMediumResistanceLine} />}
+          {chartPrefs.mike && showDenseAutoLevels && chart.mikeStrongResistanceLine && <polyline className="mike-line strong-resistance" points={chart.mikeStrongResistanceLine} />}
+          {chartPrefs.mike && showDenseAutoLevels && chart.mikeWeakSupportLine && <polyline className="mike-line weak-support" points={chart.mikeWeakSupportLine} />}
+          {chartPrefs.mike && showDenseAutoLevels && chart.mikeMediumSupportLine && <polyline className="mike-line medium-support" points={chart.mikeMediumSupportLine} />}
+          {chartPrefs.mike && showDenseAutoLevels && chart.mikeStrongSupportLine && <polyline className="mike-line strong-support" points={chart.mikeStrongSupportLine} />}
           {chartPrefs.vwap && chart.vwapLine && <polyline className="vwap-line" points={chart.vwapLine} />}
           {chartPrefs.ema && chart.emaFastLine && <polyline className="ema-line fast" points={chart.emaFastLine} />}
           {chartPrefs.ema && chart.emaSlowLine && <polyline className="ema-line slow" points={chart.emaSlowLine} />}
           {chartPrefs.sar && chart.sarLine && <polyline className="sar-line" points={chart.sarLine} />}
           {chartPrefs.bbi && chart.bbiLine && <polyline className="bbi-line" points={chart.bbiLine} />}
-          {chartPrefs.ichimoku && chart.ichimokuConversionLine && <polyline className="ichimoku-line conversion" points={chart.ichimokuConversionLine} />}
-          {chartPrefs.ichimoku && chart.ichimokuBaseLine && <polyline className="ichimoku-line base" points={chart.ichimokuBaseLine} />}
-          {chartPrefs.ichimoku && chart.ichimokuSpanALine && <polyline className="ichimoku-line span-a" points={chart.ichimokuSpanALine} />}
-          {chartPrefs.ichimoku && chart.ichimokuSpanBLine && <polyline className="ichimoku-line span-b" points={chart.ichimokuSpanBLine} />}
-          {chartPrefs.ichimoku && chart.ichimokuLaggingLine && <polyline className="ichimoku-line lagging" points={chart.ichimokuLaggingLine} />}
+          {chartPrefs.ichimoku && showDenseAutoLevels && chart.ichimokuConversionLine && <polyline className="ichimoku-line conversion" points={chart.ichimokuConversionLine} />}
+          {chartPrefs.ichimoku && showDenseAutoLevels && chart.ichimokuBaseLine && <polyline className="ichimoku-line base" points={chart.ichimokuBaseLine} />}
+          {chartPrefs.ichimoku && showDenseAutoLevels && chart.ichimokuSpanALine && <polyline className="ichimoku-line span-a" points={chart.ichimokuSpanALine} />}
+          {chartPrefs.ichimoku && showDenseAutoLevels && chart.ichimokuSpanBLine && <polyline className="ichimoku-line span-b" points={chart.ichimokuSpanBLine} />}
+          {chartPrefs.ichimoku && showDenseAutoLevels && chart.ichimokuLaggingLine && <polyline className="ichimoku-line lagging" points={chart.ichimokuLaggingLine} />}
           {chartPrefs.ma && chart.ma5 && <polyline className="ma-line ma5" points={chart.ma5} />}
           {chartPrefs.ma && chart.ma20 && <polyline className="ma-line ma20" points={chart.ma20} />}
           {chartPrefs.ma && chart.ma60 && <polyline className="ma-line ma60" points={chart.ma60} />}
@@ -2743,17 +3127,22 @@ export function TradingSignalKlinePanel({
               </g>
             </g>
           )}
-          {chartPrefs.patterns && chart.candlestickPatterns.map((pattern) => (
-            <g className={`candlestick-pattern-marker ${pattern.tone}`} key={pattern.key}>
+          {chartPrefs.patterns && showDenseAnnotations && chart.candlestickPatterns.map((pattern) => (
+            <g
+              className={`candlestick-pattern-marker ${pattern.tone} ${hoveredAnnotationKey === pattern.key ? "active" : ""}`}
+              key={pattern.key}
+              onMouseEnter={() => showAnnotation(pattern.key)}
+              onMouseLeave={hideAnnotation}
+            >
               <line x1={pattern.x} x2={pattern.x} y1={pattern.priceY} y2={pattern.markerY} />
               <circle cx={pattern.x} cy={pattern.markerY} r="4.2" />
-              <text x={pattern.labelX} y={pattern.labelY}>{pattern.label}</text>
+              {showAnnotationLabel(pattern.key) && <text x={pattern.labelX} y={pattern.labelY}>{pattern.label}</text>}
               <title>
                 {pattern.dateLabel} {pattern.label} {formatNumber(pattern.price, 2)}
               </title>
             </g>
           ))}
-          {chartPrefs.tds9 && chart.tdsSequentialEvents.map((event) => (
+          {chartPrefs.tds9 && showDenseAnnotations && chart.tdsSequentialEvents.map((event) => (
             <g className={`tds9-marker ${event.direction} ${event.tone}`} key={event.key}>
               <rect height="14" rx="3" width="14" x={event.x - 7} y={event.markerY - 7} />
               <text x={event.x} y={event.markerY}>{event.count}</text>
@@ -2762,35 +3151,57 @@ export function TradingSignalKlinePanel({
               </title>
             </g>
           ))}
-          {chartPrefs.indicatorSignals && chart.technicalIndicatorEvents.map((event) => (
-            <g className={`technical-indicator-event ${event.tone}`} key={event.key}>
+          {chartPrefs.indicatorSignals && showDenseAnnotations && chart.technicalIndicatorEvents.map((event) => (
+            <g
+              className={`technical-indicator-event ${event.tone} ${hoveredAnnotationKey === event.key ? "active" : ""}`}
+              key={event.key}
+              onMouseEnter={() => showAnnotation(event.key)}
+              onMouseLeave={hideAnnotation}
+            >
               <line x1={event.x} x2={event.x} y1={event.priceY} y2={event.markerY} />
               <path d={`M ${event.x} ${event.markerY - 4.8} L ${event.x + 4.8} ${event.markerY} L ${event.x} ${event.markerY + 4.8} L ${event.x - 4.8} ${event.markerY} Z`} />
-              <text x={event.labelX} y={event.labelY}>{event.label}</text>
+              {showAnnotationLabel(event.key) && <text x={event.labelX} y={event.labelY}>{event.label}</text>}
               <title>
                 {event.dateLabel} {event.label} {formatNumber(event.price, 2)}
               </title>
             </g>
           ))}
-          {chartPrefs.divergences && chart.technicalDivergenceEvents.map((event) => (
-            <g className={`technical-divergence-event ${event.tone}`} key={event.key}>
+          {chartPrefs.divergences && showDenseAnnotations && chart.technicalDivergenceEvents.map((event) => (
+            <g
+              className={`technical-divergence-event ${event.tone} ${hoveredAnnotationKey === event.key ? "active" : ""}`}
+              key={event.key}
+              onMouseEnter={() => showAnnotation(event.key)}
+              onMouseLeave={hideAnnotation}
+            >
               <line className="divergence-price-link" x1={event.startX} x2={event.x} y1={event.startPriceY} y2={event.priceY} />
               <line x1={event.x} x2={event.x} y1={event.priceY} y2={event.markerY} />
               <path d={`M ${event.x - 5} ${event.markerY + (event.tone === "risk" ? -4 : 4)} L ${event.x} ${event.markerY + (event.tone === "risk" ? 5 : -5)} L ${event.x + 5} ${event.markerY + (event.tone === "risk" ? -4 : 4)} Z`} />
-              <text x={event.labelX} y={event.labelY}>{event.label}</text>
+              {showAnnotationLabel(event.key) && <text x={event.labelX} y={event.labelY}>{event.label}</text>}
               <title>
                 {event.startLabel}→{event.dateLabel} {event.label} · 价格 {formatNumber(event.startPrice, 2)}→{formatNumber(event.price, 2)} · 指标 {formatNumber(event.startIndicator, 2)}→{formatNumber(event.endIndicator, 2)}
               </title>
             </g>
           ))}
-          {chartPrefs.volume && chartPrefs.volumeSignals && chart.volumeSignalEvents.map((event) => (
-            <g className={`volume-signal-event ${event.tone}`} key={event.key}>
+          {chartPrefs.volume && chartPrefs.volumeSignals && showDenseAnnotations && chart.volumeSignalEvents.map((event) => (
+            <g
+              className={`volume-signal-event ${event.tone} ${hoveredAnnotationKey === event.key ? "active" : ""}`}
+              key={event.key}
+              onMouseEnter={() => showAnnotation(event.key)}
+              onMouseLeave={hideAnnotation}
+            >
               <line x1={event.x} x2={event.x} y1={event.volumeY} y2={event.markerY} />
               <rect height="10" rx="2" width="10" x={event.x - 5} y={event.markerY - 5} />
-              <text x={event.labelX} y={event.labelY}>{event.label}</text>
+              {showAnnotationLabel(event.key) && <text x={event.labelX} y={event.labelY}>{event.label}</text>}
               <title>
                 {event.dateLabel} {event.label} · 量比 {formatNumber(event.volumeRatio, 2)} · 涨跌 {formatSignedPercent((event.changePct ?? 0) / 100)}
               </title>
+            </g>
+          ))}
+          {showDenseClusterBadges && compactAnnotationDisplay.clusters.map((cluster) => (
+            <g className={`annotation-cluster-badge ${cluster.tone}`} key={cluster.key}>
+              <circle cx={cluster.x} cy={cluster.y} r="9" />
+              <text x={cluster.x} y={cluster.y + 3}>{cluster.label}</text>
+              <title>{cluster.detail}</title>
             </g>
           ))}
           {chartPrefs.volume && chartPrefs.fundFlow && chart.fundFlowOverlay.bars.length > 0 && (
@@ -3040,6 +3451,7 @@ export function TradingSignalKlinePanel({
           )}
           {chart.candles.length === 0 && <text x="3" y="104">暂无历史行情</text>}
         </svg>
+        </div>
 
         {strategyAnalysis ? (
           <StrategyDecisionWorkbench
@@ -3417,34 +3829,40 @@ function StrategyDecisionWorkbench({
   const tone = strategyDecisionTone(analysis);
   const steps = buildStrategyDecisionSteps(analysis);
   const snapshotItems = buildStrategySnapshotItems(analysis, indicators);
-  const reasons = buildStrategyCriticalReasons(analysis, technicalDecision, steps);
   const action = analysis.sell_signal?.warning_level?.action || analysis.trend_state?.action || analysis.decision.action || "-";
+  const decisionCopy = buildReadableStrategyDecisionCopy({
+    date: analysis.latest_bar?.date,
+    symbol: analysis.symbol,
+    modeLabel: strategyModeLabel(analysis.mode),
+    decisionLabel: analysis.decision.label,
+    decisionAction: action,
+    steps,
+  });
+  const reasons = buildStrategyCriticalReasons(analysis, technicalDecision, steps, decisionCopy.reasons);
 
   return (
     <div className={`strategy-decision-workbench ${tone}`} aria-label="V2策略决策台">
       <section className="strategy-decision-primary">
-        <span className="eyebrow">V2 Decision</span>
-        <h3>{analysis.decision.label}</h3>
-        <p>
-          {analysis.latest_bar?.date || "-"} · {analysis.symbol} · {strategyModeLabel(analysis.mode)} · {action}
-        </p>
+        <span className="eyebrow">V2 交易判断</span>
+        <h3>{decisionCopy.title}</h3>
+        <p>{decisionCopy.subtitle}</p>
         <div className="strategy-critical-list">
           {reasons.map((reason) => (
             <span key={reason}>{reason}</span>
           ))}
         </div>
         <div className="strategy-score-strip">
-          <span>S_buy <b>{formatNumber(analysis.buy_signal?.score, 3)}</b></span>
-          <span>S_sell <b>{formatNumber(analysis.sell_signal?.score, 2)}</b></span>
+          <span>买入强度 <b>{formatNumber(analysis.buy_signal?.score, 3)}</b></span>
+          <span>卖出压力 <b>{formatNumber(analysis.sell_signal?.score, 2)}</b></span>
           <span>买入确认 <b>{technicalDecision.buyScore}/5</b></span>
-          <span>卖出压力 <b>{technicalDecision.sellScore}/5</b></span>
+          <span>风险确认 <b>{technicalDecision.sellScore}/5</b></span>
         </div>
       </section>
 
       <section className="strategy-decision-chain" aria-label="M1-M5决策链">
         <div className="section-subhead">
-          <h2>M1-M5 决策链</h2>
-          <span className="muted">{steps.filter((step) => step.tone === "good").length}/{steps.length}</span>
+          <h2>五步交易判断</h2>
+          <span className="muted">{steps.filter((step) => step.tone === "good").length}/{steps.length} 可继续</span>
         </div>
         {steps.map((step) => (
           <div className={`strategy-chain-step ${step.tone}`} key={step.key}>
@@ -3460,8 +3878,8 @@ function StrategyDecisionWorkbench({
 
       <section className="strategy-snapshot-panel" aria-label="指标与风控快照">
         <div className="section-subhead">
-          <h2>指标与风控快照</h2>
-          <span className="muted">辅助读数</span>
+          <h2>关键读数</h2>
+          <span className="muted">辅助判断</span>
         </div>
         <div className="strategy-snapshot-grid">
           {snapshotItems.map((item) => (
@@ -3479,52 +3897,47 @@ function StrategyDecisionWorkbench({
 
 function buildStrategyDecisionSteps(analysis: StrategyKlineAnalysis): StrategyDecisionStep[] {
   const trendLabel = analysis.trend_state?.label || "-";
-  const trendStrength = analysis.trend_state?.strength;
-  const trendText = `${trendLabel} · 强度 ${formatNumber(trendStrength, 2)} · ${analysis.trend_state?.sample_count || 0}周`;
-  const trendGood = /多|强|bull|up/i.test(trendLabel);
-  const trendBad = /空|弱|bear|down/i.test(trendLabel);
+  const trendBad = /空|弱|bear|down|未通过/i.test(trendLabel);
+  const trendGood = !trendBad && /多|bull|up|向上|强势/i.test(trendLabel);
   const marketPassed = Boolean(analysis.market_filter?.passed);
   const buyTriggered = Boolean(analysis.buy_signal?.mode_signal);
   const warningLevel = analysis.sell_signal?.warning_level?.level || 0;
-  const riskTriggered = Boolean(analysis.sell_signal?.emergency || analysis.sell_signal?.regular_exit || warningLevel > 0);
   const shares = analysis.position_plan?.suggested_shares || 0;
 
   return [
-    {
-      key: "M1",
-      label: "周线趋势",
-      status: trendGood ? "通过" : trendBad ? "阻断" : "观察",
-      detail: analysis.trend_state?.action || trendText,
-      tone: trendGood ? "good" : trendBad ? "bad" : "neutral",
-    },
-    {
-      key: "M2",
-      label: "大盘过滤",
-      status: marketPassed ? "通过" : "未过",
-      detail: `${analysis.market_filter?.status || "-"} · ${analysis.market_filter?.benchmark_symbol || "-"}`,
-      tone: marketPassed ? "good" : "bad",
-    },
-    {
-      key: "M3",
-      label: "买入触发",
-      status: buyTriggered ? "触发" : "未触发",
-      detail: `S_buy=${formatNumber(analysis.buy_signal?.score, 3)} / 阈值 ${formatNumber(analysis.buy_signal?.threshold, 3)}`,
-      tone: buyTriggered ? "good" : "bad",
-    },
-    {
-      key: "M4",
-      label: "卖出风险",
-      status: riskTriggered ? analysis.sell_signal?.warning_level?.label || "风险触发" : "无预警",
-      detail: `${analysis.sell_signal?.warning_level?.action || "暂无减仓信号"} · S_sell=${formatNumber(analysis.sell_signal?.score, 2)}`,
-      tone: analysis.sell_signal?.emergency || analysis.sell_signal?.regular_exit ? "bad" : warningLevel > 0 ? "warn" : "good",
-    },
-    {
-      key: "M5",
-      label: "仓位约束",
-      status: shares > 0 ? "可执行" : "0仓位",
-      detail: `${formatCompactNumber(shares)} 股 · ${formatPercent(analysis.position_plan?.suggested_position_pct)} · 风险 ${formatPercent(analysis.position_plan?.risk_pct)}`,
-      tone: shares > 0 ? "good" : "warn",
-    },
+    buildReadableStrategyGateText({
+      gate: "M1",
+      trendGood,
+      trendBad,
+      trendLabel,
+    }),
+    buildReadableStrategyGateText({
+      gate: "M2",
+      marketPassed,
+      marketStatus: analysis.market_filter?.status,
+      benchmarkSymbol: analysis.market_filter?.benchmark_symbol,
+    }),
+    buildReadableStrategyGateText({
+      gate: "M3",
+      buyTriggered,
+      buyScore: analysis.buy_signal?.score,
+      buyThreshold: analysis.buy_signal?.threshold,
+    }),
+    buildReadableStrategyGateText({
+      gate: "M4",
+      emergency: analysis.sell_signal?.emergency,
+      regularExit: analysis.sell_signal?.regular_exit,
+      warningLevel,
+      warningLabel: analysis.sell_signal?.warning_level?.label,
+      sellAction: analysis.sell_signal?.warning_level?.action,
+      sellScore: analysis.sell_signal?.score,
+    }),
+    buildReadableStrategyGateText({
+      gate: "M5",
+      shares,
+      positionPct: analysis.position_plan?.suggested_position_pct,
+      riskPct: analysis.position_plan?.risk_pct,
+    }),
   ];
 }
 
@@ -3535,17 +3948,17 @@ function buildStrategySnapshotItems(
   const channel = analysis.price_channels || {};
   return [
     {
-      label: "DIF / DEA",
+      label: "MACD方向",
       value: `${formatNumber(indicators?.dif, 2)} / ${formatNumber(indicators?.dea, 2)}`,
-      detail: "MACD 方向",
+      detail: "DIF / DEA",
     },
-    { label: "MACD柱", value: formatNumber(indicators?.macd, 2), detail: "动能扩散" },
-    { label: "RSI/PSY/MA", value: `${formatNumber(indicators?.rsi14, 1)} / ${formatNumber(indicators?.psy, 1)} / ${formatNumber(indicators?.psyMa, 1)}`, detail: "强弱区" },
-    { label: "量比", value: formatNumber(indicators?.volumeRatio, 2), detail: "成交活跃度" },
-    { label: "止损价", value: formatNumber(channel.stop_price, 2), detail: `距离 ${formatNumber(analysis.position_plan?.stop_distance, 2)}`, tone: "bad" },
-    { label: "建议仓位", value: formatPercent(analysis.position_plan?.suggested_position_pct), detail: `${formatCompactNumber(analysis.position_plan?.suggested_shares)} 股`, tone: "good" },
-    { label: "目标价", value: `${formatNumber(channel.target1, 2)} / ${formatNumber(channel.target2, 2)}`, detail: "分层止盈" },
-    { label: "BOLL / KDJ", value: `${formatNumber(indicators?.bollMid, 2)} / ${formatNumber(indicators?.kdjJ, 1)}`, detail: "位置确认" },
+    { label: "动能强弱", value: formatNumber(indicators?.macd, 2), detail: "MACD柱" },
+    { label: "强弱指标", value: `${formatNumber(indicators?.rsi14, 1)} / ${formatNumber(indicators?.psy, 1)}`, detail: "RSI / PSY" },
+    { label: "成交活跃", value: `${formatNumber(indicators?.volumeRatio, 2)}x`, detail: "量比" },
+    { label: "止损参考", value: formatNumber(channel.stop_price, 2), detail: `距离现价 ${formatNumber(analysis.position_plan?.stop_distance, 2)}`, tone: "bad" },
+    { label: "仓位参考", value: formatPercent(analysis.position_plan?.suggested_position_pct), detail: `${formatCompactNumber(analysis.position_plan?.suggested_shares)} 股`, tone: "good" },
+    { label: "分层止盈", value: `${formatNumber(channel.target1, 2)} / ${formatNumber(channel.target2, 2)}`, detail: "第一 / 第二目标" },
+    { label: "位置确认", value: `${formatNumber(indicators?.bollMid, 2)} / ${formatNumber(indicators?.kdjJ, 1)}`, detail: "BOLL中轨 / KDJ-J" },
   ];
 }
 
@@ -3553,19 +3966,18 @@ function buildStrategyCriticalReasons(
   analysis: StrategyKlineAnalysis,
   technicalDecision: ReturnType<typeof buildTradeDecision>,
   steps: StrategyDecisionStep[],
+  readableReasons: string[],
 ) {
   const reasons = [
     ...(analysis.data_quality?.blocking_reasons || []),
-    ...steps
-      .filter((step) => step.tone === "bad" || step.tone === "warn")
-      .map((step) => `${step.key} ${step.label}：${step.status}，${step.detail}`),
+    ...readableReasons,
   ];
 
   if (analysis.sell_signal?.warning_level?.action) {
-    reasons.push(`风险动作：${analysis.sell_signal.warning_level.action}`);
+    reasons.push(`风控动作：${analysis.sell_signal.warning_level.action}`);
   }
   if (technicalDecision.sellScore > technicalDecision.buyScore) {
-    reasons.push(`图表辅助偏风险：卖出压力 ${technicalDecision.sellScore}/5，高于买入确认 ${technicalDecision.buyScore}/5`);
+    reasons.push(`图表辅助偏防守：风险确认 ${technicalDecision.sellScore}/5，高于买入确认 ${technicalDecision.buyScore}/5。`);
   }
   if (reasons.length === 0) {
     reasons.push(analysis.decision.action || analysis.decision.label || "暂无关键阻断，继续跟踪价格与成交确认。");
@@ -3747,36 +4159,45 @@ function StrategyVerificationCard({ backtest }: { backtest?: StrategyKlineBackte
 function StrategyKlineTrace({ analysis }: { analysis: StrategyKlineAnalysis }) {
   const tone = strategyDecisionTone(analysis);
   const channel = analysis.price_channels || {};
+  const steps = buildStrategyDecisionSteps(analysis);
+  const copy = buildReadableStrategyDecisionCopy({
+    date: analysis.latest_bar?.date,
+    symbol: analysis.symbol,
+    modeLabel: strategyModeLabel(analysis.mode),
+    decisionLabel: analysis.decision.label,
+    decisionAction: analysis.sell_signal?.warning_level?.action || analysis.trend_state?.action || analysis.decision.action,
+    steps,
+  });
   return (
     <div className={`strategy-kline-trace ${tone}`} aria-label="V2策略主信号解释">
       <div className="strategy-trace-decision">
         <span>V2主结论</span>
-        <strong>{analysis.decision.label}</strong>
-        <em>{analysis.sell_signal?.warning_level?.action || analysis.trend_state?.action || analysis.decision.action || "-"}</em>
+        <strong>{copy.title}</strong>
+        <em>{copy.reasons[0] || "-"}</em>
       </div>
       <div className="strategy-trace-metrics">
         <StrategyTraceMetric
-          label="M1 周线趋势"
-          value={analysis.trend_state?.label || "-"}
-          sub={`${formatNumber(analysis.trend_state?.strength, 2)} · ${analysis.trend_state?.sample_count || 0}周`}
+          label="个股趋势"
+          value={steps[0]?.status || "-"}
+          sub={steps[0]?.detail || "-"}
         />
         <StrategyTraceMetric
-          label="M2 大盘过滤"
-          value={analysis.market_filter?.status || "-"}
-          sub={`${analysis.market_filter?.benchmark_symbol || "-"} · ${analysis.market_filter?.passed ? "通过" : "未过"}`}
+          label="市场环境"
+          value={steps[1]?.status || "-"}
+          sub={steps[1]?.detail || "-"}
         />
         <StrategyTraceMetric
-          label="M3 S_buy"
+          label="买入强度"
           value={formatNumber(analysis.buy_signal?.score, 3)}
-          sub={analysis.buy_signal?.mode_signal ? "入场触发" : "未触发"}
+          sub={steps[2]?.status || "-"}
         />
         <StrategyTraceMetric
-          label="M4 S_sell"
+          label="卖出风险"
           value={formatNumber(analysis.sell_signal?.score, 2)}
-          sub={analysis.sell_signal?.warning_level?.label || "无预警"}
+          sub={steps[3]?.status || "-"}
         />
         <StrategyTraceMetric
-          label="M5 仓位约束"
+          label="仓位计划"
           value={`${formatCompactNumber(analysis.position_plan?.suggested_shares)}股`}
           sub={`${formatPercent(analysis.position_plan?.suggested_position_pct)} · 风险 ${formatPercent(analysis.position_plan?.risk_pct)}`}
         />
@@ -3809,35 +4230,11 @@ function StrategyTraceMetric({
 }
 
 function StrategyExecutionChecklist({ analysis }: { analysis: StrategyKlineAnalysis }) {
-  const checklist = analysis.checklist?.length
-    ? analysis.checklist
-    : [
-      {
-        label: "M1 趋势",
-        passed: analysis.trend_state?.label?.includes("多") || analysis.trend_state?.label?.includes("强") || false,
-        detail: analysis.trend_state?.action || analysis.trend_state?.label || "-",
-      },
-      {
-        label: "M2 大盘",
-        passed: Boolean(analysis.market_filter?.passed),
-        detail: `${analysis.market_filter?.status || "-"} · ${analysis.market_filter?.benchmark_symbol || "-"}`,
-      },
-      {
-        label: "M3 入场",
-        passed: Boolean(analysis.buy_signal?.mode_signal),
-        detail: `S_buy=${formatNumber(analysis.buy_signal?.score, 3)}`,
-      },
-      {
-        label: "M4 出场",
-        passed: Boolean(analysis.sell_signal?.regular_exit || analysis.sell_signal?.emergency),
-        detail: `${analysis.sell_signal?.warning_level?.label || "-"} · S_sell=${formatNumber(analysis.sell_signal?.score, 2)}`,
-      },
-      {
-        label: "M5 仓位",
-        passed: Boolean((analysis.position_plan?.suggested_shares || 0) > 0),
-        detail: `${formatCompactNumber(analysis.position_plan?.suggested_shares)} 股 · ${formatMoney(analysis.position_plan?.suggested_notional)}`,
-      },
-    ];
+  const checklist = buildStrategyDecisionSteps(analysis).map((step) => ({
+    label: `${step.key} ${step.label}`,
+    passed: step.tone === "good",
+    detail: `${step.status} · ${step.detail}`,
+  }));
 
   return (
     <div className="strategy-execution-kline">
@@ -3919,7 +4316,7 @@ function buildStrategyTradeDecision(
 }
 
 function strategyModeLabel(mode: StrategyKlineAnalysis["mode"]) {
-  return mode === "aggressive" ? "激进加权 S_buy" : "保守硬 AND";
+  return mode === "aggressive" ? "激进权重模式" : "保守确认模式";
 }
 
 function strategyDecisionTone(analysis: StrategyKlineAnalysis): DecisionTone {
@@ -4010,6 +4407,8 @@ function nextCandleRange(range: CandleRange, direction: "in" | "out") {
 function shortDateLabel(value?: string) {
   if (!value) return "-";
   const date = value.includes("·") ? value.split("·")[0].trim() : value;
+  const timeMatch = date.match(/\d{4}-\d{2}-\d{2}[ T](\d{2}:\d{2})/);
+  if (timeMatch) return timeMatch[1];
   if (/^\d{4}-\d{2}-\d{2}/.test(date)) return date.slice(5, 10);
   if (/^\d{4}-\d{2}$/.test(date)) return date.slice(2);
   return date.slice(0, 10);
@@ -4082,12 +4481,34 @@ function isoDate(date: Date) {
 }
 
 function periodKeyForDate(date: string, period: CandlePeriod) {
-  if (period === "daily") return date;
+  if (period === "daily" || period === "minute1") return date;
+  if (isIntradayPeriod(period)) return intradayPeriodKeyForDate(date, period);
   if (period === "monthly") return date.slice(0, 7);
   const parsed = parseChartDate(date);
   const day = parsed.getUTCDay() || 7;
   parsed.setUTCDate(parsed.getUTCDate() - day + 1);
   return isoDate(parsed);
+}
+
+function intradayBucketSize(period: CandlePeriod) {
+  if (period === "minute5") return 5;
+  if (period === "minute15") return 15;
+  if (period === "minute30") return 30;
+  if (period === "hourly") return 60;
+  return 1;
+}
+
+function intradayPeriodKeyForDate(date: string, period: CandlePeriod) {
+  const match = date.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2})/);
+  if (!match) return date;
+  const bucketSize = intradayBucketSize(period);
+  const hour = Number(match[2]);
+  const minute = Number(match[3]);
+  const totalMinutes = hour * 60 + minute;
+  const bucketStart = Math.floor(totalMinutes / bucketSize) * bucketSize;
+  const bucketHour = String(Math.floor(bucketStart / 60)).padStart(2, "0");
+  const bucketMinute = String(bucketStart % 60).padStart(2, "0");
+  return `${match[1]} ${bucketHour}:${bucketMinute}`;
 }
 
 function preparePeriodChartData(
@@ -4100,7 +4521,7 @@ function preparePeriodChartData(
   const orderedBars = [...bars]
     .filter((bar) => bar.date && typeof bar.close === "number")
     .sort((left, right) => left.date.localeCompare(right.date));
-  if (period === "daily") {
+  if (period === "daily" || period === "minute1") {
     return { bars: orderedBars as PeriodMarketBar[], signals, events: evidenceEvents, unit };
   }
 
@@ -4121,9 +4542,11 @@ function preparePeriodChartData(
     const low = Math.min(...bucket.map((bar) => Number(bar.low ?? bar.close ?? 0)));
     const volume = bucket.reduce((sum, bar) => sum + Number(bar.volume || 0), 0);
     const amount = bucket.reduce((sum, bar) => sum + Number(bar.amount || 0), 0);
-    const periodLabel = period === "monthly"
-      ? `${key} · ${first.date}~${last.date}`
-      : `${first.date}~${last.date}`;
+    const periodLabel = isIntradayPeriod(period)
+      ? key
+      : period === "monthly"
+        ? `${key} · ${first.date}~${last.date}`
+        : `${first.date}~${last.date}`;
     bucket.forEach((bar) => dailyDateToPeriodDate.set(bar.date, last.date));
     periodKeyToPeriodDate.set(key, last.date);
     return {
@@ -6287,25 +6710,29 @@ function buildChartDiagnostics(
   } else {
     items.push({ tone: "good", label: "数据口径", detail: "行情与指标可用于图表判断" });
   }
+  const steps = buildStrategyDecisionSteps(analysis);
   if (analysis.market_filter && !analysis.market_filter.passed) {
+    const marketStep = steps.find((step) => step.key === "M2");
     items.push({
       tone: "warn",
-      label: "大盘过滤",
-      detail: `${analysis.market_filter.benchmark_symbol || "-"} · ${analysis.market_filter.status || "未通过"}`,
+      label: "市场环境",
+      detail: marketStep?.detail || "大盘环境未通过过滤，先避免逆势开新仓。",
     });
   }
   if (!analysis.buy_signal?.mode_signal) {
+    const buyStep = steps.find((step) => step.key === "M3");
     items.push({
       tone: "neutral",
-      label: "未触发买点",
-      detail: `S_buy=${formatNumber(analysis.buy_signal?.score, 3)}，阈值 ${formatNumber(analysis.buy_signal?.threshold, 3)}`,
+      label: "买入信号",
+      detail: buyStep?.detail || `买入强度 ${formatNumber(analysis.buy_signal?.score, 3)}，尚未触发。`,
     });
   }
   if (analysis.sell_signal?.regular_exit || analysis.sell_signal?.emergency || (analysis.sell_signal?.warning_level?.level || 0) > 0) {
+    const sellStep = steps.find((step) => step.key === "M4");
     items.push({
       tone: "bad",
       label: "卖出压力",
-      detail: `${analysis.sell_signal?.warning_level?.label || "-"} · S_sell=${formatNumber(analysis.sell_signal?.score, 2)}`,
+      detail: sellStep?.detail || `卖出压力 ${formatNumber(analysis.sell_signal?.score, 2)}，需要防守。`,
     });
   }
   if (backtest && (backtest.result.metrics.trade_count || 0) === 0) {

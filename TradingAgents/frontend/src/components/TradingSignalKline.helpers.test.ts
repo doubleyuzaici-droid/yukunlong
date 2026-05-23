@@ -2,6 +2,7 @@ import {
   applyChartParameterPreset,
   applyChartPreferencePreset,
   buildManualDrawingStorageKey,
+  buildIntradayMinuteBars,
   buildAdvancedIndicators,
   buildCandlestickPatternAnnotations,
   buildFibonacciRetracementLevels,
@@ -17,7 +18,11 @@ import {
   buildIndicatorValueLabels,
   buildKlineEventSummary,
   buildKlineEventDensity,
+  buildCompactAnnotationDisplay,
   buildKlineEventBacktestSummary,
+  shouldRenderDenseChartLayer,
+  buildReadableStrategyDecisionCopy,
+  buildReadableStrategyGateText,
   buildRelativeStrengthOverlaySeries,
   buildLatestPriceLine,
   buildKlineRangeNavigator,
@@ -83,6 +88,111 @@ function assertOk(value: unknown, message: string) {
   if (!value) {
     throw new Error(message);
   }
+}
+
+function testBuildsIntradayMinuteBarsFromRealtimePoints() {
+  const minuteBars = buildIntradayMinuteBars(
+    [
+      {
+        symbol: "01024.HK",
+        date: "2026-05-12",
+        time: "09:30",
+        datetime: "2026-05-12T09:30:00+08:00",
+        price: 52.1,
+        volume: 1000,
+        amount: 52100,
+      },
+      {
+        symbol: "01024.HK",
+        date: "2026-05-12",
+        time: "09:31",
+        datetime: "2026-05-12T09:31:00+08:00",
+        price: 52.6,
+        volume: 1300,
+        amount: 68380,
+      },
+    ],
+    {
+      symbol: "01024.HK",
+      market: "HONGKONG",
+      prevClose: 51.6,
+      source: "futu_rt_data",
+    },
+  );
+
+  assertEqual(minuteBars.length, 2, "intraday points create minute bars");
+  assertEqual(minuteBars[0].date, "2026-05-12 09:30", "minute bar keeps time label in sortable date");
+  assertEqual(minuteBars[0].open, 51.6, "first minute opens from previous close when available");
+  assertEqual(minuteBars[1].open, 52.1, "next minute opens from previous tick price");
+  assertEqual(minuteBars[1].close, 52.6, "minute close uses tick price");
+  assertEqual(minuteBars[1].source, "futu_rt_data", "minute bars preserve intraday source");
+}
+
+function testBuildsReadableStrategyGateText() {
+  const marketGate = buildReadableStrategyGateText({
+    gate: "M2",
+    marketPassed: false,
+    marketStatus: "reject",
+    benchmarkSymbol: "HSI",
+  });
+
+  assertEqual(marketGate.label, "市场环境", "M2 uses a reader-facing label");
+  assertEqual(marketGate.status, "不适合开仓", "failed market filter explains the action");
+  assertOk(marketGate.detail.includes("HSI"), "market detail keeps the benchmark");
+  assertOk(!marketGate.detail.includes("reject"), "market detail hides raw internal status");
+
+  const buyGate = buildReadableStrategyGateText({
+    gate: "M3",
+    buyTriggered: false,
+    buyScore: 0.074,
+    buyThreshold: 0.5,
+  });
+
+  assertEqual(buyGate.label, "买入信号", "M3 uses a plain label");
+  assertEqual(buyGate.status, "信号不足", "inactive buy trigger explains why not to buy");
+  assertOk(buyGate.detail.includes("买入强度 0.074"), "buy detail shows readable score");
+  assertOk(buyGate.detail.includes("低于触发线 0.500"), "buy detail shows readable threshold");
+  assertOk(!buyGate.detail.includes("S_buy"), "buy detail hides raw factor names");
+}
+
+function testBuildsReadableStrategyDecisionCopy() {
+  const copy = buildReadableStrategyDecisionCopy({
+    date: "2026-05-19",
+    symbol: "01024.HK",
+    modeLabel: "保守硬 AND",
+    decisionLabel: "趋势未通过",
+    decisionAction: "继续观察",
+    steps: [
+      {
+        key: "M1",
+        label: "个股趋势",
+        status: "不支持买入",
+        detail: "周线趋势偏弱，顺势买入胜率不足。",
+        tone: "bad",
+      },
+      {
+        key: "M2",
+        label: "市场环境",
+        status: "不适合开仓",
+        detail: "HSI 未通过大盘过滤，先避免逆势开新仓。",
+        tone: "bad",
+      },
+      {
+        key: "M3",
+        label: "买入信号",
+        status: "信号不足",
+        detail: "买入强度 0.074，低于触发线 0.500。",
+        tone: "bad",
+      },
+    ],
+  });
+
+  assertEqual(copy.title, "当前不建议买入", "blocked strategy uses a decisive headline");
+  assertOk(copy.subtitle.includes("01024.HK"), "subtitle keeps symbol context");
+  assertOk(copy.subtitle.includes("继续观察，不开新仓"), "subtitle states the immediate action");
+  assertOk(copy.reasons.includes("个股趋势尚未转强，顺势买入胜率不足。"), "summary explains trend block");
+  assertOk(copy.reasons.includes("大盘环境未通过过滤，暂不逆风开仓。"), "summary explains market block");
+  assertOk(!copy.reasons.join(" ").includes("M1"), "summary avoids internal step codes");
 }
 
 const bars = [
@@ -1840,6 +1950,63 @@ function testBuildsKlineEventDensity() {
   assertOk(density[2]?.detail.includes("向下缺口"), "event density includes gap direction labels");
 }
 
+function testBuildsCompactAnnotationDisplay() {
+  const compact = buildCompactAnnotationDisplay(
+    [
+      { key: "tech-1", layer: "price-risk", label: "RSI超买", tone: "risk", x: 120, y: 90 },
+      { key: "tech-2", layer: "price-risk", label: "WR超买", tone: "risk", x: 128, y: 96 },
+      { key: "tech-3", layer: "price-risk", label: "CCI弱势", tone: "risk", x: 170, y: 104 },
+      { key: "vol-1", layer: "volume", label: "放量上涨", tone: "good", x: 126, y: 460 },
+    ],
+    {
+      activeKey: "tech-2",
+      mode: "compact",
+      minClusterGap: 18,
+    },
+  );
+  const expanded = buildCompactAnnotationDisplay(
+    [
+      { key: "tech-1", layer: "price-risk", label: "RSI超买", tone: "risk", x: 120, y: 90 },
+      { key: "tech-2", layer: "price-risk", label: "WR超买", tone: "risk", x: 128, y: 96 },
+    ],
+    { mode: "all" },
+  );
+
+  assertEqual(compact.labelKeys.join(","), "tech-2", "compact mode only labels active annotation");
+  assertEqual(compact.clusters.length, 1, "nearby same-layer annotations merge into one badge");
+  assertEqual(compact.clusters[0]?.count, 2, "cluster badge reports hidden annotation count");
+  assertEqual(compact.clusters[0]?.label, "2", "cluster badge uses compact count label");
+  assertOk(compact.clusters[0]?.detail.includes("RSI超买"), "cluster detail keeps merged labels");
+  assertEqual(expanded.labelKeys.join(","), "tech-1,tech-2", "expanded mode labels every annotation");
+  assertEqual(expanded.clusters.length, 0, "expanded mode does not render density badges");
+}
+
+function testDenseChartLayersOnlyRenderInFullMode() {
+  const emptySelection = {
+    profile: false,
+    secondaryIndicators: false,
+    signals: false,
+    structure: false,
+    trendRegime: false,
+  };
+  const signalSelection = { ...emptySelection, signals: true };
+  const structureSelection = { ...emptySelection, structure: true };
+  const profileSelection = { ...emptySelection, profile: true };
+  const secondarySelection = { ...emptySelection, secondaryIndicators: true };
+  const trendSelection = { ...emptySelection, trendRegime: true };
+
+  assertEqual(shouldRenderDenseChartLayer("compact", "annotations", emptySelection), false, "compact mode hides individual annotation markers by default");
+  assertEqual(shouldRenderDenseChartLayer("compact", "annotations", signalSelection), true, "signal layer opt-in shows individual annotation markers");
+  assertEqual(shouldRenderDenseChartLayer("compact", "clusterBadges", signalSelection), false, "signal layer avoids compact cluster badges");
+  assertEqual(shouldRenderDenseChartLayer("compact", "profile", profileSelection), true, "profile layer opt-in shows volume profile overlay");
+  assertEqual(shouldRenderDenseChartLayer("compact", "autoLevels", structureSelection), true, "structure layer opt-in shows automatic support overlays");
+  assertEqual(shouldRenderDenseChartLayer("compact", "secondaryIndicators", secondarySelection), true, "advanced indicator layer opt-in shows secondary indicators");
+  assertEqual(shouldRenderDenseChartLayer("compact", "trendRegime", trendSelection), true, "background layer opt-in shows trend regime backgrounds");
+  assertEqual(shouldRenderDenseChartLayer("all", "annotations", emptySelection), true, "full mode renders individual annotation markers");
+  assertEqual(shouldRenderDenseChartLayer("all", "profile", emptySelection), true, "full mode renders volume profile overlay");
+  assertEqual(shouldRenderDenseChartLayer("all", "secondaryIndicators", emptySelection), true, "full mode renders secondary indicator overlays");
+}
+
 function testBuildsKlineEventBacktestSummary() {
   const summary = buildKlineEventBacktestSummary({
     bars: eventBacktestBars,
@@ -1956,6 +2123,9 @@ testBuildsHeikinAshiBars();
 testBuildsMeasuredRangeStats();
 testMeasuredRangeStatsKeepSelectionDirection();
 testHandlesMissingBarsExplicitly();
+testBuildsIntradayMinuteBarsFromRealtimePoints();
+testBuildsReadableStrategyGateText();
+testBuildsReadableStrategyDecisionCopy();
 testBuildsVolumeProfileLevelAnnotations();
 testBuildsFutuStyleAdvancedIndicators();
 testAdvancedIndicatorsNeedEnoughSamples();
@@ -2019,6 +2189,8 @@ testBuildsPriceGapAnnotations();
 testPriceGapAnnotationsRespectThreshold();
 testBuildsKlineEventSummary();
 testBuildsKlineEventDensity();
+testBuildsCompactAnnotationDisplay();
+testDenseChartLayersOnlyRenderInFullMode();
 testBuildsKlineEventBacktestSummary();
 testBuildsRelativeStrengthOverlaySeries();
 testBuildsRelativeStrengthOverlaySeriesForPeriodBars();

@@ -249,6 +249,8 @@ def test_research_sources_and_direct_cli_job_routes(monkeypatch, tmp_path):
     source_payload = sources.json()
     assert source_payload["success"] is True
     assert "akshare" in source_payload["data"]["supported_sources"]
+    assert "futu" in source_payload["data"]["supported_sources"]
+    assert source_payload["data"]["source_catalog"]["futu"]["requires"] == "Futu OpenD"
     assert "sync-fund-flow" in {
         row["cli_command"] for row in source_payload["data"]["operational_commands"]
     }

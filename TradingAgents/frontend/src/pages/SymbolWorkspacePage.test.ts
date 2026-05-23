@@ -1,10 +1,16 @@
 import {
   buildKlineEvidenceEvents,
+  buildMarketMicrostructureModel,
   buildMarketAnalysisOverview,
   buildOverviewTechnicalCharts,
+  buildDisplayQuoteModel,
+  buildWorkspaceDataStatusModel,
+  buildWorkspaceLoadMessage,
+  buildWorkspaceNavigationModel,
   buildRelativeStrengthTrendModel,
   classifyIndicatorTone,
 } from "./SymbolWorkspacePage.helpers.js";
+import { mergeRealtimeTickerQuotes } from "../components/MarketTicker.helpers.js";
 
 function assertEqual<T>(actual: T, expected: T, message: string) {
   if (actual !== expected) {
@@ -186,6 +192,32 @@ function testBuildsBullishOverview() {
   assertOk((rsiChart?.points.length || 0) > 12, "RSI chart exposes compact point series");
 }
 
+function testOverviewUsesReadableStrategyCopy() {
+  const overview = buildMarketAnalysisOverview({
+    history: null,
+    context: null,
+    signals: [],
+    readiness: null,
+    strategyAnalysis: {
+      latest_bar: { date: "2026-05-19", close: 44.98 },
+      decision: { action: "禁止做多", label: "趋势未通过", tone: "neutral" },
+      trend_state: { label: "强空头", action: "禁止做多" },
+      market_filter: { passed: false, status: "reject", benchmark_symbol: "HSI" },
+      buy_signal: { score: 0.074, threshold: 0.5, mode_signal: false },
+      sell_signal: { score: 0.2, warning_level: { level: 0, label: "无预警", action: "继续观察" } },
+      data_quality: { warnings: [], blocking_reasons: [] },
+    } as any,
+  });
+
+  assertEqual(overview.summary.title, "当前不建议买入", "overview headline uses a readable strategy decision");
+  assertIncludes(overview.summary.subtitle, "继续观察，不开新仓", "overview subtitle states the immediate action");
+  assertOk(!overview.summary.subtitle.includes("禁止做多"), "overview subtitle hides raw strategy action");
+  const strategyEvidence = overview.evidence.find((item: any) => item.key === "strategy");
+  assertEqual(strategyEvidence?.value, "当前不建议买入", "evidence card reuses readable strategy decision");
+  assertIncludes(strategyEvidence?.detail || "", "个股趋势尚未转强", "strong bearish trend is treated as a trend block");
+  assertOk(!strategyEvidence?.detail.includes("禁止做多"), "evidence card hides raw strategy action");
+}
+
 function testMissingDataStaysVisible() {
   const overview = buildMarketAnalysisOverview({
     history: null,
@@ -198,6 +230,32 @@ function testMissingDataStaysVisible() {
 
   assertEqual(trend?.tone, "missing", "missing market data is not neutral");
   assertIncludes(overview.nextSteps[0], "同步", "missing overview gives sync next step");
+}
+
+function testWorkspaceLoadMessagePreservesPartialMarketData() {
+  const message = buildWorkspaceLoadMessage({
+    historySuccess: true,
+    barCount: 128,
+    signalSuccess: false,
+    signalCount: 0,
+    failedServiceLabels: ["信号", "V2策略"],
+  });
+
+  assertIncludes(message, "读取 128 根日线", "partial failure still reports loaded bars");
+  assertIncludes(message, "0 条信号", "partial failure reports signal fallback count");
+  assertIncludes(message, "部分服务不可用：信号、V2策略", "partial failure names unavailable services");
+}
+
+function testWorkspaceLoadMessageExplainsDisconnectedBackend() {
+  const message = buildWorkspaceLoadMessage({
+    historySuccess: false,
+    signalSuccess: false,
+    signalCount: 0,
+    failedServiceLabels: ["行情", "信号", "上下文", "V2策略", "完整度"],
+  });
+
+  assertIncludes(message, "后端 API 未连接", "total failure points to backend API");
+  assertIncludes(message, "8100", "total failure mentions default API port");
 }
 
 function testBuildsOverviewTechnicalCharts() {
@@ -296,12 +354,231 @@ function testBuildsKlineEvidenceEvents() {
   assertOk(events.some((event) => event.kind === "review" && event.detail.includes("2 次审查")), "review count creates a review event");
   assertOk(events.some((event) => event.kind === "readiness" && event.tone === "risk"), "readiness blocker creates a risk event");
   assertOk(events.some((event) => event.kind === "strategy" && event.detail.includes("基准行情不足")), "strategy blocking reason creates an event");
-  assertOk(events.some((event) => event.kind === "market" && event.detail.includes("000300.SH")), "failed market filter creates an event");
+  const marketEvent = events.find((event) => event.kind === "market");
+  assertOk(marketEvent?.detail.includes("000300.SH"), "failed market filter creates an event");
+  assertOk(!marketEvent?.detail.includes("benchmark weak"), "failed market filter hides raw backend status");
+}
+
+function testBuildsMarketMicrostructureModel() {
+  const live = buildMarketMicrostructureModel({
+    quote: {
+      symbol: "01024.HK",
+      market: "HONGKONG",
+      trade_date: "2026-05-12",
+      trade_time: "16:00:00",
+      price: 52.6,
+      prev_close: 51.6,
+      change: 1.0,
+      change_pct: 0.0194,
+      open: 56.7,
+      high: 57.4,
+      low: 52.6,
+      volume: 151743764,
+      amount: 8288691208,
+      source: "futu_snapshot",
+      provider: "futu",
+      provider_status: "ok",
+      status: "live",
+      status_text: "富途实时行情快照",
+      is_realtime: true,
+      delay_policy: "富途 OpenAPI 行情，权限和延迟以 OpenD 登录账号为准",
+      refresh_interval_seconds: 12,
+      sparkline: [],
+      error: null,
+    } as any,
+    intraday: {
+      symbol: "01024.HK",
+      market: "HONGKONG",
+      date: "2026-05-12",
+      interval: "1m",
+      point_count: 2,
+      points: [
+        { symbol: "01024.HK", date: "2026-05-12", time: "09:30", datetime: "2026-05-12T09:30:00+08:00", price: 52.1, volume: 1000, amount: 52100 },
+        { symbol: "01024.HK", date: "2026-05-12", time: "09:31", datetime: "2026-05-12T09:31:00+08:00", price: 52.6, volume: 1300, amount: 68380 },
+      ],
+      source: "futu_rt_data",
+      provider: "futu",
+      provider_status: "ok",
+      status: "live",
+      status_text: "富途1分钟分时行情",
+      is_realtime: true,
+      delay_policy: "富途 OpenAPI 行情，权限和延迟以 OpenD 登录账号为准",
+    } as any,
+  });
+  const unavailable = buildMarketMicrostructureModel({ quote: null, intraday: null });
+
+  assertEqual(live.statusTone, "live", "live futu quote produces live microstructure tone");
+  assertEqual(live.sameSource, true, "quote and intraday providers are recognized as same source");
+  assertEqual(live.tapeRows.length, 2, "minute points become latest tape rows");
+  assertIncludes(live.depthRows[0].detail, "Level 2", "depth rows disclose missing Level 2");
+  assertEqual(unavailable.statusTone, "unavailable", "missing data produces unavailable status");
+  assertOk(unavailable.warnings.length > 0, "missing model explains what is unavailable");
+}
+
+function testBuildsCollapsedWorkspaceDataStatus() {
+  const status = buildWorkspaceDataStatusModel({
+    history: { bar_count: 120, quote: { source: "futu_snapshot", trade_date: "2026-05-20", freshness_status: "fresh" } } as any,
+    context: { data_coverage: { factor_rows: 118, fund_flow_rows: 24 } } as any,
+    readiness: {
+      score: 0.72,
+      level: "partial",
+      summary: { ready_count: 6, warn_count: 2, blocker_count: 1, total_count: 9 },
+      categories: [
+        { key: "fundamental", label: "财务快照", status: "blocker", impact: "估值判断受限", next_step: "同步财务" },
+        { key: "news", label: "新闻证据", status: "warn", impact: "事件解释偏薄", next_step: "同步新闻" },
+      ],
+      next_actions: [{ key: "sync-fundamental", priority: "P0", label: "补财务", action: "sync", target_view: "fundamentals" }],
+    } as any,
+    strategyAnalysis: { data_quality: { blocking_reasons: ["基准行情不足"], warnings: ["资金流样本偏少"], has_benchmark: false, has_fund_flow: true } } as any,
+  });
+
+  assertEqual(status.tone, "blocked", "blocker or strategy blocking reason makes status blocked");
+  assertIncludes(status.title, "核心阻断", "blocked status is explicit in the title");
+  assertOk(status.metrics.length <= 4, "status summary stays compact");
+  assertOk(status.gaps.some((gap: any) => gap.label === "财务快照"), "readiness blocker appears as a gap");
+  assertOk(status.warnings.some((warning: string) => warning.includes("基准行情不足")), "strategy blocker is preserved");
+  assertIncludes(status.primaryAction || "", "补财务", "primary action comes from readiness next actions");
+}
+
+function testBuildsWorkspaceNavigationModel() {
+  const navigation = buildWorkspaceNavigationModel({
+    currentSymbol: "600519.SH",
+    watchlist: [
+      { symbol: "600519.SH", name: "贵州茅台", market: "CHINA", status: "active" },
+      { symbol: "00700.HK", name: "腾讯控股", market: "HONGKONG", status: "active" },
+    ],
+    signals: [
+      { symbol: "000001.SZ", signal_name: "趋势增强", direction: "opportunity", score: 82, date: "2026-05-20" },
+      { symbol: "00700.HK", signal_name: "跌破均线", direction: "risk", score: 76, date: "2026-05-19" },
+    ] as any,
+    recentSymbols: ["600519.SH", "NVDA"],
+  });
+
+  assertEqual(navigation.watchlist[0]?.symbol, "600519.SH", "current symbol stays first in watchlist navigation");
+  assertEqual(navigation.watchlist[0]?.active, true, "current symbol is marked active");
+  assertOk(navigation.signals.some((item: any) => item.symbol === "000001.SZ" && item.tone === "opportunity"), "signal navigation keeps opportunity candidates");
+  assertOk(navigation.risk.some((item: any) => item.symbol === "00700.HK"), "risk signal is promoted to risk section");
+  assertOk(navigation.recent.some((item: any) => item.symbol === "NVDA"), "recent symbols are exposed separately");
+}
+
+function testDisplayQuotePrefersRealtimeSnapshot() {
+  const display = buildDisplayQuoteModel({
+    historyQuote: {
+      symbol: "600519.SH",
+      market: "CHINA",
+      trade_date: "2026-05-19",
+      price: 1324.3,
+      change: 1.3,
+      change_pct: 0.001,
+      source: "futu_history_kline",
+      status: "ok",
+      freshness_status: "delayed",
+      freshness_text: "延迟 2 天",
+      delay_policy: "本地日线缓存，非实时行情",
+      sparkline: [],
+    } as any,
+    realtimeQuote: {
+      symbol: "600519.SH",
+      market: "CHINA",
+      trade_date: "2026-05-21",
+      trade_time: "16:14:07",
+      timestamp: "2026-05-21T16:14:07+08:00",
+      price: 1311,
+      change: -4,
+      change_pct: -0.003,
+      source: "tencent_quote",
+      provider: "tencent",
+      status: "live",
+      status_text: "准实时行情快照",
+      is_realtime: true,
+      delay_policy: "公开行情源准实时快照，非交易所授权实时行情",
+    } as any,
+  });
+
+  assertEqual(display.source, "realtime", "live realtime quote wins over delayed history quote");
+  assertEqual(display.quote?.price, 1311, "display price uses realtime snapshot");
+  assertIncludes(display.freshnessText, "准实时", "display freshness explains realtime snapshot");
+  assertIncludes(display.freshnessText, "2026-05-21", "display freshness includes realtime date");
+  assertIncludes(display.researchDetail, "研究日线 2026-05-19", "research detail keeps historical daily bar date");
+  assertIncludes(display.researchDetail, "延迟 2 天", "research detail preserves history delay");
+}
+
+function testDisplayQuoteFallsBackToHistoryQuote() {
+  const display = buildDisplayQuoteModel({
+    historyQuote: {
+      symbol: "600519.SH",
+      market: "CHINA",
+      trade_date: "2026-05-19",
+      price: 1324.3,
+      source: "futu_history_kline",
+      status: "ok",
+      freshness_text: "延迟 2 天",
+      sparkline: [],
+    } as any,
+    realtimeQuote: {
+      symbol: "600519.SH",
+      market: "CHINA",
+      trade_date: null,
+      price: null,
+      source: "tencent_quote",
+      status: "unavailable",
+      status_text: "准实时行情不可用",
+      is_realtime: false,
+    } as any,
+  });
+
+  assertEqual(display.source, "history", "unavailable realtime quote falls back to history");
+  assertEqual(display.quote?.price, 1324.3, "fallback display price uses history quote");
+  assertIncludes(display.freshnessText, "延迟 2 天", "fallback freshness keeps history label");
+}
+
+function testTickerQuotesPreferRealtimeSnapshots() {
+  const merged = mergeRealtimeTickerQuotes(
+    [
+      {
+        symbol: "600519.SH",
+        market: "CHINA",
+        trade_date: "2026-05-19",
+        price: 1324.3,
+        change_pct: 0.001,
+        source: "futu_history_kline",
+        status: "ok",
+        freshness_text: "延迟 2 天",
+        sparkline: [],
+      },
+    ] as any,
+    [
+      {
+        symbol: "600519.SH",
+        market: "CHINA",
+        trade_date: "2026-05-21",
+        trade_time: "16:14:07",
+        price: 1311,
+        change_pct: -0.003,
+        source: "tencent_quote",
+        status: "live",
+        status_text: "准实时行情快照",
+        is_realtime: true,
+      },
+    ] as any,
+  );
+
+  assertEqual(merged[0]?.price, 1311, "top ticker display uses realtime quote when available");
+  assertEqual(merged[0]?.source, "tencent_quote", "top ticker source comes from realtime quote");
 }
 
 testClassifiesIndicatorTones();
 testBuildsBullishOverview();
+testOverviewUsesReadableStrategyCopy();
 testMissingDataStaysVisible();
+testWorkspaceLoadMessagePreservesPartialMarketData();
+testWorkspaceLoadMessageExplainsDisconnectedBackend();
 testBuildsOverviewTechnicalCharts();
 testBuildsRelativeStrengthTrendModel();
 testBuildsKlineEvidenceEvents();
+testBuildsMarketMicrostructureModel();
+testBuildsCollapsedWorkspaceDataStatus();
+testBuildsWorkspaceNavigationModel();
+testDisplayQuotePrefersRealtimeSnapshot();
+testDisplayQuoteFallsBackToHistoryQuote();
+testTickerQuotesPreferRealtimeSnapshots();

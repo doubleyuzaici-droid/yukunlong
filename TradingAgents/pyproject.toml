@@ -42,6 +42,7 @@ tradingagents-api = "tradingagents.api.server:main"
 
 [project.optional-dependencies]
 china = ["tushare>=1.4.21", "akshare>=1.18.0"]
+futu = ["futu-api>=9.4.0"]
 
 [tool.setuptools.packages.find]
 include = ["tradingagents*", "cli*"]

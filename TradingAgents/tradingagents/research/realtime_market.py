@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import time
 from datetime import datetime
@@ -13,6 +14,12 @@ from tradingagents.markets import (
     detect_market,
     normalize_china_symbol,
     normalize_hk_symbol,
+)
+
+from tradingagents.dataflows.futu_market import (
+    FUTU_DELAY_POLICY,
+    fetch_futu_intraday_minutes,
+    fetch_futu_snapshot,
 )
 
 from .index_catalog import resolve_index_profile
@@ -77,6 +84,10 @@ def _normalize_symbol(symbol: str) -> str:
     if market == Market.HONGKONG:
         return normalize_hk_symbol(symbol)
     return symbol.strip().upper()
+
+
+def _quote_provider() -> str:
+    return os.getenv("TRADINGAGENTS_QUOTE_PROVIDER", "tencent").strip().lower()
 
 
 def _tencent_code(symbol: str) -> str:
@@ -209,12 +220,17 @@ def _fallback_quote(symbol: str, message: str) -> dict:
 
 def fetch_realtime_quote(symbol: str, *, allow_fallback: bool = True) -> dict:
     normalized = _normalize_symbol(symbol)
-    cache_key = f"quote:{normalized}"
+    provider = _quote_provider()
+    cache_key = f"quote:{provider}:{normalized}"
     cached = _QUOTE_CACHE.get(cache_key)
     if cached and time.monotonic() - cached[0] <= QUOTE_CACHE_TTL_SECONDS:
         return dict(cached[1])
 
     try:
+        if provider == "futu":
+            quote = fetch_futu_snapshot(normalized)
+            _QUOTE_CACHE[cache_key] = (time.monotonic(), quote)
+            return dict(quote)
         code = _tencent_code(normalized)
         fields = _extract_tencent_fields(_fetch_tencent_quote_text(code))
         timestamp, trade_date, trade_time = _parse_tencent_timestamp(fields[30])
@@ -263,6 +279,7 @@ def fetch_realtime_quote(symbol: str, *, allow_fallback: bool = True) -> dict:
 
 def list_realtime_quotes(symbols: list[str] | str, *, allow_fallback: bool = True) -> dict:
     normalized_symbols = parse_symbol_list(symbols)
+    provider = _quote_provider()
     quotes = [
         fetch_realtime_quote(symbol, allow_fallback=allow_fallback)
         for symbol in normalized_symbols
@@ -275,7 +292,7 @@ def list_realtime_quotes(symbols: list[str] | str, *, allow_fallback: bool = Tru
         "unavailable_count": sum(1 for quote in quotes if quote.get("status") == "unavailable"),
         "generated_at": _now_iso(),
         "refresh_interval_seconds": QUOTE_CACHE_TTL_SECONDS,
-        "delay_policy": REALTIME_DELAY_POLICY,
+        "delay_policy": FUTU_DELAY_POLICY if provider == "futu" else REALTIME_DELAY_POLICY,
         "quotes": quotes,
     }
 
@@ -322,13 +339,18 @@ def _parse_intraday_points(
 
 def get_intraday_minutes(symbol: str, *, allow_fallback: bool = True) -> dict:
     normalized = _normalize_symbol(symbol)
-    cache_key = f"intraday:{normalized}"
+    provider = _quote_provider()
+    cache_key = f"intraday:{provider}:{normalized}"
     cached = _INTRADAY_CACHE.get(cache_key)
     if cached and time.monotonic() - cached[0] <= INTRADAY_CACHE_TTL_SECONDS:
         return dict(cached[1])
 
     quote = fetch_realtime_quote(normalized, allow_fallback=allow_fallback)
     try:
+        if provider == "futu":
+            result = fetch_futu_intraday_minutes(normalized, quote=quote)
+            _INTRADAY_CACHE[cache_key] = (time.monotonic(), result)
+            return dict(result)
         code = _tencent_code(normalized)
         payload = _fetch_tencent_intraday_payload(code)
         data = payload.get("data", {}).get(code, {}).get("data", {})

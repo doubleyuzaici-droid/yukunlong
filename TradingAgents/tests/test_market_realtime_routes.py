@@ -196,3 +196,172 @@ def test_realtime_quote_falls_back_to_local_daily(tmp_path, monkeypatch):
     assert quote["is_realtime"] is False
     assert quote["price"] == 1720.0
     assert quote["error"] == "remote timeout"
+
+
+def test_realtime_quotes_use_futu_provider_when_configured(monkeypatch):
+    from tradingagents.research import realtime_market
+    from tradingagents.api.server import create_app
+
+    realtime_market.clear_realtime_cache()
+    monkeypatch.setenv("TRADINGAGENTS_QUOTE_PROVIDER", "futu")
+    monkeypatch.setattr(
+        realtime_market,
+        "fetch_futu_snapshot",
+        lambda symbol: {
+            "symbol": "01024.HK",
+            "market": "HONGKONG",
+            "name": "快手-W",
+            "trade_date": "2026-05-12",
+            "trade_time": "16:00:00",
+            "timestamp": "2026-05-12T16:00:00+08:00",
+            "price": 52.6,
+            "prev_close": 51.6,
+            "change": 1.0,
+            "change_pct": 0.0194,
+            "open": 56.7,
+            "high": 57.4,
+            "low": 52.6,
+            "volume": 151743764,
+            "amount": 8288691208.0,
+            "source": "futu_snapshot",
+            "provider": "futu",
+            "provider_status": "ok",
+            "status": "live",
+            "status_text": "富途实时行情快照",
+            "is_realtime": True,
+            "delay_policy": "富途 OpenAPI 行情，权限和延迟以 OpenD 登录账号为准",
+            "refresh_interval_seconds": 12,
+            "sparkline": [],
+            "error": None,
+        },
+    )
+
+    client = TestClient(create_app())
+    response = client.get("/api/market/realtime/quotes?symbols=1024.hk")
+
+    assert response.status_code == 200
+    quote = response.json()["data"]["quotes"][0]
+    assert quote["provider"] == "futu"
+    assert quote["source"] == "futu_snapshot"
+    assert quote["symbol"] == "01024.HK"
+
+
+def test_realtime_futu_provider_falls_back_to_local_daily(tmp_path, monkeypatch):
+    _seed_daily_fallback(tmp_path, monkeypatch)
+
+    from tradingagents.research import realtime_market
+    from tradingagents.api.server import create_app
+
+    realtime_market.clear_realtime_cache()
+    monkeypatch.setenv("TRADINGAGENTS_QUOTE_PROVIDER", "futu")
+    monkeypatch.setattr(
+        realtime_market,
+        "fetch_futu_snapshot",
+        lambda _symbol: (_ for _ in ()).throw(RuntimeError("OpenD unavailable")),
+    )
+
+    client = TestClient(create_app())
+    response = client.get("/api/market/realtime/quotes?symbols=600519.SH")
+
+    assert response.status_code == 200
+    quote = response.json()["data"]["quotes"][0]
+    assert quote["status"] == "fallback"
+    assert quote["provider_status"] == "fallback"
+    assert quote["price"] == 1720.0
+    assert quote["error"] == "OpenD unavailable"
+
+
+def test_realtime_intraday_uses_futu_provider_when_configured(monkeypatch):
+    from tradingagents.research import realtime_market
+    from tradingagents.api.server import create_app
+
+    realtime_market.clear_realtime_cache()
+    monkeypatch.setenv("TRADINGAGENTS_QUOTE_PROVIDER", "futu")
+    monkeypatch.setattr(
+        realtime_market,
+        "fetch_futu_snapshot",
+        lambda symbol: {
+            "symbol": "01024.HK",
+            "market": "HONGKONG",
+            "name": "快手-W",
+            "trade_date": "2026-05-12",
+            "trade_time": "16:00:00",
+            "timestamp": "2026-05-12T16:00:00+08:00",
+            "price": 52.6,
+            "prev_close": 51.6,
+            "change": 1.0,
+            "change_pct": 0.0194,
+            "open": 56.7,
+            "high": 57.4,
+            "low": 52.6,
+            "volume": 151743764,
+            "amount": 8288691208.0,
+            "source": "futu_snapshot",
+            "provider": "futu",
+            "provider_status": "ok",
+            "status": "live",
+            "status_text": "富途实时行情快照",
+            "is_realtime": True,
+            "delay_policy": "富途 OpenAPI 行情，权限和延迟以 OpenD 登录账号为准",
+            "refresh_interval_seconds": 12,
+            "sparkline": [],
+            "error": None,
+        },
+    )
+    monkeypatch.setattr(
+        realtime_market,
+        "fetch_futu_intraday_minutes",
+        lambda symbol, quote=None: {
+            "symbol": "01024.HK",
+            "market": "HONGKONG",
+            "date": "2026-05-12",
+            "interval": "1m",
+            "point_count": 2,
+            "points": [
+                {
+                    "symbol": "01024.HK",
+                    "date": "2026-05-12",
+                    "time": "09:30",
+                    "datetime": "2026-05-12T09:30:00+08:00",
+                    "price": 52.1,
+                    "volume": 1000,
+                    "amount": 52100.0,
+                    "cumulative_volume": 1000,
+                    "cumulative_amount": 52100.0,
+                },
+                {
+                    "symbol": "01024.HK",
+                    "date": "2026-05-12",
+                    "time": "09:31",
+                    "datetime": "2026-05-12T09:31:00+08:00",
+                    "price": 52.6,
+                    "volume": 1300,
+                    "amount": 68380.0,
+                    "cumulative_volume": 1300,
+                    "cumulative_amount": 68380.0,
+                },
+            ],
+            "quote": quote,
+            "source": "futu_rt_data",
+            "provider": "futu",
+            "provider_status": "ok",
+            "status": "live",
+            "status_text": "富途1分钟分时行情",
+            "is_realtime": True,
+            "delay_policy": "富途 OpenAPI 行情，权限和延迟以 OpenD 登录账号为准",
+            "refresh_interval_seconds": 25,
+            "generated_at": "2026-05-12T16:00:00+08:00",
+            "error": None,
+        },
+    )
+
+    client = TestClient(create_app())
+    response = client.get("/api/market/realtime/intraday?symbol=1024.hk")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["provider"] == "futu"
+    assert data["source"] == "futu_rt_data"
+    assert data["status"] == "live"
+    assert data["quote"]["provider"] == "futu"
+    assert data["points"][1]["price"] == 52.6

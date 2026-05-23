@@ -231,6 +231,19 @@ SCHEMA_STATEMENTS = [
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS financial_statement (
+        date TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        statement_type TEXT NOT NULL,
+        period TEXT,
+        metrics_json TEXT NOT NULL,
+        source TEXT,
+        raw_text TEXT,
+        updated_at TEXT,
+        PRIMARY KEY(date, symbol, statement_type)
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS news_evidence (
         news_id TEXT PRIMARY KEY,
         date TEXT NOT NULL,

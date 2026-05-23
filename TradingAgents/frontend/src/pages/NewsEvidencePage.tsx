@@ -104,6 +104,15 @@ export default function NewsEvidencePage({
         warnings={(payload?.evidence_quality.item_count || 0) === 0 ? ["缺少新闻证据，新闻/情绪 Agent 结论不可审计"] : []}
         disclaimer="新闻情绪仅作为催化和风险解释，需结合价格与成交量反应判断。"
       />
+      {payload && payload.evidence_quality.item_count === 0 && (
+        <EvidenceReadinessCallout
+          actionLabel="同步新闻"
+          detail="当前没有可审计新闻，新闻/情绪结论应视为缺失；同步后再判断是否存在公告、资讯或报告催化。"
+          onAction={syncNews}
+          status="新闻证据未就绪"
+          title="没有可用新闻证据"
+        />
+      )}
       <div className="pipeline-summary">
         <Metric label="证据数" value={String(payload?.evidence_quality.item_count || 0)} />
         <Metric label="高可信" value={String(payload?.evidence_quality.high_credibility_count || 0)} />
@@ -147,4 +156,29 @@ export default function NewsEvidencePage({
 
 function Metric({ label, value }: { label: string; value: string }) {
   return <div className="metric-tile"><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function EvidenceReadinessCallout({
+  actionLabel,
+  detail,
+  onAction,
+  status,
+  title,
+}: {
+  actionLabel: string;
+  detail: string;
+  onAction: () => void;
+  status: string;
+  title: string;
+}) {
+  return (
+    <div className="evidence-readiness-callout warn">
+      <div>
+        <span>{status}</span>
+        <strong>{title}</strong>
+        <em>{detail}</em>
+      </div>
+      <button className="mini primary" onClick={onAction} type="button">{actionLabel}</button>
+    </div>
+  );
 }

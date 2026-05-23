@@ -25,7 +25,6 @@ import SignalWorkbenchPage from "./pages/SignalWorkbenchPage";
 import StrategyOptimizerPage from "./pages/StrategyOptimizerPage";
 import SymbolWorkspacePage from "./pages/SymbolWorkspacePage";
 import TaskCenterPage from "./pages/TaskCenterPage";
-import TodaySignalsPage from "./pages/TodaySignalsPage";
 import WatchlistPage from "./pages/WatchlistPage";
 
 type View = "form" | "running" | "report";
@@ -46,7 +45,6 @@ type Workspace =
   | "history"
   | "memory"
   | "checkpoint"
-  | "signals"
   | "signalWorkbench"
   | "signalHistory"
   | "report"
@@ -65,11 +63,10 @@ const NAV_GROUPS: { title: string; items: { key: Workspace; label: string }[] }[
       { key: "market", label: "行情看板" },
       { key: "marketMatrix", label: "市场矩阵" },
       { key: "symbolWorkspace", label: "个股工作台" },
-      { key: "fundamentals", label: "基本面估值" },
+      { key: "fundamentals", label: "财报估值" },
       { key: "newsEvidence", label: "新闻证据" },
       { key: "factorResearch", label: "因子研究" },
       { key: "watchlist", label: "自选股" },
-      { key: "signals", label: "今日信号" },
       { key: "signalWorkbench", label: "信号工作台" },
       { key: "signalHistory", label: "历史信号" },
     ],
@@ -254,15 +251,6 @@ function App() {
     }
     if (workspace === "pipeline") return <PipelineConsolePage />;
     if (workspace === "riskMonitor") return <RiskMonitorPage onOpenSymbol={openSymbol} />;
-    if (workspace === "signals") {
-      return (
-        <TodaySignalsPage
-          onOpenSymbol={(symbol, date) => {
-            openSymbol(symbol, date);
-          }}
-        />
-      );
-    }
     if (workspace === "signalWorkbench") {
       return (
         <SignalWorkbenchPage

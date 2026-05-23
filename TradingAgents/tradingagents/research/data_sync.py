@@ -14,6 +14,10 @@ from tradingagents.dataflows.tushare_china import (
     get_china_stock_data_frame as get_china_stock_data_frame_tushare,
     get_hk_stock_data_frame as get_hk_stock_data_frame_tushare,
 )
+from tradingagents.dataflows.futu_market import (
+    get_index_data_frame_futu,
+    get_stock_data_frame_futu,
+)
 from tradingagents.dataflows.fund_flow import fetch_fund_flow_daily
 from tradingagents.markets import Market, detect_market
 
@@ -26,7 +30,7 @@ from .repository import (
     upsert_index_bars,
 )
 
-DATA_SOURCES = ("akshare", "tushare", "auto")
+DATA_SOURCES = ("akshare", "tushare", "futu", "auto")
 DEFAULT_DATA_SOURCE = "akshare"
 
 
@@ -49,6 +53,8 @@ def _fetch_daily_bars_from_source(
     market: Market,
     source: str,
 ) -> pd.DataFrame:
+    if source == "futu":
+        return get_stock_data_frame_futu(symbol, start, end)
     if market == Market.CHINA and source == "akshare":
         return get_china_stock_data_frame_akshare(symbol, start, end)
     if market == Market.HONGKONG and source == "akshare":
@@ -92,6 +98,8 @@ def fetch_index_bars(
 ) -> pd.DataFrame:
     data_source = _resolve_data_source(source)
     canonical = normalize_index_symbol(index_symbol)
+    if data_source == "futu":
+        return get_index_data_frame_futu(canonical, start, end)
     if data_source in {"akshare", "auto"}:
         profile = resolve_index_profile(canonical)
         if profile and profile.market == "HONGKONG":

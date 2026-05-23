@@ -76,6 +76,46 @@ def test_fetch_daily_bars_can_force_tushare(monkeypatch):
     assert frame.iloc[0]["source"] == "tushare"
 
 
+def test_fetch_daily_bars_can_force_futu(monkeypatch):
+    from tradingagents.research import data_sync
+
+    calls = []
+
+    def fake_futu(symbol, start, end):
+        calls.append((symbol, start, end))
+        return _frame("futu_history_kline")
+
+    monkeypatch.setattr(data_sync, "get_stock_data_frame_futu", fake_futu)
+
+    frame = data_sync.fetch_daily_bars(
+        "01024.HK", "2026-05-01", "2026-05-12", source="futu"
+    )
+
+    assert calls == [("01024.HK", "2026-05-01", "2026-05-12")]
+    assert frame.iloc[0]["source"] == "futu_history_kline"
+
+
+def test_fetch_index_bars_can_force_futu(monkeypatch):
+    from tradingagents.research import data_sync
+
+    calls = []
+
+    def fake_futu(symbol, start, end):
+        calls.append((symbol, start, end))
+        return _index_frame("futu_history_kline")
+
+    monkeypatch.setattr(
+        data_sync, "get_index_data_frame_futu", fake_futu, raising=False
+    )
+
+    frame = data_sync.fetch_index_bars(
+        "恒生指数", "2026-05-01", "2026-05-16", source="futu"
+    )
+
+    assert calls == [("HSI", "2026-05-01", "2026-05-16")]
+    assert frame.iloc[0]["source"] == "futu_history_kline"
+
+
 def test_sync_watchlist_bars_logs_symbol_errors_and_continues(monkeypatch):
     from tradingagents.research import data_sync
 

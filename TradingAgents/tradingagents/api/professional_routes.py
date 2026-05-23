@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
 import math
 import re
@@ -107,6 +109,164 @@ def _ratio_after(label: str, text: str) -> float | None:
     if value is None:
         return None
     return value / 100 if abs(value) > 1 else value
+
+
+def _normalize_report_date(value: str | None, fallback: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    match = re.search(r"\d{4}[-/]?\d{2}[-/]?\d{2}", text)
+    if not match:
+        return fallback
+    raw = match.group(0).replace("/", "-")
+    if "-" not in raw and len(raw) == 8:
+        return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
+    return raw[:10]
+
+
+def _safe_number(value: Any) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip().replace(",", "")
+    if not text or text.lower() in {"none", "nan", "null", "-"}:
+        return None
+    try:
+        parsed = float(text)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _metric_key(value: str) -> str:
+    text = re.sub(r"[^A-Za-z0-9]+", "_", str(value or "").strip()).strip("_").lower()
+    aliases = {
+        "n_income": "net_income",
+        "net_income_to_common": "net_income",
+        "net_income_common_stockholders": "net_income",
+        "total_revenue": "revenue",
+        "grossprofit_margin": "gross_margin",
+        "gross_profit_margin": "gross_margin",
+        "total_liab": "total_liabilities",
+        "total_liabilities_net_minority_interest": "total_liabilities",
+        "total_hldr_eqy": "total_equity",
+        "total_hldr_eqy_exc_min_int": "total_equity",
+        "stockholders_equity": "total_equity",
+        "n_cashflow_act": "operating_cashflow",
+        "operating_cash_flow": "operating_cashflow",
+        "total_cash_from_operating_activities": "operating_cashflow",
+        "n_cashflow_inv_act": "investing_cashflow",
+        "investing_cash_flow": "investing_cashflow",
+        "n_cash_flows_fin_act": "financing_cashflow",
+        "financing_cash_flow": "financing_cashflow",
+        "free_cash_flow": "free_cashflow",
+    }
+    return aliases.get(text, text)
+
+
+def _parse_key_value_statement(
+    *,
+    statement_type: str,
+    text: str,
+    symbol: str,
+    fallback_date: str,
+    source: str,
+) -> list[dict]:
+    pairs = re.findall(r"\b([A-Za-z][A-Za-z0-9_]*)\s*=\s*([-+]?\d+(?:\.\d+)?)", text)
+    metrics = {
+        _metric_key(key): value
+        for key, raw_value in pairs
+        if (value := _safe_number(raw_value)) is not None
+    }
+    if not metrics:
+        return []
+    date_match = re.search(r"as of\s+([0-9][0-9\-/]{7,9})", text, flags=re.IGNORECASE)
+    return [
+        {
+            "date": _normalize_report_date(date_match.group(1) if date_match else None, fallback_date),
+            "symbol": symbol,
+            "statement_type": statement_type,
+            "period": "latest",
+            "metrics": metrics,
+            "source": source,
+            "raw_text": text[:4000],
+            "updated_at": _now(),
+        }
+    ]
+
+
+def _parse_csv_statement(
+    *,
+    statement_type: str,
+    text: str,
+    symbol: str,
+    fallback_date: str,
+    source: str,
+) -> list[dict]:
+    lines = [
+        line
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if not lines or "," not in lines[0]:
+        return []
+    rows = list(csv.reader(io.StringIO("\n".join(lines))))
+    if not rows or len(rows[0]) < 2:
+        return []
+    periods = rows[0][1:]
+    parsed: list[dict] = []
+    for index, period in enumerate(periods, start=1):
+        metrics: dict[str, float] = {}
+        for row in rows[1:]:
+            if len(row) <= index:
+                continue
+            value = _safe_number(row[index])
+            if value is None:
+                continue
+            key = _metric_key(row[0])
+            if key:
+                metrics[key] = value
+        if metrics:
+            parsed.append(
+                {
+                    "date": _normalize_report_date(period, fallback_date),
+                    "symbol": symbol,
+                    "statement_type": statement_type,
+                    "period": "quarterly",
+                    "metrics": metrics,
+                    "source": source,
+                    "raw_text": text[:4000],
+                    "updated_at": _now(),
+                }
+            )
+    return parsed
+
+
+def _parse_financial_statement_rows(
+    *,
+    statement_type: str,
+    text: str,
+    symbol: str,
+    fallback_date: str,
+    source: str,
+) -> list[dict]:
+    if not text or re.search(r"\b(no|error)\b", text[:80], flags=re.IGNORECASE):
+        return []
+    rows = _parse_csv_statement(
+        statement_type=statement_type,
+        text=text,
+        symbol=symbol,
+        fallback_date=fallback_date,
+        source=source,
+    )
+    if rows:
+        return rows[:4]
+    return _parse_key_value_statement(
+        statement_type=statement_type,
+        text=text,
+        symbol=symbol,
+        fallback_date=fallback_date,
+        source=source,
+    )
 
 
 def _field_coverage(row: dict | None, columns: list[str]) -> float:
@@ -273,6 +433,14 @@ def _build_analysis_readiness(symbol: str, date: str | None = None) -> dict:
             """,
             (normalized, resolved_date),
         ).fetchone()
+        financial_statement_stats = conn.execute(
+            """
+            SELECT COUNT(DISTINCT statement_type) AS type_count, MAX(date) AS latest_date
+            FROM financial_statement
+            WHERE symbol = ? AND date <= ?
+            """,
+            (normalized, resolved_date),
+        ).fetchone()
         signals = conn.execute(
             """
             SELECT COUNT(*) AS count, MAX(date) AS latest_date
@@ -304,6 +472,8 @@ def _build_analysis_readiness(symbol: str, date: str | None = None) -> dict:
     latest_bar_dict = _row(latest_bar)
     factor = _row(factor_row)
     fundamental = _row(fundamental_row)
+    financial_statement_type_count = int(financial_statement_stats["type_count"] or 0) if financial_statement_stats else 0
+    financial_statement_latest_date = financial_statement_stats["latest_date"] if financial_statement_stats else None
     news_stats = _news_evidence_stats(normalized, resolved_date)
     signal_count = int(signals["count"] or 0) if signals else 0
     review_count = int(reviews["count"] or 0) if reviews else 0
@@ -375,23 +545,33 @@ def _build_analysis_readiness(symbol: str, date: str | None = None) -> dict:
             metadata={"row_count": factor_count},
         )
     )
-    fundamental_status = "not_applicable" if index_profile else ("ready" if fundamental else "warn")
+    fundamental_coverage = max(
+        _field_coverage(
+            fundamental,
+            ["revenue", "net_income", "roe", "pe_ttm", "pb", "source"],
+        ),
+        min(financial_statement_type_count / 3, 1.0),
+    )
+    fundamental_status = "not_applicable" if index_profile else ("ready" if fundamental_coverage > 0 else "warn")
     categories.append(
         _readiness_category(
             key="fundamentals",
-            label="基本面估值",
+            label="财报与估值",
             status="ready" if fundamental_status in {"ready", "not_applicable"} else "warn",
-            coverage=1.0 if index_profile else _field_coverage(
-                fundamental,
-                ["revenue", "net_income", "roe", "pe_ttm", "pb", "source"],
-            ),
-            impact="影响估值、盈利质量和业务判断",
+            coverage=1.0 if index_profile else fundamental_coverage,
+            impact="影响三表、估值、盈利质量和业务判断",
             evidence=[
                 "指数标的不适用个股三表" if index_profile else f"fundamental_snapshot {'已覆盖' if fundamental else '0 条'}",
+                "指数标的不适用财报" if index_profile else f"financial_statement {financial_statement_type_count}/3 类",
+                f"最新财报 {financial_statement_latest_date or '-'}",
             ],
-            next_step="同步财务快照、估值倍数和业务分部指标",
+            next_step="获取利润表、资产负债表、现金流和估值倍数",
             target_view="fundamentals",
-            metadata={"status_detail": fundamental_status},
+            metadata={
+                "status_detail": fundamental_status,
+                "financial_statement_type_count": financial_statement_type_count,
+                "financial_statement_latest_date": financial_statement_latest_date,
+            },
         )
     )
     categories.append(
@@ -490,7 +670,7 @@ def _build_analysis_readiness(symbol: str, date: str | None = None) -> dict:
         "security_master": ("complete_security_master", "P0", "补齐主数据"),
         "market_data": ("sync_market_data", "P0", "同步行情"),
         "technical_factors": ("compute_factors", "P1", "计算技术因子"),
-        "fundamentals": ("sync_fundamentals", "P1", "同步基本面"),
+        "fundamentals": ("sync_fundamentals", "P1", "获取财报"),
         "news_evidence": ("replace_placeholder_news", "P1", "补真实新闻证据"),
         "fund_flow": ("sync_fund_flow", "P1", "同步资金流"),
         "signals": ("generate_signals", "P1", "生成策略信号"),
@@ -583,6 +763,86 @@ def _latest_row(table: str, symbol: str, end: str) -> dict | None:
             (symbol, end),
         ).fetchone()
     return _row(row)
+
+
+def _upsert_financial_statement_rows(rows: list[dict]) -> int:
+    if not rows:
+        return 0
+    with get_connection() as conn:
+        conn.executemany(
+            """
+            INSERT INTO financial_statement (
+                date, symbol, statement_type, period, metrics_json,
+                source, raw_text, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(date, symbol, statement_type) DO UPDATE SET
+                period = excluded.period,
+                metrics_json = excluded.metrics_json,
+                source = excluded.source,
+                raw_text = excluded.raw_text,
+                updated_at = excluded.updated_at
+            """,
+            [
+                (
+                    row["date"],
+                    row["symbol"],
+                    row["statement_type"],
+                    row.get("period"),
+                    json.dumps(row.get("metrics") or {}, ensure_ascii=False),
+                    row.get("source"),
+                    row.get("raw_text"),
+                    row.get("updated_at"),
+                )
+                for row in rows
+            ],
+        )
+        conn.commit()
+    return len(rows)
+
+
+def _financial_reports_payload(symbol: str, end: str) -> dict:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM financial_statement
+            WHERE symbol = ? AND date <= ?
+            ORDER BY date DESC, statement_type
+            """,
+            (symbol, end),
+        ).fetchall()
+    items = []
+    latest_by_type: dict[str, dict] = {}
+    for row in _rows(rows):
+        try:
+            metrics = json.loads(row.get("metrics_json") or "{}")
+        except (TypeError, ValueError):
+            metrics = {}
+        item = {
+            "date": row.get("date"),
+            "statement_type": row.get("statement_type"),
+            "period": row.get("period"),
+            "metrics": metrics,
+            "source": row.get("source"),
+            "updated_at": row.get("updated_at"),
+        }
+        items.append(item)
+        statement_type = str(item["statement_type"] or "")
+        if statement_type and statement_type not in latest_by_type:
+            latest_by_type[statement_type] = item
+    expected = ["income", "balance", "cashflow"]
+    available_count = sum(1 for key in expected if key in latest_by_type)
+    return {
+        "items": items[:12],
+        "latest_by_type": latest_by_type,
+        "summary": {
+            "available_count": available_count,
+            "missing_count": len(expected) - available_count,
+            "latest_date": items[0]["date"] if items else None,
+            "statement_types": sorted(latest_by_type),
+        },
+    }
 
 
 def _latest_index_row(index_symbol: str, end: str) -> dict | None:
@@ -810,11 +1070,22 @@ async def get_professional_fundamentals(
                 },
                 "market_snapshot": latest_bar,
                 "valuation_snapshot": None,
+                "financial_reports": {
+                    "items": [],
+                    "latest_by_type": {},
+                    "summary": {
+                        "available_count": 0,
+                        "missing_count": 0,
+                        "latest_date": None,
+                        "statement_types": [],
+                    },
+                },
                 "factor_snapshot": factor_snapshot,
                 "agent_evidence": [],
                 "data_quality": {
                     "fundamental_applicable": False,
                     "fundamental_available": None,
+                    "financial_reports_available": None,
                     "market_price_available": latest_bar is not None,
                     "factor_available": factor_snapshot is not None,
                     "disclosure": "指数标的不适用个股三表估值，专业判断以指数行情、风格和可交易代理工具为准",
@@ -847,6 +1118,7 @@ async def get_professional_fundamentals(
             (normalized, resolved_end),
         ).fetchall()
     valuation = _latest_row("fundamental_snapshot", normalized, resolved_end)
+    financial_reports = _financial_reports_payload(normalized, resolved_end)
     factor = _latest_row("factor_daily", normalized, resolved_end)
     return ApiResponse(
         success=True,
@@ -857,10 +1129,12 @@ async def get_professional_fundamentals(
             or {"symbol": normalized, "name": None, "industry": None, "market": None},
             "market_snapshot": _row(latest_bar),
             "valuation_snapshot": valuation,
+            "financial_reports": financial_reports,
             "factor_snapshot": factor,
             "agent_evidence": _rows(latest_report),
             "data_quality": {
                 "fundamental_available": valuation is not None,
+                "financial_reports_available": financial_reports["summary"]["available_count"] > 0,
                 "market_price_available": latest_bar is not None,
                 "factor_available": factor is not None,
                 "disclosure": "未落库的财务字段不会被估算或填充为假数据",
@@ -876,14 +1150,22 @@ async def sync_professional_fundamentals(request: ProfessionalSyncRequest):
     symbols = _sync_symbols(request.symbols)
     started = time.perf_counter()
     rows_written = 0
+    statement_rows_written = 0
     failures: list[dict] = []
     for symbol in symbols:
         normalized = normalize_market_symbol(symbol)
-        try:
-            fundamentals_text = route_to_vendor("get_fundamentals", normalized)
-            income_text = route_to_vendor("get_income_statement", normalized)
-        except Exception as exc:
-            failures.append({"symbol": normalized, "error": str(exc)})
+        fetched: dict[str, str] = {}
+        for method in (
+            "get_fundamentals",
+            "get_income_statement",
+            "get_balance_sheet",
+            "get_cashflow",
+        ):
+            try:
+                fetched[method] = route_to_vendor(method, normalized)
+            except Exception as exc:
+                failures.append({"symbol": normalized, "method": method, "error": str(exc)})
+        if not fetched:
             _record_sync_trace(
                 job_type="sync-fundamentals",
                 symbol=normalized,
@@ -892,11 +1174,14 @@ async def sync_professional_fundamentals(request: ProfessionalSyncRequest):
                 primary_source=request.source,
                 status="failed",
                 elapsed_ms=int((time.perf_counter() - started) * 1000),
-                error=str(exc),
+                error="no financial data source returned data",
             )
             continue
 
-        combined = f"{fundamentals_text}\n{income_text}"
+        combined = "\n".join([
+            fetched.get("get_fundamentals", ""),
+            fetched.get("get_income_statement", ""),
+        ])
         snapshot = {
             "date": resolved_end,
             "symbol": normalized,
@@ -915,46 +1200,67 @@ async def sync_professional_fundamentals(request: ProfessionalSyncRequest):
             snapshot,
             ["revenue", "net_income", "eps", "roe", "gross_margin", "pe_ttm", "pb", "dividend_yield"],
         )
-        if coverage == 0:
-            failures.append({"symbol": normalized, "error": "no parsable fundamental fields"})
-            continue
-        with get_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO fundamental_snapshot (
-                    date, symbol, revenue, net_income, eps, roe, gross_margin,
-                    pe_ttm, pb, dividend_yield, source, updated_at
+
+        statement_rows: list[dict] = []
+        for method, statement_type in (
+            ("get_income_statement", "income"),
+            ("get_balance_sheet", "balance"),
+            ("get_cashflow", "cashflow"),
+        ):
+            statement_rows.extend(
+                _parse_financial_statement_rows(
+                    statement_type=statement_type,
+                    text=fetched.get(method, ""),
+                    symbol=normalized,
+                    fallback_date=resolved_end,
+                    source=request.source,
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(date, symbol) DO UPDATE SET
-                    revenue = excluded.revenue,
-                    net_income = excluded.net_income,
-                    eps = excluded.eps,
-                    roe = excluded.roe,
-                    gross_margin = excluded.gross_margin,
-                    pe_ttm = excluded.pe_ttm,
-                    pb = excluded.pb,
-                    dividend_yield = excluded.dividend_yield,
-                    source = excluded.source,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    snapshot["date"],
-                    snapshot["symbol"],
-                    snapshot["revenue"],
-                    snapshot["net_income"],
-                    snapshot["eps"],
-                    snapshot["roe"],
-                    snapshot["gross_margin"],
-                    snapshot["pe_ttm"],
-                    snapshot["pb"],
-                    snapshot["dividend_yield"],
-                    snapshot["source"],
-                    snapshot["updated_at"],
-                ),
             )
-            conn.commit()
-        rows_written += 1
+        statement_count = _upsert_financial_statement_rows(statement_rows)
+        statement_rows_written += statement_count
+
+        if coverage > 0:
+            with get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO fundamental_snapshot (
+                        date, symbol, revenue, net_income, eps, roe, gross_margin,
+                        pe_ttm, pb, dividend_yield, source, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(date, symbol) DO UPDATE SET
+                        revenue = excluded.revenue,
+                        net_income = excluded.net_income,
+                        eps = excluded.eps,
+                        roe = excluded.roe,
+                        gross_margin = excluded.gross_margin,
+                        pe_ttm = excluded.pe_ttm,
+                        pb = excluded.pb,
+                        dividend_yield = excluded.dividend_yield,
+                        source = excluded.source,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        snapshot["date"],
+                        snapshot["symbol"],
+                        snapshot["revenue"],
+                        snapshot["net_income"],
+                        snapshot["eps"],
+                        snapshot["roe"],
+                        snapshot["gross_margin"],
+                        snapshot["pe_ttm"],
+                        snapshot["pb"],
+                        snapshot["dividend_yield"],
+                        snapshot["source"],
+                        snapshot["updated_at"],
+                    ),
+                )
+                conn.commit()
+            rows_written += 1
+        elif statement_count == 0:
+            failures.append({"symbol": normalized, "error": "no parsable financial report fields"})
+            continue
+
         _record_sync_trace(
             job_type="sync-fundamentals",
             symbol=normalized,
@@ -962,7 +1268,7 @@ async def sync_professional_fundamentals(request: ProfessionalSyncRequest):
             end=resolved_end,
             primary_source=request.source,
             status="success",
-            rows_written=1,
+            rows_written=(1 if coverage > 0 else 0) + statement_count,
             elapsed_ms=int((time.perf_counter() - started) * 1000),
         )
     return ApiResponse(
@@ -972,6 +1278,7 @@ async def sync_professional_fundamentals(request: ProfessionalSyncRequest):
             "end": resolved_end,
             "source": request.source,
             "rows_written": rows_written,
+            "statement_rows_written": statement_rows_written,
             "failures": failures,
         },
     )
@@ -1662,6 +1969,7 @@ async def get_data_lineage(symbol: str, date: str | None = None):
         ("daily_bars", ["open", "high", "low", "close", "volume", "amount", "source", "updated_at"]),
         ("factor_daily", ["ma20", "ma60", "rsi14", "ret20", "rel_strength_index20", "updated_at"]),
         ("fundamental_snapshot", ["revenue", "net_income", "roe", "pe_ttm", "pb", "source", "updated_at"]),
+        ("financial_statement", ["statement_type", "metrics_json", "source", "updated_at"]),
     ]
     for table, columns in table_specs:
         row = _latest_row(table, normalized, resolved_date)

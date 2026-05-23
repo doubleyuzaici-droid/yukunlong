@@ -14,6 +14,32 @@ export interface PriceExtremaBarLike extends VolumeProfileBarLike {
   period_label?: string | null;
 }
 
+export interface IntradayMinutePointLike {
+  symbol?: string | null;
+  date?: string | null;
+  time?: string | null;
+  datetime?: string | null;
+  price?: number | null;
+  volume?: number | null;
+  amount?: number | null;
+}
+
+export interface IntradayMinuteBarOptions {
+  symbol?: string | null;
+  market?: string | null;
+  prevClose?: number | null;
+  source?: string | null;
+}
+
+export interface IntradayMinuteBarLike extends VolumeProfileBarLike {
+  date: string;
+  symbol: string;
+  market: string;
+  close: number;
+  source?: string | null;
+  period_label?: string | null;
+}
+
 export interface MeasuredRangeBarLike extends PriceExtremaBarLike {
   index?: number | null;
 }
@@ -55,6 +81,220 @@ export type TrendRegimeTone = "good" | "risk" | "neutral";
 export type TrendRegimeType = "bullish" | "bearish" | "neutral";
 export type PriceStructureTrendLineTone = "good" | "risk";
 export type PriceStructureTrendLineType = "ascending-support" | "descending-resistance";
+export type ReadableStrategyTone = "good" | "warn" | "bad" | "neutral";
+export type ReadableStrategyGateKey = "M1" | "M2" | "M3" | "M4" | "M5";
+
+export interface ReadableStrategyGateInput {
+  gate: ReadableStrategyGateKey;
+  trendGood?: boolean;
+  trendBad?: boolean;
+  trendLabel?: string | null;
+  marketPassed?: boolean;
+  marketStatus?: string | null;
+  benchmarkSymbol?: string | null;
+  buyTriggered?: boolean;
+  buyScore?: number | null;
+  buyThreshold?: number | null;
+  emergency?: boolean;
+  regularExit?: boolean;
+  warningLevel?: number | null;
+  warningLabel?: string | null;
+  sellAction?: string | null;
+  sellScore?: number | null;
+  shares?: number | null;
+  positionPct?: number | null;
+  riskPct?: number | null;
+}
+
+export interface ReadableStrategyGateText {
+  key: ReadableStrategyGateKey;
+  label: string;
+  status: string;
+  detail: string;
+  tone: ReadableStrategyTone;
+}
+
+export interface ReadableStrategyStepLike {
+  key?: string;
+  label: string;
+  status: string;
+  detail: string;
+  tone: ReadableStrategyTone;
+}
+
+export interface ReadableStrategyDecisionCopyInput {
+  date?: string | null;
+  symbol?: string | null;
+  modeLabel?: string | null;
+  decisionLabel?: string | null;
+  decisionAction?: string | null;
+  steps: ReadableStrategyStepLike[];
+}
+
+export interface ReadableStrategyDecisionCopy {
+  title: string;
+  subtitle: string;
+  reasons: string[];
+}
+
+function isFiniteStrategyNumber(value?: number | null): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function formatStrategyNumber(value?: number | null, digits = 2) {
+  return isFiniteStrategyNumber(value) ? value.toFixed(digits) : "-";
+}
+
+function formatStrategyPercent(value?: number | null, digits = 1) {
+  return isFiniteStrategyNumber(value) ? `${(value * 100).toFixed(digits)}%` : "-";
+}
+
+function formatStrategyCompactNumber(value?: number | null, digits = 1) {
+  if (!isFiniteStrategyNumber(value)) return "-";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(digits)}B`;
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(digits)}M`;
+  if (abs >= 1_000) return `${(value / 1_000).toFixed(digits)}K`;
+  return value.toFixed(0);
+}
+
+function readableToken(value?: string | null, fallback = "-") {
+  const text = String(value ?? "").trim();
+  if (!text || text === "-") return fallback;
+  return text;
+}
+
+function findStrategyStep(steps: ReadableStrategyStepLike[], key: ReadableStrategyGateKey) {
+  return steps.find((step) => step.key === key);
+}
+
+export function buildReadableStrategyGateText(input: ReadableStrategyGateInput): ReadableStrategyGateText {
+  switch (input.gate) {
+    case "M1": {
+      const trendLabel = readableToken(input.trendLabel, "当前");
+      if (input.trendGood) {
+        return {
+          key: "M1",
+          label: "个股趋势",
+          status: "支持买入",
+          detail: `${trendLabel}趋势占优，允许进入日线信号确认。`,
+          tone: "good",
+        };
+      }
+      if (input.trendBad) {
+        return {
+          key: "M1",
+          label: "个股趋势",
+          status: "不支持买入",
+          detail: `${trendLabel}趋势偏弱，顺势买入胜率不足。`,
+          tone: "bad",
+        };
+      }
+      return {
+        key: "M1",
+        label: "个股趋势",
+        status: "继续观察",
+        detail: `${trendLabel}趋势还不清晰，先看价格能否重新站稳。`,
+        tone: "neutral",
+      };
+    }
+    case "M2": {
+      const benchmark = readableToken(input.benchmarkSymbol, "基准指数");
+      return {
+        key: "M2",
+        label: "市场环境",
+        status: input.marketPassed ? "允许观察" : "不适合开仓",
+        detail: input.marketPassed
+          ? `${benchmark} 通过大盘过滤，可以继续看个股信号。`
+          : `${benchmark} 未通过大盘过滤，先避免逆势开新仓。`,
+        tone: input.marketPassed ? "good" : "bad",
+      };
+    }
+    case "M3": {
+      const score = formatStrategyNumber(input.buyScore, 3);
+      const threshold = formatStrategyNumber(input.buyThreshold, 3);
+      return {
+        key: "M3",
+        label: "买入信号",
+        status: input.buyTriggered ? "已触发" : "信号不足",
+        detail: input.buyTriggered
+          ? `买入强度 ${score}，已达到触发线 ${threshold}。`
+          : `买入强度 ${score}，低于触发线 ${threshold}。`,
+        tone: input.buyTriggered ? "good" : "bad",
+      };
+    }
+    case "M4": {
+      const warningLevel = input.warningLevel || 0;
+      const riskTriggered = Boolean(input.emergency || input.regularExit || warningLevel > 0);
+      const action = readableToken(input.sellAction, riskTriggered ? "先控制回撤" : "暂未出现减仓触发");
+      return {
+        key: "M4",
+        label: "卖出风险",
+        status: input.emergency || input.regularExit ? "需要处理风险" : warningLevel > 0 ? input.warningLabel || "需要防守" : "暂无退出信号",
+        detail: `卖出压力 ${formatStrategyNumber(input.sellScore, 2)}，${action}。`,
+        tone: input.emergency || input.regularExit ? "bad" : warningLevel > 0 ? "warn" : "good",
+      };
+    }
+    case "M5": {
+      const shares = input.shares || 0;
+      return {
+        key: "M5",
+        label: "仓位计划",
+        status: shares > 0 ? "仓位上限" : "暂不建仓",
+        detail:
+          shares > 0
+            ? `最多参考 ${formatStrategyCompactNumber(shares)} 股，仓位 ${formatStrategyPercent(input.positionPct)}，单笔风险 ${formatStrategyPercent(input.riskPct)}。`
+            : "当前仓位建议为 0，等待前置条件恢复。",
+        tone: shares > 0 ? "good" : "warn",
+      };
+    }
+  }
+}
+
+export function buildReadableStrategyDecisionCopy(input: ReadableStrategyDecisionCopyInput): ReadableStrategyDecisionCopy {
+  const m1 = findStrategyStep(input.steps, "M1");
+  const m2 = findStrategyStep(input.steps, "M2");
+  const m3 = findStrategyStep(input.steps, "M3");
+  const m4 = findStrategyStep(input.steps, "M4");
+  const m5 = findStrategyStep(input.steps, "M5");
+  const trendBlocked = m1?.tone === "bad";
+  const marketBlocked = m2?.tone === "bad";
+  const buyBlocked = m3?.tone === "bad";
+  const riskTriggered = m4?.tone === "bad" || m4?.tone === "warn";
+  const positionBlocked = m5?.tone === "warn";
+  const buyBlockedByGate = trendBlocked || marketBlocked || buyBlocked || positionBlocked;
+
+  const title = riskTriggered
+    ? "先防守，控制风险"
+    : buyBlockedByGate
+      ? "当前不建议买入"
+      : input.steps.every((step) => step.tone === "good")
+        ? "可进入买入确认"
+        : readableToken(input.decisionLabel, "继续观察");
+  const action = riskTriggered
+    ? "优先按风控处理"
+    : buyBlockedByGate
+      ? "继续观察，不开新仓"
+      : readableToken(input.decisionAction, "等待价格确认");
+  const subtitle = [input.date, input.symbol, input.modeLabel, action]
+    .map((part) => readableToken(part, ""))
+    .filter(Boolean)
+    .join(" · ");
+  const reasons: string[] = [];
+
+  if (trendBlocked) reasons.push("个股趋势尚未转强，顺势买入胜率不足。");
+  if (marketBlocked) reasons.push("大盘环境未通过过滤，暂不逆风开仓。");
+  if (buyBlocked) reasons.push("买入强度低于触发线，还没有确认信号。");
+  if (riskTriggered) reasons.push("卖出风险已经升温，先看止损和减仓规则。");
+  if (positionBlocked) reasons.push("仓位计划暂不给新仓，等待前置条件恢复。");
+  if (reasons.length === 0) reasons.push("关键条件没有形成阻断，继续跟踪价格和成交确认。");
+
+  return {
+    title,
+    subtitle,
+    reasons: Array.from(new Set(reasons)).slice(0, 3),
+  };
+}
 
 export interface TechnicalIndicatorBarLike extends PriceExtremaBarLike {
   maFast?: number | null;
@@ -197,6 +437,108 @@ export interface KlineEventSummaryInput {
   tdsEvents?: TdsSequentialAnnotation[];
   gaps?: PriceGapAnnotation[];
   trendBands?: TrendRegimeBand[];
+}
+
+export type CompactAnnotationTone = "good" | "risk" | "neutral" | "mixed";
+export type CompactAnnotationMode = "compact" | "all";
+export type DenseChartLayer =
+  | "annotations"
+  | "profile"
+  | "autoLevels"
+  | "trendRegime"
+  | "secondaryIndicators"
+  | "clusterBadges";
+
+export interface DenseChartLayerSelection {
+  signals: boolean;
+  structure: boolean;
+  profile: boolean;
+  secondaryIndicators: boolean;
+  trendRegime: boolean;
+}
+
+export const DEFAULT_DENSE_CHART_LAYER_SELECTION: DenseChartLayerSelection = {
+  profile: false,
+  secondaryIndicators: false,
+  signals: false,
+  structure: false,
+  trendRegime: false,
+};
+
+export interface CompactAnnotationEvent {
+  key: string;
+  layer: string;
+  label: string;
+  tone: Exclude<CompactAnnotationTone, "mixed">;
+  x: number;
+  y: number;
+}
+
+export interface CompactAnnotationCluster {
+  key: string;
+  layer: string;
+  label: string;
+  count: number;
+  x: number;
+  y: number;
+  tone: CompactAnnotationTone;
+  detail: string;
+}
+
+export interface CompactAnnotationDisplay {
+  labelKeys: string[];
+  clusters: CompactAnnotationCluster[];
+}
+
+export function shouldRenderDenseChartLayer(
+  mode: CompactAnnotationMode,
+  layer: DenseChartLayer,
+  selection: DenseChartLayerSelection = DEFAULT_DENSE_CHART_LAYER_SELECTION,
+): boolean {
+  if (mode === "all") return true;
+  if (layer === "annotations") return selection.signals;
+  if (layer === "profile") return selection.profile;
+  if (layer === "autoLevels") return selection.structure;
+  if (layer === "trendRegime") return selection.trendRegime;
+  if (layer === "secondaryIndicators") return selection.secondaryIndicators;
+  return false;
+}
+
+export function buildIntradayMinuteBars(
+  points: IntradayMinutePointLike[],
+  options: IntradayMinuteBarOptions = {},
+): IntradayMinuteBarLike[] {
+  const orderedPoints = [...(Array.isArray(points) ? points : [])]
+    .filter((point) => point.date && point.time && isFiniteNumber(point.price))
+    .sort((left, right) => {
+      const leftKey = left.datetime || `${left.date || ""}T${left.time || ""}`;
+      const rightKey = right.datetime || `${right.date || ""}T${right.time || ""}`;
+      return leftKey.localeCompare(rightKey);
+    });
+
+  const result: IntradayMinuteBarLike[] = [];
+  let previousPrice = isFiniteNumber(options.prevClose) ? options.prevClose : null;
+  orderedPoints.forEach((point) => {
+    const close = Number(point.price);
+    const open = previousPrice ?? close;
+    const minuteLabel = `${point.date} ${(point.time || "").slice(0, 5)}`;
+    result.push({
+      date: minuteLabel,
+      symbol: options.symbol || point.symbol || "",
+      market: options.market || "INTRADAY",
+      open,
+      high: Math.max(open, close),
+      low: Math.min(open, close),
+      close,
+      volume: isFiniteNumber(point.volume) ? point.volume : null,
+      amount: isFiniteNumber(point.amount) ? point.amount : null,
+      source: options.source || "intraday",
+      period_label: minuteLabel,
+    });
+    previousPrice = close;
+  });
+
+  return result;
 }
 
 export type KlineEventDensityTone = KlineEventSummaryTone | "mixed";
@@ -3695,6 +4037,72 @@ export function buildKlineEventDensity(input: KlineEventDensityInput): KlineEven
         detail,
       };
     });
+}
+
+export function buildCompactAnnotationDisplay(
+  events: CompactAnnotationEvent[],
+  options: {
+    activeKey?: string | null;
+    minClusterGap?: number;
+    mode?: CompactAnnotationMode;
+  } = {},
+): CompactAnnotationDisplay {
+  const normalized = events
+    .filter((event) =>
+      event.key &&
+      event.layer &&
+      event.label &&
+      isFiniteNumber(event.x) &&
+      isFiniteNumber(event.y),
+    )
+    .sort((left, right) => left.layer.localeCompare(right.layer) || left.x - right.x || left.key.localeCompare(right.key));
+  const activeKey = options.activeKey || null;
+  if ((options.mode || "compact") === "all") {
+    return {
+      labelKeys: normalized.map((event) => event.key),
+      clusters: [],
+    };
+  }
+
+  const minClusterGap = Math.max(0, Number(options.minClusterGap ?? 18));
+  const labelKeys = activeKey && normalized.some((event) => event.key === activeKey) ? [activeKey] : [];
+  const clusters: CompactAnnotationCluster[] = [];
+  let group: CompactAnnotationEvent[] = [];
+  const flushGroup = () => {
+    if (group.length <= 1) {
+      group = [];
+      return;
+    }
+    const tones = Array.from(new Set(group.map((event) => event.tone)));
+    const count = group.length;
+    clusters.push({
+      key: `cluster-${group[0].layer}-${group.map((event) => event.key).join("-")}`,
+      layer: group[0].layer,
+      label: String(count),
+      count,
+      x: averageNumbers(group.map((event) => event.x)) || group[0].x,
+      y: averageNumbers(group.map((event) => event.y)) || group[0].y,
+      tone: tones.length === 1 ? tones[0] : "mixed",
+      detail: group.map((event) => event.label).join("、"),
+    });
+    group = [];
+  };
+
+  normalized.forEach((event) => {
+      const previous = group[group.length - 1];
+      if (!previous || previous.layer === event.layer && Math.abs(event.x - previous.x) <= minClusterGap) {
+        group.push(event);
+        return;
+      }
+      flushGroup();
+      group.push(event);
+    });
+  flushGroup();
+
+  return {
+    labelKeys,
+    clusters,
+  };
 }
 
 export function buildKlineEventBacktestSummary(input: KlineEventBacktestInput): KlineEventBacktestItem[] {

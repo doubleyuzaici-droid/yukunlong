@@ -1,24 +1,41 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { DataTrustPanel } from "../components/DataTrustPanel";
 import {
   PriceHistoryChart,
-  QuoteCard,
   RealtimeMarketPanel,
   TradingSignalKlinePanel,
 } from "../components/MarketWidgets";
+import {
+  buildReadableStrategyDecisionCopy,
+  buildReadableStrategyGateText,
+  type ReadableStrategyStepLike,
+} from "../components/TradingSignalKline.helpers.js";
 import FundamentalsPage from "./FundamentalsPage";
 import NewsEvidencePage from "./NewsEvidencePage";
 import {
-  buildRelativeStrengthTrendModel,
+  buildDisplayQuoteModel,
+  buildWorkspaceLoadMessage,
   buildKlineEvidenceEvents,
   buildMarketAnalysisOverview as buildMarketAnalysisOverviewModel,
+  buildWorkspaceDataStatusModel,
+  buildWorkspaceNavigationModel,
   type KlineEvidenceEvent,
   type MarketAnalysisItem as OverviewItem,
   type MarketAnalysisOverviewModel as OverviewModel,
   type MarketAnalysisTechnicalChart,
   type RelativeStrengthTrendModel,
+  type WorkspaceDataStatusModel,
+  type WorkspaceNavigationItem,
+  type WorkspaceNavigationModel,
 } from "./SymbolWorkspacePage.helpers";
-import type { MarketContextPayload, MarketHistoryBar, MarketHistoryPayload, MarketQuote } from "../types/market";
+import type {
+  IntradayPayload,
+  MarketContextPayload,
+  MarketHistoryBar,
+  MarketHistoryPayload,
+  MarketQuote,
+  RealtimeQuote,
+  RealtimeQuotePayload,
+} from "../types/market";
 import {
   formatCompactNumber,
   formatMoney,
@@ -35,11 +52,81 @@ type SymbolWorkspaceTab = "overview" | "chart" | "fundamentals" | "news" | "revi
 const SYMBOL_WORKSPACE_TABS: { key: SymbolWorkspaceTab; label: string; note: string }[] = [
   { key: "overview", label: "行情分析", note: "价格、指标、资金、策略" },
   { key: "chart", label: "图表信号", note: "K线、指标、信号点" },
-  { key: "fundamentals", label: "基本面估值", note: "财务、估值、血缘" },
+  { key: "fundamentals", label: "财报估值", note: "三表、估值、血缘" },
   { key: "news", label: "新闻证据", note: "公告、资讯、证据" },
   { key: "review", label: "信号审查", note: "Agent、风险、解释" },
   { key: "history", label: "历史表现", note: "信号、日线、后验" },
 ];
+
+function readableStrategyModeLabel(mode: ResonanceV2Analysis["mode"]) {
+  return mode === "aggressive" ? "激进权重模式" : "保守确认模式";
+}
+
+function buildReadableSymbolStrategySteps(analysis: ResonanceV2Analysis): ReadableStrategyStepLike[] {
+  const trendLabel = analysis.trend_state?.label || analysis.decision.label || "-";
+  const trendBad = /空|弱|bear|down|未通过/i.test(trendLabel);
+  const trendGood = !trendBad && /多|bull|up|向上|强势/i.test(trendLabel);
+  const warningLevel = analysis.sell_signal?.warning_level?.level || 0;
+  return [
+    buildReadableStrategyGateText({
+      gate: "M1",
+      trendGood,
+      trendBad,
+      trendLabel,
+    }),
+    buildReadableStrategyGateText({
+      gate: "M2",
+      marketPassed: Boolean(analysis.market_filter?.passed),
+      marketStatus: analysis.market_filter?.status,
+      benchmarkSymbol: analysis.market_filter?.benchmark_symbol,
+    }),
+    buildReadableStrategyGateText({
+      gate: "M3",
+      buyTriggered: Boolean(analysis.buy_signal?.mode_signal),
+      buyScore: analysis.buy_signal?.score,
+      buyThreshold: analysis.buy_signal?.threshold,
+    }),
+    buildReadableStrategyGateText({
+      gate: "M4",
+      emergency: analysis.sell_signal?.emergency,
+      regularExit: analysis.sell_signal?.regular_exit,
+      warningLevel,
+      warningLabel: analysis.sell_signal?.warning_level?.label,
+      sellAction: analysis.sell_signal?.warning_level?.action,
+      sellScore: analysis.sell_signal?.score,
+    }),
+    buildReadableStrategyGateText({
+      gate: "M5",
+      shares: analysis.position_plan?.suggested_shares,
+      positionPct: analysis.position_plan?.suggested_position_pct,
+      riskPct: analysis.position_plan?.risk_pct,
+    }),
+  ];
+}
+
+function buildReadableSymbolStrategyCopy(analysis: ResonanceV2Analysis) {
+  return buildReadableStrategyDecisionCopy({
+    date: analysis.latest_bar?.date,
+    symbol: analysis.symbol,
+    modeLabel: readableStrategyModeLabel(analysis.mode),
+    decisionLabel: analysis.decision.label,
+    decisionAction:
+      analysis.sell_signal?.warning_level?.action ||
+      analysis.trend_state?.action ||
+      analysis.decision.action,
+    steps: buildReadableSymbolStrategySteps(analysis),
+  });
+}
+
+function readableRiskFlag(flag: string) {
+  return flag
+    .replace(/S_buy/g, "买入强度")
+    .replace(/S_sell/g, "卖出压力")
+    .replace(/大盘过滤转为reject或missing/g, "大盘环境转弱或基准数据缺失")
+    .replace(/reject或missing/g, "未通过或数据缺失")
+    .replace(/\breject\b/g, "未通过")
+    .replace(/\bmissing\b/g, "数据缺失");
+}
 
 function defaultStartFor(endDate: string, years = 3) {
   const parsed = new Date(`${endDate}T00:00:00Z`);
@@ -50,10 +137,42 @@ function defaultStartFor(endDate: string, years = 3) {
   return parsed.toISOString().slice(0, 10);
 }
 
-interface ApiResponse<T> {
-  success: boolean;
-  data: T;
-  error?: string | null;
+type ApiResponse<T> =
+  | {
+      success: true;
+      data: T;
+      error?: string | null;
+    }
+  | {
+      success: false;
+      data?: T;
+      error?: string | null;
+    };
+
+async function fetchApiPayload<T>(url: string, fallbackError: string): Promise<ApiResponse<T>> {
+  try {
+    const response = await fetch(url);
+    const payload = await response.json() as Partial<ApiResponse<T>> & { detail?: string };
+    if (payload && typeof payload.success === "boolean") {
+      return payload as ApiResponse<T>;
+    }
+    return {
+      success: false,
+      error: payload?.error || payload?.detail || fallbackError,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error && error.message ? error.message : fallbackError,
+    };
+  }
+}
+
+interface WatchlistItem {
+  symbol: string;
+  name?: string | null;
+  market?: string | null;
+  status?: string | null;
 }
 
 interface SignalHistoryRow {
@@ -335,10 +454,16 @@ export default function SymbolWorkspacePage({
   const [signalExplain, setSignalExplain] = useState<SignalExplainPayload | null>(null);
   const [readiness, setReadiness] = useState<AnalysisReadinessPayload | null>(null);
   const [activeTab, setActiveTab] = useState<SymbolWorkspaceTab>("overview");
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const [recentSymbols, setRecentSymbols] = useState<string[]>([]);
   const [strategyMode, setStrategyMode] = useState<"conservative" | "aggressive">("conservative");
   const [strategyAnalysis, setStrategyAnalysis] = useState<ResonanceV2Analysis | null>(null);
   const [strategyBacktest, setStrategyBacktest] = useState<ResonanceV2BacktestPayload | null>(null);
   const [strategyActionMessage, setStrategyActionMessage] = useState("");
+  const [realtimePayload, setRealtimePayload] = useState<{ quote: RealtimeQuote | null; intraday: IntradayPayload | null }>({
+    quote: null,
+    intraday: null,
+  });
   const [strategyBusy, setStrategyBusy] = useState(false);
   const [message, setMessage] = useState("读取中");
   const [loading, setLoading] = useState(false);
@@ -350,6 +475,34 @@ export default function SymbolWorkspacePage({
       setStart(defaultStartFor(initialEnd));
     }
   }, [initialSymbol, initialEnd]);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem("tradingagents.symbolWorkspace.recentSymbols");
+      setRecentSymbols(stored ? JSON.parse(stored) : []);
+    } catch {
+      setRecentSymbols([]);
+    }
+    const loadWatchlist = async () => {
+      const payload = await fetchApiPayload<WatchlistItem[]>("/api/research/watchlist", "自选股服务未连接");
+      setWatchlist(payload.success ? payload.data : []);
+    };
+    void loadWatchlist();
+  }, []);
+
+  const rememberRecentSymbol = (nextSymbol: string) => {
+    const normalized = nextSymbol.trim().toUpperCase();
+    if (!normalized) return;
+    setRecentSymbols((value) => {
+      const next = [normalized, ...value.filter((item) => item !== normalized)].slice(0, 8);
+      try {
+        window.localStorage.setItem("tradingagents.symbolWorkspace.recentSymbols", JSON.stringify(next));
+      } catch {
+        // Recent symbols are a convenience only; failing to persist should not block analysis.
+      }
+      return next;
+    });
+  };
 
   const load = async (
     event?: FormEvent,
@@ -365,6 +518,7 @@ export default function SymbolWorkspacePage({
     const signalParams = new URLSearchParams({ symbol: targetSymbol, start: targetStart, end: targetEnd });
     const contextParams = new URLSearchParams({ symbol: targetSymbol, start: targetStart, end: targetEnd, limit: "180" });
     const readinessParams = new URLSearchParams({ symbol: targetSymbol, date: targetEnd });
+    const realtimeParams = new URLSearchParams({ symbols: targetSymbol });
     const strategyParams = new URLSearchParams({
       symbol: targetSymbol,
       start: targetStart,
@@ -373,24 +527,51 @@ export default function SymbolWorkspacePage({
       capital: "1000000",
     });
     try {
-      const [historyResponse, signalResponse, contextResponse, strategyResponse, readinessResponse] = await Promise.all([
-        fetch(`/api/market/history?${historyParams.toString()}`),
-        fetch(`/api/signals/history?${signalParams.toString()}`),
-        fetch(`/api/market/context?${contextParams.toString()}`),
-        fetch(`/api/strategies/resonance-v2/analyze?${strategyParams.toString()}`),
-        fetch(`/api/professional/analysis-readiness?${readinessParams.toString()}`),
+      const [historyPayload, signalPayload, contextPayload, strategyPayload, readinessPayload, realtimeQuotePayload] = await Promise.all([
+        fetchApiPayload<MarketHistoryPayload>(
+          `/api/market/history?${historyParams.toString()}`,
+          "行情服务未连接",
+        ),
+        fetchApiPayload<SignalHistoryPayload>(
+          `/api/signals/history?${signalParams.toString()}`,
+          "信号服务未连接",
+        ),
+        fetchApiPayload<MarketContextPayload>(
+          `/api/market/context?${contextParams.toString()}`,
+          "市场上下文服务未连接",
+        ),
+        fetchApiPayload<ResonanceV2Analysis>(
+          `/api/strategies/resonance-v2/analyze?${strategyParams.toString()}`,
+          "V2策略服务未连接",
+        ),
+        fetchApiPayload<AnalysisReadinessPayload>(
+          `/api/professional/analysis-readiness?${readinessParams.toString()}`,
+          "分析完整度服务未连接",
+        ),
+        fetchApiPayload<RealtimeQuotePayload>(
+          `/api/market/realtime/quotes?${realtimeParams.toString()}`,
+          "准实时行情服务未连接",
+        ),
       ]);
-      const historyPayload = (await historyResponse.json()) as ApiResponse<MarketHistoryPayload>;
-      const signalPayload = (await signalResponse.json()) as ApiResponse<SignalHistoryPayload>;
-      const contextPayload = (await contextResponse.json()) as ApiResponse<MarketContextPayload>;
-      const strategyPayload = (await strategyResponse.json()) as ApiResponse<ResonanceV2Analysis>;
-      const readinessPayload = (await readinessResponse.json()) as ApiResponse<AnalysisReadinessPayload>;
+      const failedServiceLabels = [
+        historyPayload.success ? null : "行情",
+        signalPayload.success ? null : "信号",
+        contextPayload.success ? null : "上下文",
+        strategyPayload.success ? null : "V2策略",
+        readinessPayload.success ? null : "完整度",
+      ].filter((item): item is string => Boolean(item));
       if (historyPayload.success) {
         setHistory(historyPayload.data);
+      } else {
+        setHistory(null);
       }
       setContext(contextPayload.success ? contextPayload.data : null);
       setStrategyAnalysis(strategyPayload.success ? strategyPayload.data : null);
       setReadiness(readinessPayload.success ? readinessPayload.data : null);
+      setRealtimePayload({
+        quote: realtimeQuotePayload.success ? realtimeQuotePayload.data.quotes[0] || null : null,
+        intraday: null,
+      });
       if (signalPayload.success) {
         setSignals(signalPayload.data.signals);
         setSelectedSignal(signalPayload.data.signals[0] || null);
@@ -398,15 +579,27 @@ export default function SymbolWorkspacePage({
         setSignals([]);
         setSelectedSignal(null);
       }
-      if (historyPayload.success) onContextChange?.(historyPayload.data.symbol, targetEnd);
-      setMessage(
-        historyPayload.success
-          ? `读取 ${historyPayload.data.bar_count} 根日线，${signalPayload.success ? signalPayload.data.total_count : 0} 条信号`
-          : historyPayload.error || "个股行情读取失败",
-      );
+      if (historyPayload.success) {
+        onContextChange?.(historyPayload.data.symbol, targetEnd);
+        rememberRecentSymbol(historyPayload.data.symbol);
+      }
+      setMessage(buildWorkspaceLoadMessage({
+        historySuccess: historyPayload.success,
+        historyError: historyPayload.success ? null : historyPayload.error,
+        barCount: historyPayload.success ? historyPayload.data.bar_count : 0,
+        signalSuccess: signalPayload.success,
+        signalCount: signalPayload.success ? signalPayload.data.total_count : 0,
+        failedServiceLabels,
+      }));
     } catch {
-      setMessage("行情或信号服务未连接");
+      setHistory(null);
+      setContext(null);
+      setSignals([]);
+      setSelectedSignal(null);
+      setStrategyAnalysis(null);
       setReadiness(null);
+      setRealtimePayload({ quote: null, intraday: null });
+      setMessage("后端 API 未连接：请先启动服务（默认 8100），再刷新个股工作台。");
     }
     setLoading(false);
   };
@@ -414,6 +607,13 @@ export default function SymbolWorkspacePage({
   const changeStrategyMode = (mode: "conservative" | "aggressive") => {
     setStrategyMode(mode);
     void load(undefined, symbol, end, mode);
+  };
+
+  const openNavigationSymbol = (nextSymbol: string) => {
+    if (!nextSymbol || nextSymbol === symbol) return;
+    setSymbol(nextSymbol);
+    setActiveTab("overview");
+    void load(undefined, nextSymbol, end, strategyMode, start);
   };
 
   const createStrategySignal = async () => {
@@ -506,16 +706,49 @@ export default function SymbolWorkspacePage({
       })),
     [signals],
   );
+  const realtimeQuote = realtimePayload.intraday?.quote || realtimePayload.quote;
+  const displayQuote = useMemo(
+    () =>
+      buildDisplayQuoteModel({
+        historyQuote: history?.quote || null,
+        realtimeQuote,
+      }),
+    [history?.quote, realtimeQuote],
+  );
   const marketOverview = useMemo(
     () =>
       buildMarketAnalysisOverviewModel({
         history,
+        displayQuote: displayQuote.quote,
+        displayQuoteFreshnessText: displayQuote.freshnessText,
+        researchQuoteDetail: displayQuote.researchDetail,
         context,
         signals,
         readiness,
         strategyAnalysis,
       }),
-    [context, history, readiness, signals, strategyAnalysis],
+    [context, displayQuote, history, readiness, signals, strategyAnalysis],
+  );
+  const dataStatus = useMemo(
+    () =>
+      buildWorkspaceDataStatusModel({
+        history,
+        context,
+        displayQuote: displayQuote.quote,
+        readiness,
+        strategyAnalysis,
+      }),
+    [context, displayQuote.quote, history, readiness, strategyAnalysis],
+  );
+  const navigation = useMemo(
+    () =>
+      buildWorkspaceNavigationModel({
+        currentSymbol: history?.symbol || symbol,
+        watchlist,
+        signals,
+        recentSymbols,
+      }),
+    [history?.symbol, recentSymbols, signals, symbol, watchlist],
   );
   const chartEvidenceEvents = useMemo<KlineEvidenceEvent[]>(
     () =>
@@ -527,7 +760,7 @@ export default function SymbolWorkspacePage({
       }),
     [history, readiness, signals, strategyAnalysis],
   );
-  const quote = history?.quote;
+  const quote = displayQuote.quote as MarketQuote | RealtimeQuote | null;
   const displayName =
     history?.display_name ||
     (history?.name ? `${history.name} / ${history.symbol}` : history?.symbol || symbol);
@@ -595,56 +828,14 @@ export default function SymbolWorkspacePage({
         <span className="muted">{message}</span>
       </form>
 
-      <DataTrustPanel
-        compact
-        title="个股工作台可信度"
-        summary="统一披露行情、因子、资金流、基准和策略数据覆盖，避免把缺失数据误读成中性结论。"
-        items={[
-          { label: history?.asset_type === "index" ? "指数名称" : "标的名称", value: displayName, tone: history ? "good" : "warn" },
-          { label: "代码映射", value: aliasNotice || "规范代码", tone: aliasNotice ? "warn" : "good" },
-          { label: "行情源", value: quote?.source || "未加载", tone: quote?.source ? "good" : "warn" },
-          { label: "交易日", value: quote?.trade_date || "-", tone: quote?.freshness_status === "fresh" ? "good" : "warn" },
-          { label: "本地日线", value: `${history?.bar_count || 0} 根`, tone: (history?.bar_count || 0) >= 90 ? "good" : "warn" },
-          { label: "因子覆盖", value: `${context?.data_coverage.factor_rows || 0} 行`, tone: (context?.data_coverage.factor_rows || 0) > 0 ? "good" : "warn" },
-          { label: "资金流覆盖", value: `${context?.data_coverage.fund_flow_rows || 0} 行`, tone: (context?.data_coverage.fund_flow_rows || 0) > 0 ? "good" : "warn" },
-          { label: "V2基准", value: strategyAnalysis?.market_filter?.benchmark_symbol || "-", tone: strategyAnalysis?.data_quality?.has_benchmark ? "good" : "warn" },
-        ]}
-        warnings={[
-          ...(quote?.delay_policy ? [quote.delay_policy] : []),
-          ...(strategyAnalysis?.data_quality?.blocking_reasons || []),
-          ...(strategyAnalysis?.data_quality?.warnings || []),
-        ]}
+      <WorkspaceDataStatusPanel
+        model={dataStatus}
         disclaimer={strategyAnalysis?.disclaimer || "本页仅用于研究和模拟交易，不构成投资建议或实盘指令。"}
       />
-      <AnalysisReadinessPanel readiness={readiness} />
 
       <div className="symbol-layout symbol-layout-three">
         <aside className="symbol-side symbol-left-rail">
-          <QuoteCard quote={quote} />
-          <div className="list-panel compact-list">
-            <h2>行情状态</h2>
-            <p>
-              <span>数据源</span>
-              <strong>{quote?.source || "-"}</strong>
-            </p>
-            <p>
-              <span>交易日</span>
-              <strong>{quote?.trade_date || "-"}</strong>
-            </p>
-            <p>
-              <span>新鲜度</span>
-              <strong>{quote?.freshness_text || "-"}</strong>
-            </p>
-            <p>
-              <span>延迟策略</span>
-              <strong>{quote?.delay_policy || "-"}</strong>
-            </p>
-            <p>
-              <span>本地日线</span>
-              <strong>{history?.bar_count || 0} 根</strong>
-            </p>
-          </div>
-          <ContextStatusCard context={context} />
+          <SymbolNavigationRail navigation={navigation} onOpenSymbol={openNavigationSymbol} />
         </aside>
 
         <div className="symbol-main symbol-workspace-core">
@@ -682,13 +873,16 @@ export default function SymbolWorkspacePage({
 
           {activeTab === "chart" && (
             <div className="symbol-tab-panel">
-              <RealtimeMarketPanel symbol={symbol} />
+              <RealtimeMarketPanel symbol={symbol} onDataChange={setRealtimePayload} />
               <TradingSignalKlinePanel
                 bars={history?.bars || []}
                 drawingScope={history?.symbol || symbol}
                 evidenceEvents={chartEvidenceEvents}
                 factorRows={context?.factor_series || []}
                 fundFlowRows={context?.fund_flow_series || []}
+                intradayPoints={realtimePayload.intraday?.points || []}
+                intradaySource={realtimePayload.intraday?.source || null}
+                realtimeQuote={realtimePayload.intraday?.quote || realtimePayload.quote}
                 signals={chartSignals}
                 strategyAnalysis={strategyAnalysis}
                 strategyControls={{
@@ -786,11 +980,15 @@ export default function SymbolWorkspacePage({
         <aside className="symbol-context-rail">
           <SymbolContextPanel
             context={context}
+            dataStatus={dataStatus}
             displayName={displayName}
             end={end}
             history={history}
             onOpenReview={() => setActiveTab("review")}
             quote={quote}
+            quoteFreshnessText={displayQuote.freshnessText}
+            quoteSourceDetail={displayQuote.sourceDetail}
+            researchQuoteDetail={displayQuote.researchDetail}
             selectedSignal={selectedSignal}
             signalExplain={signalExplain}
             strategyAnalysis={strategyAnalysis}
@@ -799,6 +997,106 @@ export default function SymbolWorkspacePage({
         </aside>
       </div>
     </section>
+  );
+}
+
+function WorkspaceDataStatusPanel({
+  disclaimer,
+  model,
+}: {
+  disclaimer: string;
+  model: WorkspaceDataStatusModel;
+}) {
+  return (
+    <details className={`workspace-data-status ${model.tone}`} open={model.tone === "blocked" || model.tone === "missing"}>
+      <summary>
+        <div>
+          <span className="eyebrow">Data Status</span>
+          <strong>{model.title}</strong>
+          <em>{model.subtitle}</em>
+        </div>
+        <div className="workspace-data-status-metrics">
+          {model.metrics.map((metric) => (
+            <span className={metric.tone} key={metric.key}>
+              {metric.label} <b>{metric.value}</b>
+            </span>
+          ))}
+        </div>
+      </summary>
+      <div className="workspace-data-status-body">
+        <div className="workspace-data-status-gaps">
+          {model.gaps.map((gap) => (
+            <div className={`workspace-data-gap ${gap.status}`} key={gap.key}>
+              <strong>{gap.label}</strong>
+              <span>{gap.impact}</span>
+              <em>{gap.nextStep}</em>
+            </div>
+          ))}
+          {model.gaps.length === 0 && <p className="empty-state">暂无优先数据缺口。</p>}
+        </div>
+        <div className="workspace-data-status-side">
+          <span>主下一步</span>
+          <strong>{model.primaryAction || "保持同步并进入图表信号复核。"}</strong>
+          {model.warnings.slice(0, 3).map((warning) => (
+            <em key={warning}>{warning}</em>
+          ))}
+          <small>{disclaimer}</small>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function SymbolNavigationRail({
+  navigation,
+  onOpenSymbol,
+}: {
+  navigation: WorkspaceNavigationModel;
+  onOpenSymbol: (symbol: string) => void;
+}) {
+  return (
+    <div className="symbol-navigation-rail">
+      <NavigationSection title="自选" items={navigation.watchlist} onOpenSymbol={onOpenSymbol} empty="自选股池暂无可用标的。" />
+      <NavigationSection title="信号" items={navigation.signals} onOpenSymbol={onOpenSymbol} empty="当前区间暂无机会信号。" />
+      <NavigationSection title="风险" items={navigation.risk} onOpenSymbol={onOpenSymbol} empty="暂无风险升高标的。" />
+      <NavigationSection title="最近" items={navigation.recent} onOpenSymbol={onOpenSymbol} empty="暂无最近查看。" />
+    </div>
+  );
+}
+
+function NavigationSection({
+  empty,
+  items,
+  onOpenSymbol,
+  title,
+}: {
+  empty: string;
+  items: WorkspaceNavigationItem[];
+  onOpenSymbol: (symbol: string) => void;
+  title: string;
+}) {
+  return (
+    <div className="symbol-navigation-section">
+      <div className="symbol-navigation-section-head">
+        <h2>{title}</h2>
+        <span>{items.length}</span>
+      </div>
+      <div className="symbol-navigation-list">
+        {items.map((item) => (
+          <button
+            className={`symbol-navigation-item ${item.tone} ${item.active ? "active" : ""}`}
+            key={`${title}-${item.symbol}-${item.label}`}
+            onClick={() => onOpenSymbol(item.symbol)}
+            type="button"
+          >
+            <strong>{item.label}</strong>
+            <span>{item.symbol}</span>
+            <em>{item.detail}</em>
+          </button>
+        ))}
+        {items.length === 0 && <p className="empty-state">{empty}</p>}
+      </div>
+    </div>
   );
 }
 
@@ -895,7 +1193,16 @@ function MarketAnalysisOverview({
   selectedSignal: SignalHistoryRow | null;
   strategyAnalysis: ResonanceV2Analysis | null;
 }) {
-  const relativeStrengthTrend = buildRelativeStrengthTrendModel(context?.factor_series || []);
+  const coreIndicators = overview.indicators.filter((item) =>
+    ["trend", "macd", "rsi", "boll", "fund_flow", "relative_strength"].includes(item.key),
+  );
+  const compactFeatures = overview.chartFeatures.map((item) =>
+    item.key === "signal_layer"
+      ? { ...item, value: `${chartSignals.length} 条`, detail: `${history?.bar_count || 0} 根K线 · ${item.detail}` }
+      : item,
+  );
+  const strategySteps = strategyAnalysis ? buildReadableSymbolStrategySteps(strategyAnalysis) : [];
+  const strategyCopy = strategyAnalysis ? buildReadableSymbolStrategyCopy(strategyAnalysis) : null;
   return (
     <div className="market-analysis-overview">
       <div className={`analysis-overview-hero ${overview.summary.tone}`}>
@@ -920,60 +1227,22 @@ function MarketAnalysisOverview({
         ))}
       </div>
 
-      <div className="analysis-overview-grid">
-        <section className="analysis-overview-panel analysis-kline-preview">
-          <div className="section-subhead">
-            <h2>K线与信号预览</h2>
-            <span className="muted">{history?.bar_count || 0} 根 · {chartSignals.length} 信号</span>
-          </div>
-          <PriceHistoryChart bars={history?.bars || []} signals={chartSignals} />
-          <div className="analysis-chart-feature-strip">
-            {overview.chartFeatures.map((item) => (
-              <OverviewMiniItem item={item} key={item.key} />
-            ))}
-          </div>
-        </section>
-
-        <section className="analysis-overview-panel">
-          <div className="section-subhead">
-            <h2>指标矩阵</h2>
-            <span className="muted">趋势 · 动能 · 波动 · 资金</span>
-          </div>
-          <div className="indicator-matrix">
-            {overview.indicators.map((item) => (
-              <IndicatorCard item={item} key={item.key} onOpenChart={onOpenChart} />
-            ))}
-          </div>
-        </section>
+      <div className="analysis-chart-feature-strip compact">
+        {compactFeatures.map((item) => (
+          <OverviewMiniItem item={item} key={item.key} />
+        ))}
       </div>
 
-      <div className="analysis-overview-grid secondary">
+      <div className="analysis-overview-grid focused">
         <section className="analysis-overview-panel">
           <div className="section-subhead">
-            <h2>指标与资金图表</h2>
-            <span className="muted">{context?.data_coverage.latest_factor_date || "待计算"}</span>
+            <h2>核心指标</h2>
+            <span className="muted">趋势 · 动能 · 资金 · 相对强弱</span>
           </div>
-          <div className="overview-chart-stack">
-            <div className="overview-chart-card">
-              <strong>技术指标走势</strong>
-              <div className="overview-technical-chart-grid">
-                {overview.technicalCharts.map((chart) => (
-                  <OverviewTechnicalChartCard chart={chart} key={chart.key} />
-                ))}
-              </div>
-            </div>
-            <div className="overview-chart-card">
-              <strong>20日收益因子</strong>
-              <FactorSparkline rows={context?.factor_series || []} />
-            </div>
-            <div className="overview-chart-card">
-              <strong>相对强弱趋势</strong>
-              <RelativeStrengthTrendChart model={relativeStrengthTrend} />
-            </div>
-            <div className="overview-chart-card">
-              <strong>资金流趋势</strong>
-              <FundFlowTrendChart rows={context?.fund_flow_series || []} />
-            </div>
+          <div className="indicator-matrix">
+            {coreIndicators.map((item) => (
+              <IndicatorCard item={item} key={item.key} onOpenChart={onOpenChart} />
+            ))}
           </div>
         </section>
 
@@ -983,17 +1252,17 @@ function MarketAnalysisOverview({
             <span className="muted">{strategyAnalysis?.strategy_name || "V2策略"}</span>
           </div>
           <div className="analysis-strategy-grid">
-            <MiniMetric label="V2结论" value={strategyAnalysis?.decision.label || "-"} />
-            <MiniMetric label="周线趋势" value={strategyAnalysis?.trend_state?.label || "-"} />
-            <MiniMetric label="S_buy" value={formatNumber(strategyAnalysis?.buy_signal?.score, 3)} />
-            <MiniMetric label="S_sell" value={formatNumber(strategyAnalysis?.sell_signal?.score, 2)} />
-            <MiniMetric label="止损" value={formatNumber(strategyAnalysis?.price_channels?.stop_price, 2)} />
-            <MiniMetric label="目标1/2" value={`${formatNumber(strategyAnalysis?.price_channels?.target1, 2)} / ${formatNumber(strategyAnalysis?.price_channels?.target2, 2)}`} />
+            <MiniMetric label="个股趋势" value={strategySteps[0]?.status || "-"} />
+            <MiniMetric label="市场环境" value={strategySteps[1]?.status || "-"} />
+            <MiniMetric label="买入强度" value={`${formatNumber(strategyAnalysis?.buy_signal?.score, 3)} / ${strategySteps[2]?.status || "-"}`} />
+            <MiniMetric label="卖出风险" value={`${formatNumber(strategyAnalysis?.sell_signal?.score, 2)} / ${strategySteps[3]?.status || "-"}`} />
+            <MiniMetric label="止损参考" value={formatNumber(strategyAnalysis?.price_channels?.stop_price, 2)} />
+            <MiniMetric label="仓位参考" value={`${formatCompactNumber(strategyAnalysis?.position_plan?.suggested_shares)} 股 / ${formatPercent(strategyAnalysis?.position_plan?.suggested_position_pct)}`} />
           </div>
           <div className="analysis-next-step-list">
-            {overview.nextSteps.map((step) => (
+            {(strategyCopy?.reasons || overview.nextSteps).slice(0, 2).map((step) => (
               <p key={step}>
-                <span>下一步</span>
+                <span>{strategyCopy ? "判断依据" : "主下一步"}</span>
                 <strong>{step}</strong>
               </p>
             ))}
@@ -1049,22 +1318,30 @@ function IndicatorCard({ item, onOpenChart }: { item: OverviewItem; onOpenChart:
 
 function SymbolContextPanel({
   context,
+  dataStatus,
   displayName,
   end,
   history,
   onOpenReview,
   quote,
+  quoteFreshnessText,
+  quoteSourceDetail,
+  researchQuoteDetail,
   selectedSignal,
   signalExplain,
   strategyAnalysis,
   symbol,
 }: {
   context: MarketContextPayload | null;
+  dataStatus: WorkspaceDataStatusModel;
   displayName: string;
   end: string;
   history: MarketHistoryPayload | null;
   onOpenReview: () => void;
-  quote?: MarketQuote | null;
+  quote?: MarketQuote | RealtimeQuote | null;
+  quoteFreshnessText: string;
+  quoteSourceDetail: string;
+  researchQuoteDetail: string;
   selectedSignal: SignalHistoryRow | null;
   signalExplain: SignalExplainPayload | null;
   strategyAnalysis: ResonanceV2Analysis | null;
@@ -1075,13 +1352,15 @@ function SymbolContextPanel({
     ...(context?.trading_rules.warnings || []),
     ...(strategyAnalysis?.data_quality?.blocking_reasons || []),
     ...(strategyAnalysis?.data_quality?.warnings || []),
-  ].filter(Boolean);
+  ].filter(Boolean).map(readableRiskFlag);
   const missingTables = signalExplain?.quality.missing_tables || [];
   const nextStep =
+    dataStatus.primaryAction ||
     signalExplain?.layers.decision.next_step ||
     strategyAnalysis?.trend_state?.action ||
     (selectedSignal ? "进入信号审查，核对证据、风险和后验表现。" : "先在图表信号页确认 K 线、信号点和数据覆盖。");
   const trustLabel =
+    dataStatus.title ||
     signalExplain?.quality.trust_level ||
     (context?.data_coverage.factor_rows ? "可用于研究" : "待补数据");
   const quoteToneClass = quote?.change_pct && quote.change_pct > 0
@@ -1102,8 +1381,10 @@ function SymbolContextPanel({
         <span>最新价</span>
         <strong>{formatNumber(quote?.price, 2)}</strong>
         <em className={quoteToneClass}>
-          {formatSignedPercent(quote?.change_pct)} · {quote?.freshness_text || "本地行情"}
+          {formatSignedPercent(quote?.change_pct)} · {quoteFreshnessText}
         </em>
+        <small>{quoteSourceDetail}</small>
+        <small>{researchQuoteDetail}</small>
       </div>
 
       <div className="symbol-context-metric-grid">
@@ -1132,25 +1413,19 @@ function SymbolContextPanel({
 
       <div className="symbol-context-block">
         <div className="section-subhead">
-          <h2>数据可信度</h2>
+          <h2>数据状态</h2>
           <span className="muted">{trustLabel}</span>
         </div>
         <div className="compact-list">
-          <p>
-            <span>行情源</span>
-            <strong>{quote?.source || context?.data_coverage.source || "-"}</strong>
-          </p>
-          <p>
-            <span>因子覆盖</span>
-            <strong>{context?.data_coverage.factor_rows || 0} 行</strong>
-          </p>
-          <p>
-            <span>资金流</span>
-            <strong>{context?.data_coverage.fund_flow_rows || 0} 行</strong>
-          </p>
+          {dataStatus.metrics.map((metric) => (
+            <p key={metric.key}>
+              <span>{metric.label}</span>
+              <strong>{metric.value}</strong>
+            </p>
+          ))}
           <p>
             <span>缺失表</span>
-            <strong>{missingTables.length}</strong>
+            <strong>{missingTables.length + dataStatus.gaps.length}</strong>
           </p>
         </div>
       </div>
@@ -1337,6 +1612,8 @@ function ResonanceV2StrategyPanel({
   const decisionTone = `resonance-decision ${analysis.decision.tone || "neutral"}`;
   const buyFactors = analysis.buy_signal?.factors || {};
   const sellComponents = analysis.sell_signal?.components || {};
+  const strategySteps = buildReadableSymbolStrategySteps(analysis);
+  const strategyCopy = buildReadableSymbolStrategyCopy(analysis);
   const warnings = [
     ...(analysis.data_quality?.blocking_reasons || []),
     ...(analysis.data_quality?.warnings || []),
@@ -1349,7 +1626,7 @@ function ResonanceV2StrategyPanel({
           <h2>V2 多指标共振策略</h2>
           <p>
             {analysis.latest_bar?.date || "-"} · {analysis.symbol} ·{" "}
-            {mode === "conservative" ? "保守硬 AND" : "激进加权 S_buy"}
+            {readableStrategyModeLabel(mode)}
           </p>
         </div>
         <div className="strategy-action-bar">
@@ -1381,20 +1658,20 @@ function ResonanceV2StrategyPanel({
       <div className={decisionTone}>
         <div>
           <span>当前结论</span>
-          <strong>{analysis.decision.label}</strong>
+          <strong>{strategyCopy.title}</strong>
         </div>
-        <p>{analysis.trend_state?.action || "-"} · {analysis.sell_signal?.warning_level?.action || "无预警"}</p>
+        <p>{strategyCopy.reasons.slice(0, 2).join(" ")}</p>
       </div>
 
       <div className="resonance-grid">
         <MiniMetric
-          label="M1 周线趋势"
-          value={`${analysis.trend_state?.label || "-"} / ${formatNumber(analysis.trend_state?.strength, 2)}% · ${analysis.trend_state?.sample_count || 0}周`}
+          label="个股趋势"
+          value={`${strategySteps[0]?.status || "-"} · ${analysis.trend_state?.label || "-"}`}
         />
-        <MiniMetric label="M2 大盘过滤" value={`${analysis.market_filter?.status || "-"} · ${analysis.market_filter?.benchmark_symbol || "-"}`} />
-        <MiniMetric label="M3 S_buy" value={`${formatNumber(analysis.buy_signal?.score, 3)} / ${analysis.buy_signal?.mode_signal ? "通过" : "未触发"}`} />
-        <MiniMetric label="M4 S_sell" value={`${formatNumber(analysis.sell_signal?.score, 2)} / ${analysis.sell_signal?.warning_level?.label || "-"}`} />
-        <MiniMetric label="M5 建议仓位" value={`${formatCompactNumber(analysis.position_plan?.suggested_shares)} 股 / ${formatPercent(analysis.position_plan?.suggested_position_pct)}`} />
+        <MiniMetric label="市场环境" value={`${strategySteps[1]?.status || "-"} · ${analysis.market_filter?.benchmark_symbol || "-"}`} />
+        <MiniMetric label="买入强度" value={`${formatNumber(analysis.buy_signal?.score, 3)} / ${strategySteps[2]?.status || "-"}`} />
+        <MiniMetric label="卖出风险" value={`${formatNumber(analysis.sell_signal?.score, 2)} / ${strategySteps[3]?.status || "-"}`} />
+        <MiniMetric label="仓位计划" value={`${formatCompactNumber(analysis.position_plan?.suggested_shares)} 股 / ${formatPercent(analysis.position_plan?.suggested_position_pct)}`} />
         <MiniMetric label="止损距离" value={`${formatNumber(analysis.position_plan?.stop_distance, 2)} · 风险 ${formatPercent(analysis.position_plan?.risk_pct)}`} />
       </div>
 
@@ -1441,7 +1718,7 @@ function ResonanceV2StrategyPanel({
         <div className="resonance-score-card">
           <div className="section-subhead">
             <h2>买入因子</h2>
-            <span className="muted">S_buy 权重拆解</span>
+            <span className="muted">买入强度拆解</span>
           </div>
           <ScoreRows
             rows={[
@@ -1456,7 +1733,7 @@ function ResonanceV2StrategyPanel({
         <div className="resonance-score-card">
           <div className="section-subhead">
             <h2>卖出因子</h2>
-            <span className="muted">S_sell 触发拆解</span>
+            <span className="muted">卖出压力拆解</span>
           </div>
           <ScoreRows
             rows={[
@@ -1814,7 +2091,7 @@ function SignalDetailWorkbench({
           <div className="list-panel compact-list">
             <h2>审查结论</h2>
             <p>{explain.review.summary || "暂无审查摘要"}</p>
-            {(explain.review.risk_flags || []).slice(0, 3).map((item) => <p key={item}>{item}</p>)}
+            {(explain.review.risk_flags || []).slice(0, 3).map((item) => <p key={item}>{readableRiskFlag(item)}</p>)}
           </div>
           <div className="list-panel compact-list">
             <h2>交易计划</h2>
@@ -1826,8 +2103,8 @@ function SignalDetailWorkbench({
       )}
       <div className="detail-grid">
         <SignalList title="证据" items={explain?.layers.explain.evidence || parseJsonList(signal.evidence_json)} />
-        <SignalList title="风险" items={explain?.layers.explain.risks || parseJsonList(signal.risk_json)} />
-        <SignalList title="失效条件" items={explain?.layers.explain.invalidations || parseJsonList(signal.invalid_json)} />
+        <SignalList title="风险" items={(explain?.layers.explain.risks || parseJsonList(signal.risk_json)).map(readableRiskFlag)} />
+        <SignalList title="失效条件" items={(explain?.layers.explain.invalidations || parseJsonList(signal.invalid_json)).map(readableRiskFlag)} />
       </div>
       <div className="data-table-wrap">
         <table className="data-table compact-table dense-table">

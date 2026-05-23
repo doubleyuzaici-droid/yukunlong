@@ -392,6 +392,10 @@ def test_professional_sync_lineage_factor_effectiveness_and_execution_queue(monk
             return "China A-share fundamentals for 600519.SH as of 20260510: ROE=31.5, gross_margin=91.2, pe_ttm=22.8, pb=7.2."
         if method == "get_income_statement":
             return "China A-share income for 600519.SH as of 20260510: revenue=184000000000, n_income=86000000000."
+        if method == "get_balance_sheet":
+            return "China A-share balance sheet for 600519.SH as of 20260510: total_assets=220000000000, total_liab=40000000000, total_hldr_eqy=180000000000."
+        if method == "get_cashflow":
+            return "China A-share cashflow for 600519.SH as of 20260510: n_cashflow_act=92000000000, n_cashflow_inv_act=-12000000000, n_cash_flows_fin_act=-38000000000."
         if method == "get_news":
             return "# China A-share news for 600519.SH\n\n- **2026-05-10** 渠道价格稳定\n  批价和库存维持稳定。"
         return ""
@@ -410,6 +414,15 @@ def test_professional_sync_lineage_factor_effectiveness_and_execution_queue(monk
     )
     assert fundamentals_sync.status_code == 200
     assert fundamentals_sync.json()["data"]["rows_written"] == 1
+    assert fundamentals_sync.json()["data"]["statement_rows_written"] == 3
+
+    synced_fundamentals = client.get("/api/professional/fundamentals?symbol=600519.SH&end=2026-05-10")
+    assert synced_fundamentals.status_code == 200
+    financial_reports = synced_fundamentals.json()["data"]["financial_reports"]
+    assert financial_reports["summary"]["available_count"] == 3
+    assert financial_reports["latest_by_type"]["income"]["metrics"]["revenue"] == 184000000000
+    assert financial_reports["latest_by_type"]["balance"]["metrics"]["total_assets"] == 220000000000
+    assert financial_reports["latest_by_type"]["cashflow"]["metrics"]["operating_cashflow"] == 92000000000
 
     news_sync = client.post(
         "/api/professional/news-evidence/sync",
@@ -428,7 +441,7 @@ def test_professional_sync_lineage_factor_effectiveness_and_execution_queue(monk
     assert lineage.status_code == 200
     lineage_payload = lineage.json()["data"]
     lineage_tables = {item["table"] for item in lineage_payload["items"]}
-    assert {"daily_bars", "factor_daily", "fundamental_snapshot", "news_evidence"}.issubset(lineage_tables)
+    assert {"daily_bars", "factor_daily", "fundamental_snapshot", "financial_statement", "news_evidence"}.issubset(lineage_tables)
     assert lineage_payload["summary"]["available_count"] >= 4
 
     decision = client.patch(

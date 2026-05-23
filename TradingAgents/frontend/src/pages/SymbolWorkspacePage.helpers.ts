@@ -1,3 +1,9 @@
+import {
+  buildReadableStrategyDecisionCopy,
+  buildReadableStrategyGateText,
+  type ReadableStrategyStepLike,
+} from "../components/TradingSignalKline.helpers.js";
+
 type MarketQuoteLike = {
   price?: number | null;
   prev_close?: number | null;
@@ -6,7 +12,14 @@ type MarketQuoteLike = {
   high?: number | null;
   low?: number | null;
   amount?: number | null;
+  source?: string | null;
+  provider?: string | null;
+  status?: string | null;
+  status_text?: string | null;
   trade_date?: string | null;
+  trade_time?: string | null;
+  timestamp?: string | null;
+  is_realtime?: boolean | null;
   freshness_status?: string | null;
   freshness_text?: string | null;
   delay_policy?: string | null;
@@ -50,8 +63,10 @@ type MarketContextLike = {
     total?: number | null;
   } | null;
   data_coverage?: {
+    bar_rows?: number | null;
     factor_rows?: number | null;
     fund_flow_rows?: number | null;
+    source?: string | null;
   } | null;
 };
 
@@ -70,6 +85,11 @@ type ReadinessLike = {
     status?: string | null;
     impact?: string | null;
     next_step?: string | null;
+  }[];
+  next_actions?: {
+    priority?: string | null;
+    label?: string | null;
+    action?: string | null;
   }[];
 };
 
@@ -92,6 +112,7 @@ type SignalLike = {
 };
 
 type StrategyLike = {
+  symbol?: string | null;
   latest_bar?: {
     date?: string | null;
     close?: number | null;
@@ -102,10 +123,13 @@ type StrategyLike = {
     tone?: string | null;
   } | null;
   trend_state?: {
+    label?: string | null;
     action?: string | null;
   } | null;
   buy_signal?: {
     mode_signal?: boolean | null;
+    score?: number | null;
+    threshold?: number | null;
   } | null;
   market_filter?: {
     passed?: boolean | null;
@@ -113,6 +137,7 @@ type StrategyLike = {
     benchmark_symbol?: string | null;
   } | null;
   sell_signal?: {
+    score?: number | null;
     regular_exit?: boolean | null;
     emergency?: boolean | null;
     warning_level?: {
@@ -126,6 +151,66 @@ type StrategyLike = {
     blocking_reasons?: string[];
   } | null;
 };
+
+function buildReadableOverviewStrategySteps(strategyAnalysis?: StrategyLike | null): ReadableStrategyStepLike[] {
+  if (!strategyAnalysis) return [];
+  const trendLabel = strategyAnalysis.trend_state?.label || strategyAnalysis.decision?.label || "-";
+  const trendBad = /空|弱|bear|down|未通过/i.test(trendLabel);
+  const trendGood = !trendBad && /多|bull|up|向上|强势/i.test(trendLabel);
+  const warningLevel = strategyAnalysis.sell_signal?.warning_level?.level || 0;
+  return [
+    buildReadableStrategyGateText({
+      gate: "M1",
+      trendGood,
+      trendBad,
+      trendLabel,
+    }),
+    buildReadableStrategyGateText({
+      gate: "M2",
+      marketPassed: Boolean(strategyAnalysis.market_filter?.passed),
+      marketStatus: strategyAnalysis.market_filter?.status,
+      benchmarkSymbol: strategyAnalysis.market_filter?.benchmark_symbol,
+    }),
+    buildReadableStrategyGateText({
+      gate: "M3",
+      buyTriggered: Boolean(strategyAnalysis.buy_signal?.mode_signal),
+      buyScore: strategyAnalysis.buy_signal?.score,
+      buyThreshold: strategyAnalysis.buy_signal?.threshold,
+    }),
+    buildReadableStrategyGateText({
+      gate: "M4",
+      emergency: Boolean(strategyAnalysis.sell_signal?.emergency),
+      regularExit: Boolean(strategyAnalysis.sell_signal?.regular_exit),
+      warningLevel,
+      warningLabel: strategyAnalysis.sell_signal?.warning_level?.label,
+      sellAction: strategyAnalysis.sell_signal?.warning_level?.action,
+      sellScore: strategyAnalysis.sell_signal?.score,
+    }),
+  ];
+}
+
+function buildReadableOverviewStrategyCopy(strategyAnalysis?: StrategyLike | null) {
+  if (!strategyAnalysis) return null;
+  return buildReadableStrategyDecisionCopy({
+    date: strategyAnalysis.latest_bar?.date,
+    symbol: strategyAnalysis.symbol,
+    decisionLabel: strategyAnalysis.decision?.label,
+    decisionAction:
+      strategyAnalysis.sell_signal?.warning_level?.action ||
+      strategyAnalysis.trend_state?.action ||
+      strategyAnalysis.decision?.action,
+    steps: buildReadableOverviewStrategySteps(strategyAnalysis),
+  });
+}
+
+function buildReadableMarketFilterDetail(strategyAnalysis: StrategyLike) {
+  return buildReadableStrategyGateText({
+    gate: "M2",
+    marketPassed: Boolean(strategyAnalysis.market_filter?.passed),
+    marketStatus: strategyAnalysis.market_filter?.status,
+    benchmarkSymbol: strategyAnalysis.market_filter?.benchmark_symbol,
+  }).detail;
+}
 
 export type MarketAnalysisTone = "opportunity" | "risk" | "warn" | "neutral" | "missing" | "good";
 
@@ -211,10 +296,425 @@ export interface MarketAnalysisOverviewInput {
     quote?: MarketQuoteLike | null;
     bars?: MarketBarLike[];
   } | null;
+  displayQuote?: MarketQuoteLike | null;
+  displayQuoteFreshnessText?: string | null;
+  researchQuoteDetail?: string | null;
   context: MarketContextLike | null;
   signals: SignalLike[];
   readiness: ReadinessLike | null;
   strategyAnalysis: StrategyLike | null;
+}
+
+type MarketMicrostructureTone = "live" | "fallback" | "unavailable" | "neutral" | "warn";
+
+type RealtimeQuoteLike = MarketQuoteLike & {
+  symbol?: string | null;
+  market?: string | null;
+  trade_time?: string | null;
+  source?: string | null;
+  provider?: string | null;
+  provider_status?: string | null;
+  status?: string | null;
+  status_text?: string | null;
+  is_realtime?: boolean | null;
+  refresh_interval_seconds?: number | null;
+};
+
+type IntradayPointLike = {
+  time?: string | null;
+  datetime?: string | null;
+  price?: number | null;
+  volume?: number | null;
+  amount?: number | null;
+};
+
+type IntradayPayloadLike = {
+  source?: string | null;
+  provider?: string | null;
+  provider_status?: string | null;
+  status?: string | null;
+  status_text?: string | null;
+  point_count?: number | null;
+  points?: IntradayPointLike[];
+  is_realtime?: boolean | null;
+  delay_policy?: string | null;
+};
+
+export interface MarketMicrostructureRow {
+  key: string;
+  label: string;
+  value: string;
+  detail: string;
+  tone: MarketMicrostructureTone;
+}
+
+export interface MarketTapeRow {
+  key: string;
+  time: string;
+  price: string;
+  volume: string;
+  amount: string;
+  tone: "good" | "risk" | "neutral";
+}
+
+export interface MarketMicrostructureModel {
+  statusTone: "live" | "fallback" | "unavailable";
+  sameSource: boolean;
+  providerLabel: string;
+  quoteSource: string;
+  intradaySource: string;
+  depthRows: MarketMicrostructureRow[];
+  brokerRows: MarketMicrostructureRow[];
+  tapeRows: MarketTapeRow[];
+  warnings: string[];
+}
+
+export type WorkspaceDataStatusTone = "ready" | "partial" | "blocked" | "missing";
+
+export interface WorkspaceDataStatusMetric {
+  key: string;
+  label: string;
+  value: string;
+  tone: WorkspaceDataStatusTone;
+}
+
+export interface WorkspaceDataStatusGap {
+  key: string;
+  label: string;
+  status: string;
+  impact: string;
+  nextStep: string;
+}
+
+export interface WorkspaceDataStatusModel {
+  tone: WorkspaceDataStatusTone;
+  title: string;
+  subtitle: string;
+  metrics: WorkspaceDataStatusMetric[];
+  gaps: WorkspaceDataStatusGap[];
+  warnings: string[];
+  primaryAction: string | null;
+}
+
+export interface WorkspaceNavigationItem {
+  symbol: string;
+  label: string;
+  detail: string;
+  tone: MarketAnalysisTone;
+  active: boolean;
+}
+
+export interface WorkspaceNavigationModel {
+  watchlist: WorkspaceNavigationItem[];
+  signals: WorkspaceNavigationItem[];
+  risk: WorkspaceNavigationItem[];
+  recent: WorkspaceNavigationItem[];
+}
+
+export interface DisplayQuoteModel {
+  quote: MarketQuoteLike | null;
+  source: "realtime" | "history" | "missing";
+  freshnessText: string;
+  researchDetail: string;
+  sourceDetail: string;
+  isRealtime: boolean;
+}
+
+export function buildDisplayQuoteModel({
+  historyQuote,
+  realtimeQuote,
+}: {
+  historyQuote?: MarketQuoteLike | null;
+  realtimeQuote?: MarketQuoteLike | null;
+}): DisplayQuoteModel {
+  const realtimePrice = finiteNumber(realtimeQuote?.price);
+  const historyPrice = finiteNumber(historyQuote?.price);
+  const hasRealtimePrice = realtimePrice != null && (realtimeQuote?.status === "live" || realtimeQuote?.is_realtime === true);
+  const source: DisplayQuoteModel["source"] = hasRealtimePrice ? "realtime" : historyPrice != null ? "history" : "missing";
+  const quote = source === "realtime" ? realtimeQuote || null : source === "history" ? historyQuote || null : null;
+  const realtimeStamp = [realtimeQuote?.trade_date, realtimeQuote?.trade_time].filter(Boolean).join(" ");
+  const freshnessText = source === "realtime"
+    ? `准实时 ${realtimeStamp || realtimeQuote?.timestamp || "-"}`
+    : historyQuote?.freshness_text || historyQuote?.trade_date || "等待行情";
+  const researchDate = historyQuote?.trade_date || "-";
+  const researchDetail = historyQuote
+    ? [
+        `研究日线 ${researchDate}`,
+        historyQuote.freshness_text,
+        historyQuote.source,
+      ].filter(Boolean).join(" · ")
+    : "研究日线未加载";
+  const sourceDetail = source === "realtime"
+    ? [
+        realtimeQuote?.status_text || "准实时行情快照",
+        realtimeQuote?.source || realtimeQuote?.provider,
+      ].filter(Boolean).join(" · ")
+    : historyQuote?.delay_policy || historyQuote?.source || "本地研究行情";
+
+  return {
+    quote,
+    source,
+    freshnessText,
+    researchDetail,
+    sourceDetail,
+    isRealtime: source === "realtime",
+  };
+}
+
+export function buildWorkspaceDataStatusModel({
+  history,
+  context,
+  displayQuote,
+  readiness,
+  strategyAnalysis,
+}: {
+  history: MarketAnalysisOverviewInput["history"];
+  context: MarketAnalysisOverviewInput["context"];
+  displayQuote?: MarketQuoteLike | null;
+  readiness: ReadinessLike | null;
+  strategyAnalysis: StrategyLike | null;
+}): WorkspaceDataStatusModel {
+  const blockerCount = readiness?.summary?.blocker_count || 0;
+  const warnCount = readiness?.summary?.warn_count || 0;
+  const strategyBlocks = strategyAnalysis?.data_quality?.blocking_reasons || [];
+  const strategyWarnings = strategyAnalysis?.data_quality?.warnings || [];
+  const hasHistory = Boolean(history?.bar_count);
+  const tone: WorkspaceDataStatusTone =
+    blockerCount > 0 || strategyBlocks.length > 0
+      ? "blocked"
+      : !hasHistory
+        ? "missing"
+        : warnCount > 0 || strategyWarnings.length > 0
+          ? "partial"
+          : "ready";
+  const titleMap: Record<WorkspaceDataStatusTone, string> = {
+    ready: "数据可用",
+    partial: "数据部分可用",
+    blocked: "核心阻断",
+    missing: "等待数据",
+  };
+  const subtitle =
+    readiness
+      ? `${Math.round((readiness.score || 0) * 100)}% 完整度 · ${readiness.summary?.ready_count || 0} ready / ${warnCount} warn / ${blockerCount} blocker`
+      : hasHistory
+        ? "已有本地行情，完整度诊断未返回。"
+        : "同步行情、因子和证据后再进入分析。";
+  const quote = displayQuote || history?.quote || null;
+  const metrics: WorkspaceDataStatusMetric[] = [
+    {
+      key: "quote",
+      label: "展示价",
+      value: quote?.source || context?.data_coverage?.source || "未加载",
+      tone: quote?.source || context?.data_coverage?.source ? "ready" : "missing",
+    },
+    {
+      key: "bars",
+      label: "日线",
+      value: `${history?.bar_count || context?.data_coverage?.bar_rows || 0} 根`,
+      tone: (history?.bar_count || context?.data_coverage?.bar_rows || 0) >= 90 ? "ready" : "partial",
+    },
+    {
+      key: "factors",
+      label: "因子",
+      value: `${context?.data_coverage?.factor_rows || 0} 行`,
+      tone: (context?.data_coverage?.factor_rows || 0) > 0 ? "ready" : "missing",
+    },
+    {
+      key: "fund_flow",
+      label: "资金流",
+      value: `${context?.data_coverage?.fund_flow_rows || 0} 行`,
+      tone: (context?.data_coverage?.fund_flow_rows || 0) > 0 ? "ready" : "partial",
+    },
+  ];
+  const gaps: WorkspaceDataStatusGap[] = (readiness?.categories || [])
+    .filter((item) => item.status !== "ready")
+    .slice(0, 5)
+    .map((item) => ({
+      key: item.key || item.label || "gap",
+      label: item.label || item.key || "数据缺口",
+      status: item.status || "warn",
+      impact: item.impact || "影响分析可信度",
+      nextStep: item.next_step || "补齐数据后复核。",
+    }));
+  const warnings = Array.from(new Set([
+    ...(quote?.delay_policy ? [quote.delay_policy] : []),
+    ...strategyBlocks,
+    ...strategyWarnings,
+  ].filter(Boolean)));
+  const primaryAction = readiness?.next_actions?.[0]
+    ? `${readiness.next_actions[0].priority || "P1"} · ${readiness.next_actions[0].label || readiness.next_actions[0].action}`
+    : gaps[0]?.nextStep || null;
+
+  return {
+    tone,
+    title: titleMap[tone],
+    subtitle,
+    metrics,
+    gaps,
+    warnings,
+    primaryAction,
+  };
+}
+
+export function buildWorkspaceNavigationModel({
+  currentSymbol,
+  watchlist = [],
+  signals = [],
+  recentSymbols = [],
+}: {
+  currentSymbol: string;
+  watchlist?: { symbol?: string | null; name?: string | null; market?: string | null; status?: string | null }[];
+  signals?: SignalLike[];
+  recentSymbols?: string[];
+}): WorkspaceNavigationModel {
+  const normalizedCurrent = String(currentSymbol || "").trim().toUpperCase();
+  const toItem = (
+    symbol: string,
+    label: string,
+    detail: string,
+    tone: MarketAnalysisTone = "neutral",
+  ): WorkspaceNavigationItem => ({
+    symbol,
+    label,
+    detail,
+    tone,
+    active: symbol.toUpperCase() === normalizedCurrent,
+  });
+  const watchlistItems = watchlist
+    .filter((item) => item.symbol)
+    .map((item) => toItem(
+      String(item.symbol),
+      item.name ? String(item.name) : String(item.symbol),
+      [item.market, item.status].filter(Boolean).join(" · ") || "自选标的",
+      "neutral",
+    ))
+    .sort((left, right) => Number(right.active) - Number(left.active) || left.symbol.localeCompare(right.symbol));
+  const signalItems = signals
+    .filter((item) => item.symbol)
+    .map((item) => toItem(
+      String(item.symbol),
+      item.signal_name || String(item.symbol),
+      [item.date, item.signal_level, typeof item.score === "number" ? `评分 ${formatNumber(item.score, 1)}` : null]
+        .filter(Boolean)
+        .join(" · ") || "历史信号",
+      item.direction === "opportunity" ? "opportunity" : item.direction === "risk" ? "risk" : "neutral",
+    ));
+  const seenRecent = new Set<string>();
+  const recentItems = [normalizedCurrent, ...recentSymbols.map((item) => String(item || "").trim().toUpperCase())]
+    .filter(Boolean)
+    .filter((item) => {
+      if (seenRecent.has(item)) return false;
+      seenRecent.add(item);
+      return true;
+    })
+    .slice(0, 6)
+    .map((item) => toItem(item, item, item === normalizedCurrent ? "当前标的" : "最近查看", "neutral"));
+
+  return {
+    watchlist: watchlistItems.slice(0, 8),
+    signals: signalItems.filter((item) => item.tone !== "risk").slice(0, 8),
+    risk: signalItems.filter((item) => item.tone === "risk").slice(0, 6),
+    recent: recentItems,
+  };
+}
+
+export function buildMarketMicrostructureModel({
+  quote,
+  intraday,
+}: {
+  quote?: RealtimeQuoteLike | null;
+  intraday?: IntradayPayloadLike | null;
+}): MarketMicrostructureModel {
+  const quoteProvider = quote?.provider || "";
+  const intradayProvider = intraday?.provider || "";
+  const quoteSource = quote?.source || quoteProvider || "-";
+  const intradaySource = intraday?.source || intradayProvider || "-";
+  const sameSource = Boolean(
+    (quoteProvider && intradayProvider && quoteProvider === intradayProvider) ||
+      (quoteSource !== "-" && intradaySource !== "-" && quoteSource === intradaySource),
+  );
+  const hasLiveQuote = quote?.status === "live" || quote?.is_realtime === true;
+  const hasLiveIntraday = intraday?.status === "live" || intraday?.is_realtime === true;
+  const hasFallbackQuote = quote?.status === "fallback";
+  const statusTone = hasLiveQuote || hasLiveIntraday ? "live" : hasFallbackQuote ? "fallback" : "unavailable";
+  const providerLabel = quoteProvider || intradayProvider || "未连接";
+  const quotePrice = finiteNumber(quote?.price);
+  const quoteChangePct = finiteNumber(quote?.change_pct);
+  const points = [...(intraday?.points || [])]
+    .filter((point) => finiteNumber(point.price) != null)
+    .sort((left, right) => (right.datetime || right.time || "").localeCompare(left.datetime || left.time || ""))
+    .slice(0, 8);
+  const tapeRows: MarketTapeRow[] = points.map((point, index) => {
+    const price = finiteNumber(point.price);
+    const tone: MarketTapeRow["tone"] =
+      quotePrice != null && price != null && price > quotePrice
+        ? "good"
+        : quotePrice != null && price != null && price < quotePrice
+          ? "risk"
+          : "neutral";
+    return {
+      key: `${point.datetime || point.time || index}-${index}`,
+      time: (point.time || point.datetime || "-").slice(0, 8),
+      price: formatNumber(price, 2),
+      volume: formatCompactNumber(finiteNumber(point.volume), 1),
+      amount: formatMoney(finiteNumber(point.amount)),
+      tone,
+    };
+  });
+
+  const warnings: string[] = [];
+  if (!quote) warnings.push("实时快照未连接，无法显示买卖价、成交额和涨跌幅。");
+  if (!intraday?.points?.length) warnings.push("分时点未连接，无法生成分钟成交代理列表。");
+  warnings.push("Level 2 十档摆盘、真实逐笔成交和经纪商队列仍未接入，当前仅展示快照与分钟分时。");
+
+  return {
+    statusTone,
+    sameSource,
+    providerLabel,
+    quoteSource,
+    intradaySource,
+    depthRows: [
+      {
+        key: "depth",
+        label: "盘口",
+        value: "未接入",
+        detail: "未接入 Level 2 十档买卖盘，暂不能像富途牛牛一样展示实时挂单深度。",
+        tone: "warn",
+      },
+      {
+        key: "quote",
+        label: "快照",
+        value: quote ? `${formatNumber(quote.price, 2)} / ${formatSignedPercent(quote.change_pct)}` : "-",
+        detail: quote?.status_text || "实时快照未连接。",
+        tone: statusTone,
+      },
+      {
+        key: "flow",
+        label: "日内量价",
+        value: `${intraday?.point_count || points.length || 0} 点`,
+        detail: quoteChangePct == null ? "用 1 分钟分时点观察日内走势。" : `日内涨跌 ${formatSignedPercent(quoteChangePct)}，分时来自 ${intradaySource}。`,
+        tone: hasLiveIntraday ? "live" : "neutral",
+      },
+    ],
+    brokerRows: [
+      {
+        key: "broker-queue",
+        label: "经纪队列",
+        value: "未接入",
+        detail: "未接入港股经纪商买卖队列，无法展示富途右侧买卖经纪排行。",
+        tone: "warn",
+      },
+      {
+        key: "tick",
+        label: "逐笔",
+        value: points.length > 0 ? "分钟代理" : "未接入",
+        detail: points.length > 0 ? "当前逐笔表使用 1 分钟分时点代理，不等同逐笔成交明细。" : "未接入真实逐笔成交。",
+        tone: points.length > 0 ? "neutral" : "warn",
+      },
+    ],
+    tapeRows,
+    warnings: Array.from(new Set(warnings)),
+  };
 }
 
 export function buildKlineEvidenceEvents({
@@ -336,7 +836,7 @@ export function buildKlineEvidenceEvents({
         tone: "risk",
         label: "盘",
         title: "大盘过滤未通过",
-        detail: `${strategyAnalysis.market_filter.benchmark_symbol || "-"} · ${strategyAnalysis.market_filter.status || "未通过"}`,
+        detail: buildReadableMarketFilterDetail(strategyAnalysis),
       });
     }
   }
@@ -358,14 +858,57 @@ export function classifyIndicatorTone(
   return "neutral";
 }
 
+export interface WorkspaceLoadMessageInput {
+  historySuccess: boolean;
+  historyError?: string | null;
+  barCount?: number | null;
+  signalSuccess: boolean;
+  signalCount?: number | null;
+  failedServiceLabels?: string[];
+}
+
+export function buildWorkspaceLoadMessage({
+  historySuccess,
+  historyError,
+  barCount,
+  signalSuccess,
+  signalCount,
+  failedServiceLabels = [],
+}: WorkspaceLoadMessageInput): string {
+  const failedServices = Array.from(
+    new Set([
+      ...failedServiceLabels.filter(Boolean),
+      ...(!signalSuccess && !failedServiceLabels.includes("信号") ? ["信号"] : []),
+    ]),
+  );
+
+  if (!historySuccess) {
+    const looksDisconnected =
+      failedServices.length >= 4 ||
+      (failedServices.includes("行情") && failedServices.includes("信号"));
+    if (looksDisconnected) {
+      return "后端 API 未连接：请先启动服务（默认 8100），再刷新个股工作台。";
+    }
+    return historyError ? `个股行情读取失败：${historyError}` : "个股行情读取失败";
+  }
+
+  const base = `读取 ${barCount || 0} 根日线，${signalCount || 0} 条信号`;
+  return failedServices.length > 0
+    ? `${base}；部分服务不可用：${failedServices.join("、")}`
+    : base;
+}
+
 export function buildMarketAnalysisOverview({
   history,
+  displayQuote,
+  displayQuoteFreshnessText,
+  researchQuoteDetail,
   context,
   signals,
   readiness,
   strategyAnalysis,
 }: MarketAnalysisOverviewInput): MarketAnalysisOverviewModel {
-  const quote = history?.quote || null;
+  const quote = displayQuote || history?.quote || null;
   const factor = context?.factor_snapshot || null;
   const bars = [...(history?.bars || [])]
     .filter((bar) => bar.date && typeof bar.close === "number")
@@ -399,11 +942,12 @@ export function buildMarketAnalysisOverview({
     latestSignal,
     readinessGaps,
   });
+  const readableStrategyCopy = buildReadableOverviewStrategyCopy(strategyAnalysis);
 
   return {
     summary: {
-      title: strategyAnalysis?.decision?.label || (latestSignal?.signal_name ? `${latestSignal.signal_name}观察` : "行情分析待确认"),
-      subtitle: strategyAnalysis?.trend_state?.action || context?.market_state?.label || "先确认行情、指标、资金和证据覆盖。",
+      title: readableStrategyCopy?.title || (latestSignal?.signal_name ? `${latestSignal.signal_name}观察` : "行情分析待确认"),
+      subtitle: readableStrategyCopy?.subtitle || context?.market_state?.label || "先确认行情、指标、资金和证据覆盖。",
       tone: summaryTone,
     },
     radar: [
@@ -437,10 +981,10 @@ export function buildMarketAnalysisOverview({
       },
       {
         key: "freshness",
-        label: "行情新鲜度",
-        value: quote?.freshness_text || quote?.trade_date || "-",
-        detail: quote?.delay_policy || "本地研究行情，不代表实时可交易盘口。",
-        tone: quote?.freshness_status === "fresh" ? "good" : quote ? "warn" : "missing",
+        label: "价格来源",
+        value: displayQuoteFreshnessText || quote?.freshness_text || quote?.trade_date || "-",
+        detail: researchQuoteDetail || quote?.delay_policy || "本地研究行情，不代表实时可交易盘口。",
+        tone: quote?.is_realtime || quote?.status === "live" || quote?.freshness_status === "fresh" ? "good" : quote ? "warn" : "missing",
       },
     ],
     indicators: [
@@ -539,8 +1083,8 @@ export function buildMarketAnalysisOverview({
       {
         key: "strategy",
         label: "V2 策略",
-        value: strategyAnalysis?.decision?.label || "-",
-        detail: strategyAnalysis?.trend_state?.action || "等待策略分析结果。",
+        value: readableStrategyCopy?.title || "-",
+        detail: readableStrategyCopy?.reasons[0] || "等待策略分析结果。",
         tone: strategyTone,
       },
       {
