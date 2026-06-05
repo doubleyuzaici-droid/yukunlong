@@ -1,0 +1,435 @@
+/* ============================================================
+   Symbol Workspace V2 — Design Tokens
+   作用域：仅 pages/symbol/** 下的组件
+   全局 index.css 的 token 不在本文件影响范围内。
+   对应 bridge §4 与 design brief §4。
+
+   主题：默认 dark；data-theme="light" 切到浅色。
+   Phase 4 PR-15。
+   ============================================================ */
+.symbol-workspace-v2 {
+  /* Backgrounds (dark workbench, aligned with V1 global tokens) */
+  --sw-bg-canvas:    var(--bg-primary, #0b0f14);
+  --sw-bg-surface:   rgba(19, 25, 34, 0.92);
+  --sw-bg-surface-2: rgba(27, 37, 48, 0.72);
+  --sw-bg-hover:     rgba(48, 54, 61, 0.86);
+  --sw-bg-input:     rgba(11, 15, 20, 0.78);
+
+  --sw-border-subtle: rgba(222, 225, 230, 0.12);
+  --sw-border-strong: var(--border-color, #33404d);
+  --sw-border-focus:  var(--action-primary, #0052ff);
+
+  --sw-text-primary:   var(--text-primary, #edf2f7);
+  --sw-text-secondary: var(--text-secondary, #aeb7c2);
+  --sw-text-tertiary:  var(--text-muted, #778391);
+  --sw-text-disabled:  rgba(119, 131, 145, 0.58);
+
+  /* Semantic — 5 色规范，禁止扩张。深色背景下饱和度略提。
+     注：success/danger 是"指标健康度"语义；股价涨跌请用 --sw-rise / --sw-fall。
+     两套独立避免误读。对应 readability-review.md P0-1。
+  */
+  --sw-success: var(--accent-green, #2fb47c);
+  --sw-warning: var(--accent-yellow, #e3b341);
+  --sw-danger:  var(--accent-red, #f06a5f);
+  --sw-info:    var(--action-primary, #0052ff);
+  --sw-neutral: var(--text-muted, #778391);
+
+  --sw-success-bg: rgba(47,180,124,0.12);
+  --sw-warning-bg: rgba(227,179,65,0.12);
+  --sw-danger-bg:  rgba(240,106,95,0.12);
+  --sw-info-bg:    rgba(0,82,255,0.15);
+  --sw-neutral-bg: rgba(119,131,145,0.12);
+
+  --sw-success-border: rgba(47,180,124,0.28);
+  --sw-warning-border: rgba(227,179,65,0.28);
+  --sw-danger-border:  rgba(240,106,95,0.30);
+  --sw-info-border:    rgba(0,82,255,0.48);
+
+  /* 股价涨跌专用色 — A 股红涨绿跌习惯。
+     与 success/danger 彻底分离，余光不会误读。
+     深色版用偏暖红 + 偏冷绿，区分度高。 */
+  --sw-rise: var(--price-up, #05b169);
+  --sw-fall: var(--price-down, #cf202f);
+  --sw-flat: var(--text-muted, #778391);
+
+  --sw-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, "PingFang SC", "Noto Sans SC", sans-serif;
+  --sw-font-mono: "SF Mono", Menlo, "Cascadia Code", "JetBrains Mono", monospace;
+
+  /* Spacing (4px base) */
+  --sw-sp-1: 4px;  --sw-sp-2: 8px;  --sw-sp-3: 12px; --sw-sp-4: 16px;
+  --sw-sp-5: 20px; --sw-sp-6: 24px; --sw-sp-8: 32px; --sw-sp-10: 40px;
+
+  /* Radii */
+  --sw-r-sm: 4px; --sw-r-md: 6px; --sw-r-lg: 8px;
+
+  /* Type scale (font-size / line-height / weight) */
+  --sw-title-l: 22px;
+  --sw-title-m: 16px;
+  --sw-title-s: 13px;
+  --sw-body-m: 14px;
+  --sw-body-s: 13px;
+  --sw-caption: 12px;
+  --sw-pill: 11px;
+
+  /* Override host */
+  font-family: var(--sw-font-sans);
+  background: var(--sw-bg-canvas);
+  color: var(--sw-text-primary);
+}
+
+/* 涨跌色彩 utility */
+.symbol-workspace-v2 .sw-rise { color: var(--sw-rise); }
+.symbol-workspace-v2 .sw-fall { color: var(--sw-fall); }
+.symbol-workspace-v2 .sw-flat { color: var(--sw-flat); }
+
+/* ============================================================
+   响应式断点 — bridge §10
+   ≥1440px 三栏完整
+   1024-1439 收窄右栏到 280
+   768-1023  取消右栏（下沉为底部抽屉，本期版本简化为直接 hidden）
+   <768     单栏堆叠 + profile strip 横滚
+   ============================================================ */
+@media (max-width: 1439px) {
+  .symbol-workspace-v2 .sw-context-rail {
+    width: 280px;
+  }
+  .symbol-workspace-v2 .sw-body {
+    grid-template-columns: 220px minmax(0, 1fr) 280px;
+  }
+}
+@media (max-width: 1023px) {
+  .symbol-workspace-v2 .sw-body {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  .symbol-workspace-v2 .sw-context-rail {
+    display: none;
+  }
+}
+@media (max-width: 767px) {
+  .symbol-workspace-v2 .sw-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .symbol-workspace-v2 .sw-nav-rail {
+    display: none;
+  }
+  .symbol-workspace-v2 .sw-header {
+    grid-template-columns: 1fr auto;
+    padding: 0 var(--sw-sp-3);
+    gap: var(--sw-sp-2);
+  }
+  .symbol-workspace-v2 .sw-header__search {
+    display: none;
+  }
+  .symbol-workspace-v2 .sw-header__brand {
+    gap: var(--sw-sp-2);
+    flex-wrap: wrap;
+  }
+  .symbol-workspace-v2 .sw-header__brand h1 {
+    font-size: 14px;
+  }
+  .symbol-workspace-v2 .sw-header__brand .sw-price {
+    font-size: 16px;
+    margin-left: 0;
+  }
+  .symbol-workspace-v2 .sw-header__brand .sw-freshness {
+    display: none;
+  }
+  .symbol-workspace-v2 .sw-profile-strip {
+    grid-template-columns: repeat(8, minmax(120px, 1fr));
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+  }
+  .symbol-workspace-v2 .sw-profile-cell {
+    scroll-snap-align: start;
+  }
+  .symbol-workspace-v2 .sw-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .symbol-workspace-v2 .sw-narrative {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .symbol-workspace-v2 .sw-matrix {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .symbol-workspace-v2 .sw-fund-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .symbol-workspace-v2 .sw-playbook-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .symbol-workspace-v2 .sw-risk__inputs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .symbol-workspace-v2 .sw-risk__output {
+    grid-template-columns: 1fr 1fr;
+  }
+  .symbol-workspace-v2 .sw-signal-detail__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .symbol-workspace-v2 .sw-signal-detail__head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .symbol-workspace-v2 .sw-playbook-history,
+  .symbol-workspace-v2 .sw-history-signal-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .symbol-workspace-v2 .sw-history-signal {
+    grid-template-columns: 72px minmax(0, 1fr) auto;
+  }
+  .symbol-workspace-v2 .sw-recent-bar-row {
+    grid-template-columns: 1fr 56px 64px 64px;
+  }
+  .symbol-workspace-v2 .sw-header__message {
+    display: none;
+  }
+  .symbol-workspace-v2 .sw-tab-bar {
+    top: 64px;
+    grid-template-columns: repeat(4, minmax(128px, 1fr));
+    overflow-x: auto;
+    margin: var(--sw-sp-3) var(--sw-sp-3) 0;
+    padding: var(--sw-sp-2);
+  }
+  .symbol-workspace-v2 .sw-tab {
+    padding: var(--sw-sp-3) var(--sw-sp-3) var(--sw-sp-2);
+    white-space: nowrap;
+  }
+  .symbol-workspace-v2 .sw-tab-panel {
+    padding: var(--sw-sp-3);
+  }
+}
+
+/* ============================================================
+   a11y：可视焦点、reduced-motion 支持
+   ============================================================ */
+.symbol-workspace-v2 :focus-visible {
+  outline: 2px solid var(--sw-border-focus);
+  outline-offset: 2px;
+  border-radius: var(--sw-r-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .symbol-workspace-v2 .sw-skeleton,
+  .symbol-workspace-v2 .sw-dot--pulse {
+    animation: none;
+  }
+}
+
+/* Skip-link for keyboard nav (a11y) */
+.symbol-workspace-v2 .sw-skip-link {
+  position: absolute;
+  top: -40px; left: 8px;
+  padding: 6px 12px;
+  background: var(--sw-info);
+  color: white;
+  border-radius: var(--sw-r-sm);
+  font-size: 12px;
+  z-index: 100;
+  transition: top 120ms;
+}
+.symbol-workspace-v2 .sw-skip-link:focus {
+  top: 8px;
+}
+
+/* V2 now follows the V1 dark workbench only. */
+.symbol-workspace-v2 .sw-theme-toggle {
+  display: none;
+}
+
+/* ============================================================
+   Common atomic helpers
+   ============================================================ */
+.symbol-workspace-v2 .sw-mono {
+  font-family: var(--sw-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.symbol-workspace-v2 .sw-eyebrow {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sw-text-tertiary);
+}
+.symbol-workspace-v2 .sw-muted { color: var(--sw-text-secondary); }
+.symbol-workspace-v2 .sw-faint { color: var(--sw-text-tertiary); }
+
+.symbol-workspace-v2 .sw-tone-success { color: var(--sw-success); }
+.symbol-workspace-v2 .sw-tone-warning { color: var(--sw-warning); }
+.symbol-workspace-v2 .sw-tone-danger  { color: var(--sw-danger); }
+.symbol-workspace-v2 .sw-tone-info    { color: var(--sw-info); }
+.symbol-workspace-v2 .sw-tone-neutral { color: var(--sw-text-secondary); }
+
+/* ============================================================
+   Pill
+   ============================================================ */
+.symbol-workspace-v2 .sw-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 20px; padding: 0 8px;
+  border-radius: var(--sw-r-sm);
+  font-size: var(--sw-pill);
+  font-weight: 600; line-height: 1;
+}
+.symbol-workspace-v2 .sw-pill--success { background: var(--sw-success-bg); color: var(--sw-success); }
+.symbol-workspace-v2 .sw-pill--warning { background: var(--sw-warning-bg); color: var(--sw-warning); }
+.symbol-workspace-v2 .sw-pill--danger  { background: var(--sw-danger-bg);  color: var(--sw-danger); }
+.symbol-workspace-v2 .sw-pill--info    { background: var(--sw-info-bg);    color: var(--sw-info); }
+.symbol-workspace-v2 .sw-pill--neutral { background: var(--sw-neutral-bg); color: var(--sw-neutral); }
+
+/* ============================================================
+   Dot
+   ============================================================ */
+.symbol-workspace-v2 .sw-dot {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  vertical-align: middle;
+}
+.symbol-workspace-v2 .sw-dot--success { background: var(--sw-success); }
+.symbol-workspace-v2 .sw-dot--warning { background: var(--sw-warning); }
+.symbol-workspace-v2 .sw-dot--danger  { background: var(--sw-danger); }
+.symbol-workspace-v2 .sw-dot--info    { background: var(--sw-info); }
+.symbol-workspace-v2 .sw-dot--neutral { background: var(--sw-neutral); }
+.symbol-workspace-v2 .sw-dot--pulse {
+  animation: sw-pulse 1.6s ease-out infinite;
+}
+@keyframes sw-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--sw-warning-border); }
+  70%  { box-shadow: 0 0 0 8px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+.symbol-workspace-v2 .sw-btn {
+  display: inline-flex; align-items: center; gap: var(--sw-sp-2);
+  height: 32px; padding: 0 var(--sw-sp-3);
+  background: var(--sw-bg-surface-2);
+  border: 1px solid var(--sw-border-subtle);
+  border-radius: var(--sw-r-md);
+  font-family: var(--sw-font-sans);
+  font-size: 13px; color: var(--sw-text-primary);
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+.symbol-workspace-v2 .sw-btn:hover {
+  background: var(--sw-bg-hover);
+  border-color: var(--sw-border-strong);
+}
+.symbol-workspace-v2 .sw-btn:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+.symbol-workspace-v2 .sw-btn:focus-visible {
+  outline: 2px solid var(--sw-border-focus);
+  outline-offset: 2px;
+}
+.symbol-workspace-v2 .sw-btn--primary {
+  background: var(--sw-info); border-color: var(--sw-info); color: white; font-weight: 600;
+}
+.symbol-workspace-v2 .sw-btn--primary:hover {
+  background: #2563eb; border-color: #2563eb;
+}
+.symbol-workspace-v2 .sw-btn--mini {
+  height: 24px; padding: 0 8px; font-size: 11px;
+}
+.symbol-workspace-v2 .sw-btn--icon {
+  width: 32px; padding: 0; justify-content: center;
+}
+
+/* ============================================================
+   Segmented control
+   ============================================================ */
+.symbol-workspace-v2 .sw-segmented {
+  display: inline-flex; padding: 2px;
+  background: var(--sw-bg-input); border: 1px solid var(--sw-border-subtle);
+  border-radius: var(--sw-r-md);
+}
+.symbol-workspace-v2 .sw-segmented button {
+  padding: 4px 12px; font-size: 12px; font-weight: 600;
+  border: 0; background: transparent;
+  border-radius: var(--sw-r-sm); color: var(--sw-text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+}
+.symbol-workspace-v2 .sw-segmented button.is-active {
+  background: var(--sw-bg-hover); color: var(--sw-text-primary);
+}
+
+/* ============================================================
+   Section heading
+   ============================================================ */
+.symbol-workspace-v2 .sw-section-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+}
+.symbol-workspace-v2 .sw-section-head h2,
+.symbol-workspace-v2 .sw-section-head h3 {
+  font-size: var(--sw-title-s);
+  font-weight: 600;
+  color: var(--sw-text-secondary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.symbol-workspace-v2 .sw-section-head small {
+  font-size: 11px; color: var(--sw-text-tertiary);
+}
+
+/* ============================================================
+   Async state cards
+   ============================================================ */
+.symbol-workspace-v2 .sw-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--sw-bg-surface) 0%,
+    var(--sw-bg-hover) 50%,
+    var(--sw-bg-surface) 100%);
+  background-size: 200% 100%;
+  animation: sw-shimmer 1.5s infinite;
+  border-radius: var(--sw-r-md);
+}
+@keyframes sw-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.symbol-workspace-v2 .sw-empty {
+  border: 1px dashed var(--sw-border-strong);
+  border-radius: var(--sw-r-lg);
+  padding: var(--sw-sp-6);
+  display: flex; flex-direction: column; align-items: center; gap: var(--sw-sp-2);
+  color: var(--sw-text-secondary);
+  text-align: center;
+}
+.symbol-workspace-v2 .sw-empty__icon {
+  width: 32px; height: 32px; opacity: 0.5;
+}
+.symbol-workspace-v2 .sw-error {
+  border: 1px solid var(--sw-warning-border);
+  background: var(--sw-warning-bg);
+  border-radius: var(--sw-r-md);
+  padding: var(--sw-sp-3) var(--sw-sp-4);
+  display: flex; align-items: center; gap: var(--sw-sp-3);
+  color: var(--sw-warning);
+  font-size: 13px;
+}
+.symbol-workspace-v2 .sw-partial-strip {
+  display: flex; align-items: center; gap: var(--sw-sp-2);
+  padding: var(--sw-sp-2) var(--sw-sp-3);
+  background: var(--sw-warning-bg);
+  border-left: 2px solid var(--sw-warning);
+  border-radius: var(--sw-r-sm);
+  color: var(--sw-warning);
+  font-size: 12px;
+  margin-bottom: var(--sw-sp-2);
+}
+
+/* ============================================================
+   Scrollbar
+   ============================================================ */
+.symbol-workspace-v2 ::-webkit-scrollbar { width: 8px; height: 8px; }
+.symbol-workspace-v2 ::-webkit-scrollbar-track { background: transparent; }
+.symbol-workspace-v2 ::-webkit-scrollbar-thumb {
+  background: var(--sw-border-subtle); border-radius: 4px;
+}
+.symbol-workspace-v2 ::-webkit-scrollbar-thumb:hover {
+  background: var(--sw-border-strong);
+}

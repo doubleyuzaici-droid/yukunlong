@@ -11,6 +11,7 @@ import {
 } from "../components/TradingSignalKline.helpers.js";
 import FundamentalsPage from "./FundamentalsPage";
 import NewsEvidencePage from "./NewsEvidencePage";
+import { switchWorkspaceVersion } from "./symbol/featureFlag";
 import {
   buildDisplayQuoteModel,
   buildWorkspaceLoadMessage,
@@ -459,6 +460,7 @@ export default function SymbolWorkspacePage({
   const [strategyMode, setStrategyMode] = useState<"conservative" | "aggressive">("conservative");
   const [strategyAnalysis, setStrategyAnalysis] = useState<ResonanceV2Analysis | null>(null);
   const [strategyBacktest, setStrategyBacktest] = useState<ResonanceV2BacktestPayload | null>(null);
+  const [autoBacktestKey, setAutoBacktestKey] = useState("");
   const [strategyActionMessage, setStrategyActionMessage] = useState("");
   const [realtimePayload, setRealtimePayload] = useState<{ quote: RealtimeQuote | null; intraday: IntradayPayload | null }>({
     quote: null,
@@ -514,6 +516,8 @@ export default function SymbolWorkspacePage({
     event?.preventDefault();
     setLoading(true);
     setMessage("读取个股工作台");
+    setStrategyBacktest(null);
+    setAutoBacktestKey("");
     const historyParams = new URLSearchParams({ symbol: targetSymbol, start: targetStart, end: targetEnd, limit: "900" });
     const signalParams = new URLSearchParams({ symbol: targetSymbol, start: targetStart, end: targetEnd });
     const contextParams = new URLSearchParams({ symbol: targetSymbol, start: targetStart, end: targetEnd, limit: "180" });
@@ -686,6 +690,15 @@ export default function SymbolWorkspacePage({
     load(undefined, initialSymbol, targetEnd, strategyMode, defaultStartFor(targetEnd));
   }, [initialSymbol, initialEnd]);
 
+  const strategyBacktestKey = `${history?.symbol || symbol}:${start}:${end}:${strategyMode}`;
+  useEffect(() => {
+    if (activeTab !== "chart") return;
+    if (!history || !strategyAnalysis || strategyBacktest || loading || strategyBusy) return;
+    if (autoBacktestKey === strategyBacktestKey) return;
+    setAutoBacktestKey(strategyBacktestKey);
+    void runStrategyBacktest();
+  }, [activeTab, autoBacktestKey, history, loading, strategyAnalysis, strategyBacktest, strategyBacktestKey, strategyBusy]);
+
   const latestBars = useMemo(() => [...(history?.bars || [])].slice(-12).reverse(), [history]);
   const chartSignals = useMemo(
     () =>
@@ -811,6 +824,7 @@ export default function SymbolWorkspacePage({
 
   return (
     <section className="workbench-section symbol-workspace-page">
+      <V1DeprecationBanner />
       <div className="section-heading">
         <h1>个股工作台</h1>
         <p>
@@ -997,6 +1011,52 @@ export default function SymbolWorkspacePage({
         </aside>
       </div>
     </section>
+  );
+}
+
+// Phase 5 PR-20：V1 软下线提示横幅（不真正删除，A/B 灰度未完结前必须保留）
+function V1DeprecationBanner() {
+  const switchToV2 = () => {
+    switchWorkspaceVersion("v2");
+  };
+  return (
+    <div
+      role="status"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "8px 12px",
+        marginBottom: 12,
+        background: "rgba(245,158,11,0.10)",
+        border: "1px solid rgba(245,158,11,0.25)",
+        borderRadius: 6,
+        color: "var(--accent-yellow, #e3b341)",
+        fontSize: 12,
+      }}
+    >
+      <span>⚠</span>
+      <span style={{ flex: 1 }}>
+        <strong>旧版工作台已进入下线流程</strong> · 新版已全量可用，含 4 个分析视图、催化剂时间线、风险预算计算器、浅色主题。
+        当前可随时切回旧版。
+      </span>
+      <button
+        type="button"
+        onClick={switchToV2}
+        style={{
+          padding: "4px 12px",
+          background: "var(--coinbase-blue, #0052ff)",
+          color: "white",
+          border: 0,
+          borderRadius: 4,
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: "pointer",
+        }}
+      >
+        切换到新版 →
+      </button>
+    </div>
   );
 }
 

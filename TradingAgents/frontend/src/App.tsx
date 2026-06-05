@@ -24,6 +24,13 @@ import SignalTimelinePage from "./pages/SignalTimelinePage";
 import SignalWorkbenchPage from "./pages/SignalWorkbenchPage";
 import StrategyOptimizerPage from "./pages/StrategyOptimizerPage";
 import SymbolWorkspacePage from "./pages/SymbolWorkspacePage";
+import SymbolWorkspaceV2 from "./pages/symbol/SymbolWorkspaceV2";
+import {
+  buildWorkspaceVersionUrl,
+  resolveWorkspaceVersion,
+  setPreference,
+  type WorkspaceVersion,
+} from "./pages/symbol/featureFlag";
 import TaskCenterPage from "./pages/TaskCenterPage";
 import WatchlistPage from "./pages/WatchlistPage";
 
@@ -136,10 +143,21 @@ function App() {
   const [priceColorMode, setPriceColorMode] = useState<PriceColorMode>(
     initialPreference("tradingagents.priceColorMode", "cn") as PriceColorMode,
   );
+  const [workspaceVersion, setWorkspaceVersion] = useState<WorkspaceVersion>(() =>
+    resolveWorkspaceVersion(marketSymbol),
+  );
 
   const openSymbol = useCallback((symbol: string, date?: string) => {
     setMarketSymbol(symbol);
     if (date) setMarketDate(date);
+    setWorkspace("symbolWorkspace");
+  }, []);
+
+  const switchWorkspaceVersion = useCallback((next: WorkspaceVersion) => {
+    setPreference(next);
+    const nextUrl = buildWorkspaceVersionUrl(window.location.href, next);
+    window.history.replaceState(window.history.state, "", nextUrl);
+    setWorkspaceVersion(next);
     setWorkspace("symbolWorkspace");
   }, []);
 
@@ -223,8 +241,9 @@ function App() {
     }
     if (workspace === "marketMatrix") return <MarketMatrixPage onOpenSymbol={openSymbol} />;
     if (workspace === "symbolWorkspace") {
+      const Page = workspaceVersion === "v2" ? SymbolWorkspaceV2 : SymbolWorkspacePage;
       return (
-        <SymbolWorkspacePage
+        <Page
           initialSymbol={marketSymbol}
           initialEnd={marketDate}
           onContextChange={(symbol, date) => {
@@ -291,6 +310,28 @@ function App() {
           >
             {priceColorMode === "cn" ? "红涨绿跌" : "绿涨红跌"}
           </button>
+          {workspace === "symbolWorkspace" && (
+            <div className="workspace-version-toggle" role="group" aria-label="切换个股工作台版本">
+              <button
+                type="button"
+                className={workspaceVersion === "v1" ? "active" : ""}
+                onClick={() => switchWorkspaceVersion("v1")}
+                aria-pressed={workspaceVersion === "v1"}
+                title="切换到旧版个股工作台"
+              >
+                旧版
+              </button>
+              <button
+                type="button"
+                className={workspaceVersion === "v2" ? "active" : ""}
+                onClick={() => switchWorkspaceVersion("v2")}
+                aria-pressed={workspaceVersion === "v2"}
+                title="切换到新版个股工作台"
+              >
+                新版
+              </button>
+            </div>
+          )}
           {workspace === "analysis" && view !== "form" && (
             <button onClick={handleReset}>新建分析</button>
           )}

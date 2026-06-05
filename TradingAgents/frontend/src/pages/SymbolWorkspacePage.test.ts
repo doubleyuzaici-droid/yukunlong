@@ -10,7 +10,12 @@ import {
   buildRelativeStrengthTrendModel,
   classifyIndicatorTone,
 } from "./SymbolWorkspacePage.helpers.js";
+import {
+  mapDisclosures,
+  mapPlaybookHistory,
+} from "../api/symbol-workspace/mappers.js";
 import { mergeRealtimeTickerQuotes } from "../components/MarketTicker.helpers.js";
+import { buildWorkspaceVersionUrl } from "./symbol/featureFlag.js";
 
 function assertEqual<T>(actual: T, expected: T, message: string) {
   if (actual !== expected) {
@@ -567,6 +572,83 @@ function testTickerQuotesPreferRealtimeSnapshots() {
   assertEqual(merged[0]?.source, "tencent_quote", "top ticker source comes from realtime quote");
 }
 
+function testV2DisclosureMappingKeepsEvidenceDetail() {
+  const items = mapDisclosures({
+    symbol: "01024.HK",
+    start: "2026-05-01",
+    end: "2026-05-18",
+    items: [
+      {
+        news_id: "n1",
+        date: "2026-05-18",
+        headline: "快手发布一季度业绩，净利润超预期",
+        source: "公告",
+        url: "https://example.com/report",
+        sentiment: "positive",
+        credibility: 0.86,
+        summary: "广告和电商业务拉动收入增长。",
+      },
+    ],
+  });
+
+  assertEqual(items[0]?.tag, "业绩", "V2 disclosures classify earnings evidence");
+  assertEqual(items[0]?.source, "公告", "V2 disclosures preserve evidence source");
+  assertEqual(items[0]?.credibility, 0.86, "V2 disclosures preserve credibility score");
+  assertIncludes(items[0]?.summary || "", "电商业务", "V2 disclosures preserve evidence summary");
+}
+
+function testV2PlaybookHistoryKeepsSignalsAndRecentBars() {
+  const history = mapPlaybookHistory({
+    signals: [
+      {
+        signal_id: "sig-1",
+        date: "2026-05-18",
+        symbol: "01024.HK",
+        signal_name: "V2多指标共振",
+        signal_level: "C",
+        direction: "buy",
+        score: 16.5,
+        review_count: 1,
+        event_return: { ret_20d: 0.072, max_adverse_20d: -0.031 },
+      },
+    ],
+    bars: Array.from({ length: 14 }, (_, index) => ({
+      date: `2026-05-${String(index + 1).padStart(2, "0")}`,
+      symbol: "01024.HK",
+      market: "HONGKONG",
+      close: 40 + index,
+    })),
+  } as any);
+
+  assertEqual(history.signals[0]?.id, "sig-1", "V2 playbook exposes historical signal id");
+  assertEqual(history.signals[0]?.ret20d, 0.072, "V2 playbook preserves historical event return");
+  assertEqual(history.recentBars.length, 12, "V2 playbook keeps recent 12 bars");
+  assertEqual(history.recentBars[0]?.date, "2026-05-14", "V2 recent bars are newest first");
+}
+
+function testBuildWorkspaceVersionUrlPreservesContext() {
+  const url = buildWorkspaceVersionUrl(
+    "http://127.0.0.1:5174/?view=symbolWorkspace&symbol=01024.HK&date=2026-05-18&ws=v1&tab=chart&mode=aggressive",
+    "v2",
+  );
+  assertEqual(
+    url,
+    "http://127.0.0.1:5174/?view=symbolWorkspace&symbol=01024.HK&date=2026-05-18&ws=v2&tab=chart&mode=aggressive",
+    "workspace version switch preserves symbol/date/tab/mode",
+  );
+}
+
+function testBuildWorkspaceVersionUrlAddsWorkspaceView() {
+  const url = buildWorkspaceVersionUrl(
+    "http://127.0.0.1:5174/?symbol=600519.SH&date=2026-05-18",
+    "v1",
+  );
+  const params = new URL(url).searchParams;
+  assertEqual(params.get("view"), "symbolWorkspace", "workspace switch keeps user in symbol workspace");
+  assertEqual(params.get("ws"), "v1", "workspace switch writes requested version");
+  assertEqual(params.get("symbol"), "600519.SH", "workspace switch keeps symbol");
+}
+
 testClassifiesIndicatorTones();
 testBuildsBullishOverview();
 testOverviewUsesReadableStrategyCopy();
@@ -582,3 +664,7 @@ testBuildsWorkspaceNavigationModel();
 testDisplayQuotePrefersRealtimeSnapshot();
 testDisplayQuoteFallsBackToHistoryQuote();
 testTickerQuotesPreferRealtimeSnapshots();
+testV2DisclosureMappingKeepsEvidenceDetail();
+testV2PlaybookHistoryKeepsSignalsAndRecentBars();
+testBuildWorkspaceVersionUrlPreservesContext();
+testBuildWorkspaceVersionUrlAddsWorkspaceView();

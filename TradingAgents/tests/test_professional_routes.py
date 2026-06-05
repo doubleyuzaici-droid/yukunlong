@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from tradingagents.api.server import create_app
@@ -456,6 +458,210 @@ def test_professional_sync_lineage_factor_effectiveness_and_execution_queue(monk
     queue_payload = queue.json()["data"]
     assert queue_payload["summary"]["candidate_count"] == 1
     assert queue_payload["items"][0]["execution_status"] == "approved"
+
+
+def test_fundamentals_sync_yfinance_normalizes_hk_symbol_and_builds_quarterly_series(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("TRADINGAGENTS_DATA_DIR", str(tmp_path))
+    init_db()
+    calls = []
+
+    income_csv = """# Income Statement data for 1024.HK (quarterly)
+,2026-03-31,2025-12-31,2025-09-30
+Total Revenue,1000000000,900000000,800000000
+Net Income,100000000,85000000,70000000
+"""
+    balance_csv = """# Balance Sheet data for 1024.HK (quarterly)
+,2026-03-31,2025-12-31,2025-09-30
+Stockholders Equity,500000000,480000000,460000000
+"""
+    cashflow_csv = """# Cash Flow data for 1024.HK (quarterly)
+,2026-03-31,2025-12-31,2025-09-30
+Operating Cash Flow,120000000,110000000,90000000
+"""
+
+    def fake_route_to_vendor(method, *args, **kwargs):
+        calls.append((method, args, kwargs))
+        assert args[0] == "1024.HK"
+        assert kwargs.get("vendor") == "yfinance"
+        if method == "get_income_statement":
+            return income_csv
+        if method == "get_balance_sheet":
+            return balance_csv
+        if method == "get_cashflow":
+            return cashflow_csv
+        return "# Company Fundamentals for 1024.HK"
+
+    monkeypatch.setattr(
+        "tradingagents.api.professional_routes.route_to_vendor",
+        fake_route_to_vendor,
+        raising=False,
+    )
+
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/professional/fundamentals/sync",
+        json={"symbols": ["01024.HK"], "end": "2026-05-18", "source": "yfinance"},
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["statement_rows_written"] == 9
+    assert {call[0] for call in calls} == {
+        "get_fundamentals",
+        "get_income_statement",
+        "get_balance_sheet",
+        "get_cashflow",
+    }
+
+    series_response = client.get(
+        "/api/professional/fundamentals-quarterly?symbol=01024.HK&end=2026-05-18&quarters=3"
+    )
+    assert series_response.status_code == 200
+    series = series_response.json()["data"]["quarterly_series"]
+    assert series["quarters"] == ["25Q3", "25Q4", "26Q1"]
+    assert series["revenue"] == [8.0, 9.0, 10.0]
+    assert series["net_income"] == [0.7, 0.85, 1.0]
+
+
+def test_quality_metrics_route_derives_cashflow_and_margin_ratios(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRADINGAGENTS_DATA_DIR", str(tmp_path))
+    init_db()
+    with get_connection() as conn:
+        for statement_type, metrics in (
+            (
+                "income",
+                {
+                    "revenue": 184_000_000_000,
+                    "net_income": 86_000_000_000,
+                    "gross_margin": 0.912,
+                    "roe": 0.315,
+                },
+            ),
+            (
+                "balance",
+                {
+                    "total_assets": 220_000_000_000,
+                    "total_liabilities": 40_000_000_000,
+                    "total_equity": 180_000_000_000,
+                },
+            ),
+            (
+                "cashflow",
+                {
+                    "operating_cashflow": 92_000_000_000,
+                    "capital_expenditure": -12_000_000_000,
+                    "free_cashflow": 80_000_000_000,
+                },
+            ),
+        ):
+            conn.execute(
+                """
+                INSERT INTO financial_statement (
+                    date, symbol, statement_type, period, metrics_json,
+                    source, raw_text, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "2026-05-10",
+                    "600519.SH",
+                    statement_type,
+                    "26Q1",
+                    json.dumps(metrics),
+                    "fixture",
+                    "",
+                    "2026-05-10T00:00:00Z",
+                ),
+            )
+        conn.execute(
+            """
+            INSERT INTO fundamental_snapshot (
+                date, symbol, revenue, net_income, eps, roe, gross_margin,
+                pe_ttm, pb, dividend_yield, source, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "2026-05-10",
+                "600519.SH",
+                184_000_000_000,
+                86_000_000_000,
+                68.5,
+                0.315,
+                0.912,
+                22.2,
+                7.1,
+                0.018,
+                "fixture",
+                "2026-05-10T00:00:00Z",
+            ),
+        )
+        conn.commit()
+
+    client = TestClient(create_app())
+    response = client.get(
+        "/api/professional/quality-metrics?symbol=600519.SH&date=2026-05-10"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["symbol"] == "600519.SH"
+    assert payload["available"] is True
+    assert payload["gross_margin"] == 0.912
+    assert round(payload["net_margin"], 4) == 0.4674
+    assert round(payload["ocf_to_net_income"], 4) == 1.0698
+    assert payload["free_cashflow"] == 80_000_000_000
+    assert round(payload["debt_to_assets"], 4) == 0.1818
+    assert payload["roe"] == 0.315
+    assert 0 <= payload["quality_score"] <= 1
+    assert any(item["key"] == "cashflow_quality" for item in payload["flags"])
+
+
+def test_holding_concentration_route_returns_latest_structure(monkeypatch, tmp_path):
+    monkeypatch.setenv("TRADINGAGENTS_DATA_DIR", str(tmp_path))
+    init_db()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO holding_concentration (
+                date, symbol, northbound_float_pct, northbound_total_pct,
+                fund_float_pct, fund_count, shareholder_count,
+                shareholder_count_delta_pct, top10_holder_pct, source, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "2026-05-10",
+                "600519.SH",
+                0.124,
+                0.118,
+                0.087,
+                132,
+                125000,
+                -0.08,
+                0.642,
+                "fixture",
+                "2026-05-10T00:00:00Z",
+            ),
+        )
+        conn.commit()
+
+    client = TestClient(create_app())
+    response = client.get(
+        "/api/professional/holding-concentration?symbol=600519.SH&date=2026-05-10"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["symbol"] == "600519.SH"
+    assert payload["available"] is True
+    assert payload["northbound_float_pct"] == 0.124
+    assert payload["fund_float_pct"] == 0.087
+    assert payload["shareholder_count"] == 125000
+    assert payload["shareholder_count_delta_pct"] == -0.08
+    assert 0 <= payload["concentration_score"] <= 1
+    item_keys = {item["key"] for item in payload["items"]}
+    assert {"northbound", "fund", "shareholders", "top10"}.issubset(item_keys)
 
 
 def test_professional_decision_brief_layers_trust_signal_risk_and_audit(monkeypatch, tmp_path):

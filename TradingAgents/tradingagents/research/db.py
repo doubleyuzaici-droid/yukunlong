@@ -106,6 +106,22 @@ SCHEMA_STATEMENTS = [
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS holding_concentration (
+        date TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        northbound_float_pct REAL,
+        northbound_total_pct REAL,
+        fund_float_pct REAL,
+        fund_count INTEGER,
+        shareholder_count INTEGER,
+        shareholder_count_delta_pct REAL,
+        top10_holder_pct REAL,
+        source TEXT,
+        updated_at TEXT,
+        PRIMARY KEY(date, symbol)
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS signal_log (
         signal_id TEXT PRIMARY KEY,
         date TEXT NOT NULL,
@@ -224,6 +240,8 @@ SCHEMA_STATEMENTS = [
         gross_margin REAL,
         pe_ttm REAL,
         pb REAL,
+        ps REAL,
+        ev_ebitda REAL,
         dividend_yield REAL,
         source TEXT,
         updated_at TEXT,
@@ -255,6 +273,50 @@ SCHEMA_STATEMENTS = [
         credibility REAL,
         summary TEXT,
         created_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS corporate_events (
+        event_id TEXT PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        event_date TEXT NOT NULL,
+        event_type TEXT NOT NULL,  -- earnings_preview / unlock / dividend / meeting / industry
+        title TEXT NOT NULL,
+        tone TEXT,
+        note TEXT,
+        source TEXT,
+        url TEXT,
+        amount REAL,               -- 解禁/分红时填金额
+        created_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS lhb_desk (
+        desk_id TEXT PRIMARY KEY,
+        date TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        desk_name TEXT NOT NULL,    -- "中金公司·上海分公司" / "沪股通专用"
+        desk_tag TEXT,              -- "北向" | "机构" | "游资"
+        net_buy REAL,               -- 净买入金额，元
+        buy_amount REAL,
+        sell_amount REAL,
+        source TEXT,
+        created_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS research_report (
+        report_id TEXT PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        date TEXT NOT NULL,
+        org TEXT,
+        rating TEXT,
+        title TEXT,
+        eps_forecast REAL,
+        target_price REAL,
+        industry TEXT,
+        url TEXT,
+        synced_at TEXT
     )
     """,
     """
@@ -347,3 +409,13 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     for column, column_type in agent_review_columns.items():
         if not _column_exists(conn, "agent_decision_log", column):
             conn.execute(f"ALTER TABLE agent_decision_log ADD COLUMN {column} {column_type}")
+    # Symbol Workspace V2 C 级 BE-6: PS / EV-EBITDA
+    fundamental_extra = {
+        "ps": "REAL",
+        "ev_ebitda": "REAL",
+    }
+    for column, column_type in fundamental_extra.items():
+        if not _column_exists(conn, "fundamental_snapshot", column):
+            conn.execute(
+                f"ALTER TABLE fundamental_snapshot ADD COLUMN {column} {column_type}"
+            )

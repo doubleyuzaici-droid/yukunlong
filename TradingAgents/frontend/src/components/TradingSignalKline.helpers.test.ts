@@ -22,6 +22,17 @@ import {
   buildKlineEventBacktestSummary,
   shouldRenderDenseChartLayer,
   buildReadableStrategyDecisionCopy,
+  buildStrategyFactorTooltip,
+  buildStrategyScoreTooltip,
+  buildStrategyStrengthTooltip,
+  buildTradeDecisionChecklistTooltip,
+  buildStrategyPriceLevelTooltip,
+  buildRiskBudgetTooltip,
+  buildStrategyTradeMarkerLabel,
+  buildStrategyBacktestTradeMarkers,
+  isActionableStrategyTradeMarker,
+  resolveStrategyTradeMarkerKind,
+  isStrategyTradeMarker,
   buildReadableStrategyGateText,
   buildRelativeStrengthOverlaySeries,
   buildLatestPriceLine,
@@ -195,6 +206,121 @@ function testBuildsReadableStrategyDecisionCopy() {
   assertOk(!copy.reasons.join(" ").includes("M1"), "summary avoids internal step codes");
 }
 
+function testBuildsStrategyFactorTooltip() {
+  const trend = buildStrategyFactorTooltip({ label: "趋势", buy: -0.1234, sell: 1 });
+  assertOk(trend.includes("现价相对 EMA60"), "trend tooltip explains the buy formula");
+  assertOk(trend.includes("负值拖累买入分"), "trend tooltip explains negative opportunity values");
+  assertOk(trend.includes("跌破 EMA21"), "trend tooltip explains the risk trigger");
+  assertOk(trend.includes("当前机会 -0.123"), "trend tooltip includes formatted opportunity value");
+  assertOk(trend.includes("当前风险 1.000"), "trend tooltip includes formatted risk value");
+
+  const kdj = buildStrategyFactorTooltip({ label: "超卖 / KDJ", buy: 1.417, sell: 0 });
+  assertOk(kdj.includes("KDJ-J 低于 30"), "KDJ tooltip explains oversold opportunity");
+  assertOk(kdj.includes("高位回落"), "KDJ tooltip explains risk trigger");
+  assertOk(kdj.includes("1 表示风险触发"), "KDJ tooltip explains binary risk values");
+
+  const momentum = buildStrategyFactorTooltip({ label: "动能", buy: -0.084, sell: null });
+  assertOk(momentum.includes("MACD 柱相对 ATR"), "short momentum label maps to MACD explanation");
+}
+
+function testBuildsStrategyScoreAndStrengthTooltips() {
+  const score = buildStrategyScoreTooltip({ score: 62, mode: "conservative", readiness: 0.84 });
+  assertOk(score.includes("买入强度"), "score tooltip explains the buy strength score");
+  assertOk(!score.includes("综合评分"), "score tooltip avoids ambiguous score wording");
+  assertOk(score.includes("保守模式门槛 55"), "score tooltip explains conservative threshold");
+  assertOk(score.includes("因子完整度 84%"), "score tooltip includes readiness");
+
+  const buy = buildStrategyStrengthTooltip({ kind: "buy", value: 0.417 });
+  assertOk(buy.includes("S_buy"), "buy tooltip names the weighted buy score");
+  assertOk(buy.includes("当前买入强度 0.417"), "buy tooltip includes formatted buy value");
+
+  const sell = buildStrategyStrengthTooltip({ kind: "sell", value: 0.65 });
+  assertOk(sell.includes("S_sell"), "sell tooltip names the weighted sell score");
+  assertOk(sell.includes("不能和买入强度直接相减"), "sell tooltip warns about different scales");
+}
+
+function testBuildsTradePlanAndRiskTooltips() {
+  const checklist = buildTradeDecisionChecklistTooltip({ side: "buy", activeCount: 4, total: 5 });
+  assertOk(checklist.includes("5 项技术检查"), "checklist tooltip explains the count");
+  assertOk(checklist.includes("不是模型置信度"), "checklist tooltip avoids confidence confusion");
+  assertOk(checklist.includes("当前通过 4/5"), "checklist tooltip includes current count");
+
+  const stop = buildStrategyPriceLevelTooltip({ key: "stop", label: "止损" });
+  assertOk(stop.includes("ATR"), "stop tooltip explains ATR stop logic");
+  assertOk(stop.includes("风控线"), "stop tooltip frames stop as risk control");
+
+  const risk = buildRiskBudgetTooltip({ method: "atr", lotSize: 100 });
+  assertOk(risk.includes("单笔可承受亏损"), "risk tooltip explains sizing numerator");
+  assertOk(risk.includes("止损距离"), "risk tooltip explains sizing denominator");
+  assertOk(risk.includes("100 股"), "risk tooltip includes lot size");
+}
+
+function testBuildsStrategyTradeMarkers() {
+  const buy = {
+    signal_id: "resonance-v2-conservative-01024.HK-2026-05-18",
+    signal_name: "V2 多指标共振",
+    direction: "opportunity",
+  };
+  const reduce = {
+    signal_id: "signal-2026-05-18",
+    signal_name: "V2多指标共振",
+    signal_level: "减仓预警",
+    direction: "reduce",
+  };
+  const technical = {
+    signal_id: "macd-2026-05-18",
+    signal_name: "MACD 死叉",
+    direction: "sell",
+  };
+
+  assertEqual(isStrategyTradeMarker(buy), true, "V2 resonance signals are strategy trade markers");
+  assertEqual(resolveStrategyTradeMarkerKind(buy), "buy", "opportunity strategy signal becomes buy marker");
+  assertEqual(buildStrategyTradeMarkerLabel(buy), "买", "buy strategy marker uses buy label");
+  assertEqual(resolveStrategyTradeMarkerKind(reduce), "reduce", "reduce strategy signal keeps reduce marker");
+  assertEqual(buildStrategyTradeMarkerLabel(reduce), "减", "reduce strategy marker uses reduce label");
+  assertEqual(isStrategyTradeMarker(technical), false, "plain technical sell signal is not a strategy trade marker");
+  assertEqual(resolveStrategyTradeMarkerKind(technical), null, "technical signals do not become strategy trade markers");
+  assertEqual(isActionableStrategyTradeMarker({ signal_name: "V2多指标共振", direction: "neutral" }), false, "neutral strategy observations are not actionable markers");
+}
+
+function testBuildsHistoricalStrategyTradeMarkersFromBacktest() {
+  const fromTrades = buildStrategyBacktestTradeMarkers({
+    symbol: "01024.HK",
+    mode: "conservative",
+    trades: [
+      { date: "2026-02-03", side: "entry", price: 42.1, quantity: 200, reason: "buy_allowed" },
+      { date: "2026-03-08", side: "exit", price: 48.2, quantity: 100, reason: "reduce" },
+      { date: "2026-04-10", side: "exit", price: 44.7, quantity: 100, reason: "stop_price" },
+    ],
+    signals: [
+      { date: "2026-01-22", action: "observe", label: "继续观察" },
+      { date: "2026-01-23", action: "buy_watch", label: "观察买点" },
+    ],
+  });
+
+  assertEqual(fromTrades.length, 3, "trade markers use executed backtest legs and ignore observations");
+  assertEqual(fromTrades.map((item) => item.direction).join(","), "buy,reduce,sell", "trade markers map entry/reduce/exit to buy/reduce/sell");
+  assertEqual(fromTrades.map((item) => buildStrategyTradeMarkerLabel(item)).join(","), "买,减,卖", "trade markers expose readable buy/sell labels");
+  assertEqual(fromTrades[0]?.entry_price, 42.1, "trade marker keeps executed price");
+
+  const fallbackSignals = buildStrategyBacktestTradeMarkers({
+    symbol: "01024.HK",
+    mode: "conservative",
+    trades: [],
+    signals: [
+      { date: "2026-02-01", action: "observe", label: "继续观察" },
+      { date: "2026-02-02", action: "buy_allowed", label: "允许买入", buy_score: 0.71 },
+      { date: "2026-02-20", action: "reduce", label: "减仓", sell_score: 0.61 },
+      { date: "2026-03-12", action: "exit", label: "退出", sell_score: 0.8 },
+      { date: "2026-03-18", action: "hold", label: "持有" },
+    ],
+  });
+
+  assertEqual(fallbackSignals.length, 3, "signal fallback only keeps actionable strategy decisions");
+  assertEqual(fallbackSignals.map((item) => item.direction).join(","), "buy,reduce,sell", "signal fallback maps actions to buy/reduce/sell");
+  assertEqual(fallbackSignals.map((item) => item.date).join(","), "2026-02-02,2026-02-20,2026-03-12", "signal fallback drops observe and hold dates");
+}
+
 const bars = [
   { date: "2026-05-11", open: 10, high: 11, low: 9.8, close: 10.8, volume: 100, amount: 1_080 },
   { date: "2026-05-12", open: 10.8, high: 12, low: 10.6, close: 11.6, volume: 300, amount: 3_480 },
@@ -210,6 +336,7 @@ const baseChartPrefs = {
   mike: true,
   levels: true,
   limitLines: true,
+  tradeMarkers: true,
   signals: true,
   events: true,
   relative: true,
@@ -590,6 +717,7 @@ function testBuildsChartLayerSummary() {
   assertOk(overlays?.detail.includes("一目"), "trend overlay summary includes Ichimoku");
   assertOk((subcharts?.enabledCount || 0) > 0, "layer summary counts active subcharts");
   assertOk(annotations?.detail.includes("趋势带"), "layer summary exposes annotation layers");
+  assertOk(annotations?.detail.includes("买卖"), "layer summary exposes strategy trade markers separately from technical signals");
   assertEqual(mode?.value, "分屏", "layer summary names split subchart mode");
 }
 
@@ -2126,6 +2254,11 @@ testHandlesMissingBarsExplicitly();
 testBuildsIntradayMinuteBarsFromRealtimePoints();
 testBuildsReadableStrategyGateText();
 testBuildsReadableStrategyDecisionCopy();
+testBuildsStrategyFactorTooltip();
+testBuildsStrategyScoreAndStrengthTooltips();
+testBuildsTradePlanAndRiskTooltips();
+testBuildsStrategyTradeMarkers();
+testBuildsHistoricalStrategyTradeMarkersFromBacktest();
 testBuildsVolumeProfileLevelAnnotations();
 testBuildsFutuStyleAdvancedIndicators();
 testAdvancedIndicatorsNeedEnoughSamples();

@@ -137,6 +137,32 @@ def _safe_number(value: Any) -> float | None:
     return parsed if math.isfinite(parsed) else None
 
 
+def _preferred_fundamental_vendor(source: str | None) -> str | None:
+    value = str(source or "").strip().lower()
+    return value if value in {"alpha_vantage", "tushare", "yfinance"} else None
+
+
+def _symbol_for_vendor(symbol: str, vendor: str | None) -> str:
+    if vendor != "yfinance":
+        return symbol
+    normalized = normalize_market_symbol(symbol)
+    if normalized.endswith(".HK"):
+        code = normalized.split(".", 1)[0].lstrip("0") or "0"
+        return f"{code}.HK"
+    if normalized.endswith(".SH"):
+        return f"{normalized.split('.', 1)[0]}.SS"
+    return normalized
+
+
+def _quarter_label(value: str | None, fallback: str) -> str:
+    report_date = _normalize_report_date(value, fallback)
+    try:
+        parsed = dt_date.fromisoformat(report_date)
+    except ValueError:
+        return str(value or fallback)
+    return f"{str(parsed.year)[-2:]}Q{(parsed.month - 1) // 3 + 1}"
+
+
 def _metric_key(value: str) -> str:
     text = re.sub(r"[^A-Za-z0-9]+", "_", str(value or "").strip()).strip("_").lower()
     aliases = {
@@ -231,7 +257,7 @@ def _parse_csv_statement(
                     "date": _normalize_report_date(period, fallback_date),
                     "symbol": symbol,
                     "statement_type": statement_type,
-                    "period": "quarterly",
+                    "period": _quarter_label(period, fallback_date),
                     "metrics": metrics,
                     "source": source,
                     "raw_text": text[:4000],
@@ -1154,6 +1180,8 @@ async def sync_professional_fundamentals(request: ProfessionalSyncRequest):
     failures: list[dict] = []
     for symbol in symbols:
         normalized = normalize_market_symbol(symbol)
+        vendor = _preferred_fundamental_vendor(request.source)
+        fetch_symbol = _symbol_for_vendor(normalized, vendor)
         fetched: dict[str, str] = {}
         for method in (
             "get_fundamentals",
@@ -1162,7 +1190,21 @@ async def sync_professional_fundamentals(request: ProfessionalSyncRequest):
             "get_cashflow",
         ):
             try:
-                fetched[method] = route_to_vendor(method, normalized)
+                if vendor == "yfinance":
+                    fetched[method] = route_to_vendor(
+                        method,
+                        fetch_symbol,
+                        vendor=vendor,
+                        curr_date=resolved_end,
+                    )
+                elif vendor:
+                    fetched[method] = route_to_vendor(
+                        method,
+                        fetch_symbol,
+                        vendor=vendor,
+                    )
+                else:
+                    fetched[method] = route_to_vendor(method, fetch_symbol)
             except Exception as exc:
                 failures.append({"symbol": normalized, "method": method, "error": str(exc)})
         if not fetched:
@@ -1192,6 +1234,13 @@ async def sync_professional_fundamentals(request: ProfessionalSyncRequest):
             "gross_margin": _ratio_after("gross_margin", combined) or _ratio_after("grossprofit_margin", combined),
             "pe_ttm": _number_after("pe_ttm", combined) or _number_after("PE", combined),
             "pb": _number_after("pb", combined) or _number_after("PB", combined),
+            # BE-6 (C 级)：PS / EV-EBITDA。若数据源未返回，写 null（不塞默认）
+            "ps": _number_after("ps", combined) or _number_after("PS", combined),
+            "ev_ebitda": (
+                _number_after("ev_ebitda", combined)
+                or _number_after("EV/EBITDA", combined)
+                or _number_after("ev_to_ebitda", combined)
+            ),
             "dividend_yield": _ratio_after("dividend_yield", combined),
             "source": request.source,
             "updated_at": _now(),
@@ -1225,9 +1274,9 @@ async def sync_professional_fundamentals(request: ProfessionalSyncRequest):
                     """
                     INSERT INTO fundamental_snapshot (
                         date, symbol, revenue, net_income, eps, roe, gross_margin,
-                        pe_ttm, pb, dividend_yield, source, updated_at
+                        pe_ttm, pb, ps, ev_ebitda, dividend_yield, source, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(date, symbol) DO UPDATE SET
                         revenue = excluded.revenue,
                         net_income = excluded.net_income,
@@ -1236,6 +1285,8 @@ async def sync_professional_fundamentals(request: ProfessionalSyncRequest):
                         gross_margin = excluded.gross_margin,
                         pe_ttm = excluded.pe_ttm,
                         pb = excluded.pb,
+                        ps = excluded.ps,
+                        ev_ebitda = excluded.ev_ebitda,
                         dividend_yield = excluded.dividend_yield,
                         source = excluded.source,
                         updated_at = excluded.updated_at
@@ -1250,6 +1301,8 @@ async def sync_professional_fundamentals(request: ProfessionalSyncRequest):
                         snapshot["gross_margin"],
                         snapshot["pe_ttm"],
                         snapshot["pb"],
+                        snapshot["ps"],
+                        snapshot["ev_ebitda"],
                         snapshot["dividend_yield"],
                         snapshot["source"],
                         snapshot["updated_at"],
@@ -3738,6 +3791,1551 @@ async def get_sync_trace(
                 "success_count": status_counts.get("success", 0),
                 "failed_count": status_counts.get("failed", 0) + status_counts.get("error", 0),
                 "status_counts": dict(status_counts),
+            },
+        },
+    )
+
+
+# =============================================================================
+# Symbol Workspace V2 — Phase 2 后端聚合接口
+# 对应 docs/plans/2026-05-23-symbol-workspace-v2-optimization-plan.md §4
+# 全部 view-only，零新数据源；BE-1/2/3/4
+# =============================================================================
+
+
+def _quarterly_financial_series(symbol: str, end: str, quarters: int) -> dict:
+    """BE-1 辅助：从 financial_statement 表抽 N 季度的营收/净利/ROE 序列。
+
+    financial_statement.metrics_json 里期望字段：revenue / net_income / roe / eps。
+    若期数不足，前段补 None。
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT date, period, statement_type, metrics_json
+            FROM financial_statement
+            WHERE symbol = ? AND date <= ?
+            ORDER BY date DESC
+            """,
+            (symbol, end),
+        ).fetchall()
+
+    # 同时也回退到 fundamental_snapshot 拿 ROE/营收/净利历史标量
+    with get_connection() as conn:
+        snap_rows = conn.execute(
+            """
+            SELECT date, revenue, net_income, roe
+            FROM fundamental_snapshot
+            WHERE symbol = ? AND date <= ?
+            ORDER BY date DESC
+            LIMIT ?
+            """,
+            (symbol, end, quarters * 4),
+        ).fetchall()
+
+    # 按 period 聚合 — 优先 financial_statement 的 income 表，缺则用 fundamental_snapshot
+    by_period: dict[str, dict] = {}
+    for row in _rows(rows):
+        period = row.get("period")
+        if not period:
+            continue
+        try:
+            metrics = json.loads(row.get("metrics_json") or "{}")
+        except (TypeError, ValueError):
+            metrics = {}
+        entry = by_period.setdefault(period, {})
+        if row.get("statement_type") == "income":
+            entry["revenue"] = (
+                _number_from_payload("revenue", metrics) or _number_from_payload("营业收入", metrics)
+            )
+            entry["net_income"] = (
+                _number_from_payload("net_income", metrics) or _number_from_payload("net_profit", metrics)
+            )
+        # 把 ROE 从 income 或者 balance 里捞
+        roe = _number_from_payload("roe", metrics)
+        if roe is not None:
+            entry["roe"] = roe
+
+    # snapshot 兜底（按月样本，转成季度的最末一个观测）
+    for row in _rows(snap_rows):
+        d = row.get("date") or ""
+        if len(d) < 7:
+            continue
+        # 推断季度："YYYY-MM" → "YYYYQ?"
+        year, month = d[:4], int(d[5:7])
+        quarter_label = f"{year[-2:]}Q{(month - 1) // 3 + 1}"
+        entry = by_period.setdefault(quarter_label, {})
+        for k in ("revenue", "net_income", "roe"):
+            if entry.get(k) is None and row.get(k) is not None:
+                entry[k] = row.get(k)
+
+    # 按时间倒序，取 N 个，再正序输出
+    sorted_periods = sorted(by_period.keys(), reverse=True)[:quarters]
+    sorted_periods.reverse()
+    quarters_list: list[str] = []
+    revenue: list[float | None] = []
+    net_income: list[float | None] = []
+    roe: list[float | None] = []
+    for p in sorted_periods:
+        entry = by_period[p]
+        quarters_list.append(p)
+        rev = entry.get("revenue")
+        # 数值若 > 1e8 视为元，换算为亿；否则原样
+        if isinstance(rev, (int, float)) and abs(rev) > 1e7:
+            rev = rev / 1e8
+        ni = entry.get("net_income")
+        if isinstance(ni, (int, float)) and abs(ni) > 1e7:
+            ni = ni / 1e8
+        revenue.append(_finite_number(rev))
+        net_income.append(_finite_number(ni))
+        # ROE 期望 0..1 或 0..100，统一到百分比表达
+        r = entry.get("roe")
+        if isinstance(r, (int, float)) and 0 <= r <= 1.5:
+            r = r * 100
+        roe.append(_finite_number(r))
+    return {
+        "quarters": quarters_list,
+        "revenue": revenue,
+        "net_income": net_income,
+        "roe": roe,
+    }
+
+
+def _finite_number(v: Any) -> float | None:
+    if v is None:
+        return None
+    try:
+        f = float(v)
+        if f != f or f == float("inf") or f == float("-inf"):
+            return None
+        return f
+    except (TypeError, ValueError):
+        return None
+
+
+def _number_from_payload(key: str, source: Any) -> float | None:
+    """从 dict / 嵌套结构里取 key 对应的数值。"""
+    if isinstance(source, dict):
+        if key in source:
+            return _finite_number(source[key])
+        for v in source.values():
+            r = _number_from_payload(key, v)
+            if r is not None:
+                return r
+    return None
+
+
+def _latest_statement_metrics(symbol: str, end: str, statement_type: str) -> dict:
+    reports = _financial_reports_payload(symbol, end)
+    latest = reports.get("latest_by_type", {}).get(statement_type) or {}
+    metrics = latest.get("metrics") or {}
+    return metrics if isinstance(metrics, dict) else {}
+
+
+def _ratio(numerator: float | None, denominator: float | None) -> float | None:
+    if numerator is None or denominator in (None, 0):
+        return None
+    return numerator / denominator
+
+
+def _free_cashflow(operating_cashflow: float | None, capex: float | None, explicit: float | None) -> float | None:
+    if explicit is not None:
+        return explicit
+    if operating_cashflow is None or capex is None:
+        return None
+    return operating_cashflow + capex if capex < 0 else operating_cashflow - capex
+
+
+def _metric_flag(key: str, label: str, value: float | None, tone: str, detail: str) -> dict:
+    return {
+        "key": key,
+        "label": label,
+        "value": value,
+        "tone": tone,
+        "detail": detail,
+    }
+
+
+@router.get("/quality-metrics", response_model=ApiResponse)
+async def get_quality_metrics(
+    symbol: str,
+    date: str | None = None,
+):
+    """专业投研盈利质量指标。
+
+    只从已落库财报与快照推导，缺失字段返回 null，避免把不存在的数据伪装成确定值。
+    """
+    init_db()
+    normalized = normalize_market_symbol(symbol)
+    resolved_date = date or dt_date.today().isoformat()
+    snapshot = _latest_row("fundamental_snapshot", normalized, resolved_date) or {}
+    income = _latest_statement_metrics(normalized, resolved_date, "income")
+    balance = _latest_statement_metrics(normalized, resolved_date, "balance")
+    cashflow = _latest_statement_metrics(normalized, resolved_date, "cashflow")
+
+    revenue = (
+        _number_from_payload("revenue", income)
+        or _number_from_payload("total_revenue", income)
+        or _finite_number(snapshot.get("revenue"))
+    )
+    net_income = (
+        _number_from_payload("net_income", income)
+        or _number_from_payload("net_profit", income)
+        or _number_from_payload("n_income", income)
+        or _finite_number(snapshot.get("net_income"))
+    )
+    gross_margin = (
+        _number_from_payload("gross_margin", income)
+        or _finite_number(snapshot.get("gross_margin"))
+    )
+    gross_profit = _number_from_payload("gross_profit", income)
+    if gross_margin is None:
+        gross_margin = _ratio(gross_profit, revenue)
+
+    operating_cashflow = (
+        _number_from_payload("operating_cashflow", cashflow)
+        or _number_from_payload("n_cashflow_act", cashflow)
+        or _number_from_payload("cash_from_operations", cashflow)
+    )
+    capex = (
+        _number_from_payload("capital_expenditure", cashflow)
+        or _number_from_payload("capex", cashflow)
+    )
+    free_cashflow = _free_cashflow(
+        operating_cashflow,
+        capex,
+        _number_from_payload("free_cashflow", cashflow),
+    )
+
+    total_assets = (
+        _number_from_payload("total_assets", balance)
+        or _number_from_payload("total_asset", balance)
+    )
+    total_liabilities = (
+        _number_from_payload("total_liabilities", balance)
+        or _number_from_payload("total_liab", balance)
+    )
+    total_equity = (
+        _number_from_payload("total_equity", balance)
+        or _number_from_payload("stockholders_equity", balance)
+    )
+    net_margin = _ratio(net_income, revenue)
+    ocf_to_net_income = _ratio(operating_cashflow, net_income)
+    debt_to_assets = _ratio(total_liabilities, total_assets)
+    roe = _finite_number(snapshot.get("roe")) or _number_from_payload("roe", income)
+    if roe is None:
+        roe = _ratio(net_income, total_equity)
+
+    components = [
+        ("cashflow_quality", ocf_to_net_income, 1.0, "higher", 0.30),
+        ("gross_margin", gross_margin, 0.30, "higher", 0.25),
+        ("net_margin", net_margin, 0.10, "higher", 0.20),
+        ("debt_to_assets", debt_to_assets, 0.50, "lower", 0.15),
+        ("roe", roe, 0.15, "higher", 0.10),
+    ]
+    earned = 0.0
+    possible = 0.0
+    for _, value, threshold, direction, weight in components:
+        if value is None:
+            continue
+        possible += weight
+        if direction == "higher":
+            earned += weight * min(max(value / threshold, 0.0), 1.0)
+        else:
+            earned += weight * min(max((threshold - value) / threshold, 0.0), 1.0)
+    quality_score = earned / possible if possible else None
+
+    flags: list[dict] = []
+    if ocf_to_net_income is not None:
+        flags.append(
+            _metric_flag(
+                "cashflow_quality",
+                "现金流覆盖净利",
+                ocf_to_net_income,
+                "success" if ocf_to_net_income >= 1 else "warning",
+                "经营现金流高于净利润" if ocf_to_net_income >= 1 else "经营现金流弱于净利润",
+            )
+        )
+    if debt_to_assets is not None:
+        flags.append(
+            _metric_flag(
+                "leverage",
+                "资产负债率",
+                debt_to_assets,
+                "success" if debt_to_assets <= 0.5 else "warning",
+                "杠杆水平可控" if debt_to_assets <= 0.5 else "杠杆水平偏高",
+            )
+        )
+    if gross_margin is not None:
+        flags.append(
+            _metric_flag(
+                "gross_margin",
+                "毛利率",
+                gross_margin,
+                "success" if gross_margin >= 0.3 else "neutral",
+                "毛利率处于较高水平" if gross_margin >= 0.3 else "毛利率需要同行对比",
+            )
+        )
+
+    available = any(
+        value is not None
+        for value in (
+            gross_margin,
+            net_margin,
+            operating_cashflow,
+            free_cashflow,
+            debt_to_assets,
+            roe,
+        )
+    )
+    return ApiResponse(
+        success=True,
+        data={
+            "symbol": normalized,
+            "date": resolved_date,
+            "available": available,
+            "gross_margin": gross_margin,
+            "net_margin": net_margin,
+            "operating_cashflow": operating_cashflow,
+            "ocf_to_net_income": ocf_to_net_income,
+            "free_cashflow": free_cashflow,
+            "debt_to_assets": debt_to_assets,
+            "roe": roe,
+            "quality_score": quality_score,
+            "flags": flags,
+            "data_quality": {
+                "income_available": bool(income),
+                "balance_available": bool(balance),
+                "cashflow_available": bool(cashflow),
+                "snapshot_available": bool(snapshot),
+                "disclosure": "盈利质量指标仅由已落库财报推导，缺失字段返回 null。",
+            },
+        },
+    )
+
+
+# ============================================================
+# BE-1: 扩展 /fundamentals 加 quarterly_series
+# 兼容现有 /fundamentals 调用 — quarters 参数缺失时不返回该字段
+# ============================================================
+# (在现有 get_professional_fundamentals 之外提供独立路由，避免改动既有签名)
+
+
+@router.get("/fundamentals-quarterly", response_model=ApiResponse)
+async def get_fundamentals_quarterly(
+    symbol: str,
+    end: str | None = None,
+    quarters: int = Query(default=8, ge=1, le=16),
+):
+    """BE-1: V2 财务序列接口。返回 N 季度的营收/净利/ROE。"""
+    init_db()
+    normalized = normalize_market_symbol(symbol)
+    resolved_end = end or dt_date.today().isoformat()
+    series = _quarterly_financial_series(normalized, resolved_end, quarters)
+    has_data = any(v is not None for v in series["revenue"] + series["net_income"] + series["roe"])
+    return ApiResponse(
+        success=True,
+        data={
+            "symbol": normalized,
+            "end": resolved_end,
+            "quarters_requested": quarters,
+            "quarterly_series": series,
+            "data_quality": {
+                "available": has_data,
+                "period_count": len(series["quarters"]),
+                "disclosure": "缺失字段返回 null，不会被填充为 0 或估算值",
+            },
+        },
+    )
+
+
+# ============================================================
+# BE-2: /valuation-percentile
+# 行业百分位（横截面） + 历史百分位（时间序列）
+# 数据全部来自 fundamental_snapshot，零外部依赖
+# ============================================================
+
+
+@router.get("/valuation-percentile", response_model=ApiResponse)
+async def get_valuation_percentile(
+    symbol: str,
+    date: str | None = None,
+):
+    init_db()
+    normalized = normalize_market_symbol(symbol)
+    resolved_date = date or dt_date.today().isoformat()
+
+    # 1) 取当前估值
+    current = _latest_row("fundamental_snapshot", normalized, resolved_date)
+    if not current:
+        return ApiResponse(
+            success=True,
+            data={
+                "symbol": normalized,
+                "date": resolved_date,
+                "items": [],
+                "data_quality": {
+                    "available": False,
+                    "disclosure": "fundamental_snapshot 未落库",
+                },
+            },
+        )
+
+    # 2) 行业横截面（同行业其它标的的当前估值）
+    industry_of: dict[str, str | None] = {}
+    with get_connection() as conn:
+        prof = conn.execute(
+            "SELECT industry FROM security_master WHERE symbol = ?",
+            (normalized,),
+        ).fetchone()
+        if prof and prof[0]:
+            industry = prof[0]
+            peers = conn.execute(
+                """
+                SELECT sm.symbol, fs.pe_ttm, fs.pb
+                FROM security_master sm
+                LEFT JOIN fundamental_snapshot fs ON sm.symbol = fs.symbol
+                WHERE sm.industry = ? AND fs.date <= ?
+                """,
+                (industry, resolved_date),
+            ).fetchall()
+            industry_of["pe_ttm"] = industry  # marker
+            peer_pe = [
+                row[1]
+                for row in peers
+                if row[1] is not None and float(row[1]) > 0
+            ]
+            peer_pb = [
+                row[2]
+                for row in peers
+                if row[2] is not None and float(row[2]) > 0
+            ]
+        else:
+            peer_pe = []
+            peer_pb = []
+
+    def _percentile(arr: list[float], v: float | None) -> float | None:
+        if v is None or not arr:
+            return None
+        below = sum(1 for x in arr if x < v)
+        return below / len(arr)
+
+    # 3) 自身历史
+    with get_connection() as conn:
+        history = conn.execute(
+            """
+            SELECT date, pe_ttm, pb
+            FROM fundamental_snapshot
+            WHERE symbol = ? AND date <= ?
+            ORDER BY date DESC
+            LIMIT 1000
+            """,
+            (normalized, resolved_date),
+        ).fetchall()
+    history_pe = [r[1] for r in history if r[1] is not None and float(r[1]) > 0]
+    history_pb = [r[2] for r in history if r[2] is not None and float(r[2]) > 0]
+
+    current_pe = _finite_number(current.get("pe_ttm"))
+    current_pb = _finite_number(current.get("pb"))
+    # PS / EV-EBITDA 是 BE-6 (C 级) 引入；若未来字段补全可以直接读
+    current_ps = _finite_number(current.get("ps"))
+    current_ev = _finite_number(current.get("ev_ebitda"))
+
+    items = [
+        {
+            "name": "PE TTM",
+            "value": current_pe,
+            "industry_pct": _percentile(peer_pe, current_pe),
+            "history_pct": _percentile(history_pe, current_pe),
+        },
+        {
+            "name": "PB",
+            "value": current_pb,
+            "industry_pct": _percentile(peer_pb, current_pb),
+            "history_pct": _percentile(history_pb, current_pb),
+        },
+    ]
+    if current_ps is not None:
+        items.append({
+            "name": "PS",
+            "value": current_ps,
+            "industry_pct": None,
+            "history_pct": None,
+        })
+    if current_ev is not None:
+        items.append({
+            "name": "EV/EBITDA",
+            "value": current_ev,
+            "industry_pct": None,
+            "history_pct": None,
+        })
+
+    return ApiResponse(
+        success=True,
+        data={
+            "symbol": normalized,
+            "date": resolved_date,
+            "items": items,
+            "data_quality": {
+                "available": current_pe is not None or current_pb is not None,
+                "peer_sample_pe": len(peer_pe),
+                "peer_sample_pb": len(peer_pb),
+                "history_sample_pe": len(history_pe),
+                "history_sample_pb": len(history_pb),
+                "disclosure": "百分位 = 同行/历史中低于当前值的比例。null 表示样本不足或当前值缺失。",
+            },
+        },
+    )
+
+
+# ============================================================
+# BE-3: /catalysts
+# 聚合 news_evidence + 通过 headline 关键字分类
+# future 部分目前留空（D 级数据源待接入）
+# ============================================================
+
+
+def _classify_catalyst_type(headline: str) -> str:
+    h = headline or ""
+    if any(k in h for k in ("财报", "业绩", "净利", "营收", "超预期")):
+        return "earnings"
+    if any(k in h for k in ("上调", "下调", "目标价", "买入评级", "卖出评级", "跑赢", "跑输")):
+        return "research"
+    if any(k in h for k in ("龙虎榜",)):
+        return "lhb"
+    if any(k in h for k in ("解禁",)):
+        return "unlock"
+    if any(k in h for k in ("分红", "派息", "股息")):
+        return "dividend"
+    if any(k in h for k in ("政策", "监管", "关注函", "问询", "处罚")):
+        return "policy"
+    if any(k in h for k in ("股东大会", "发布会", "路演", "糖会", "进博会")):
+        return "meeting"
+    return "disclosure"
+
+
+def _tone_from_sentiment(s: str | None) -> str:
+    if not s:
+        return "neutral"
+    s_l = s.lower()
+    if "positive" in s_l or "bull" in s_l:
+        return "success"
+    if "negative" in s_l or "bear" in s_l:
+        return "danger"
+    return "neutral"
+
+
+@router.get("/catalysts", response_model=ApiResponse)
+async def get_catalysts(
+    symbol: str,
+    date: str | None = None,
+    past_days: int = Query(default=60, ge=1, le=365),
+    future_days: int = Query(default=30, ge=0, le=180),
+):
+    init_db()
+    normalized = normalize_market_symbol(symbol)
+    resolved_end = date or dt_date.today().isoformat()
+    end_dt = dt_date.fromisoformat(resolved_end)
+    start_dt = end_dt - timedelta(days=past_days)
+    start_str = start_dt.isoformat()
+
+    # 过去事件：聚合 news_evidence
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT date, headline, source, url, sentiment, credibility, summary
+            FROM news_evidence
+            WHERE symbol = ? AND date >= ? AND date <= ?
+            ORDER BY date DESC
+            """,
+            (normalized, start_str, resolved_end),
+        ).fetchall()
+
+    past: list[dict] = []
+    for row in _rows(rows):
+        headline = row.get("headline") or ""
+        past.append(
+            {
+                "date": row.get("date"),
+                "type": _classify_catalyst_type(headline),
+                "title": headline,
+                "tone": _tone_from_sentiment(row.get("sentiment")),
+                "source_url": row.get("url"),
+                "note": row.get("summary"),
+            }
+        )
+
+    # 未来事件：占位 — Phase 3 BE-5 后接入
+    future: list[dict] = []
+
+    return ApiResponse(
+        success=True,
+        data={
+            "symbol": normalized,
+            "date": resolved_end,
+            "past": past,
+            "future": future,
+            "future_window_days": future_days,
+            "data_quality": {
+                "past_count": len(past),
+                "future_available": False,
+                "disclosure": "未来事件需外部数据源（解禁/分红/会议），当前留空",
+            },
+        },
+    )
+
+
+# ============================================================
+# BE-4: /backtest-summary
+# event_return 按 symbol group by + equity_curve 转累积收益
+# ============================================================
+
+
+@router.get("/backtest-summary", response_model=ApiResponse)
+async def get_backtest_summary(
+    symbol: str,
+    strategy: str = Query(default="resonance_v2"),
+):
+    init_db()
+    normalized = normalize_market_symbol(symbol)
+
+    # 聚合 event_return：win_rate / 平均 5d / 20d / 60d / MAE
+    # market_regime 优先取 event_return，回退到 signal_log（兼容历史数据）
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT er.ret_5d, er.ret_20d, er.ret_60d, er.max_adverse_20d,
+                   er.success_flag, er.entry_date,
+                   COALESCE(er.market_regime, sl.market_regime) AS market_regime
+            FROM event_return er
+            JOIN signal_log sl ON sl.signal_id = er.signal_id
+            WHERE sl.symbol = ?
+            ORDER BY er.entry_date
+            """,
+            (normalized,),
+        ).fetchall()
+
+    samples = _rows(rows)
+    n = len(samples)
+    win = sum(1 for s in samples if s.get("success_flag") in (1, True))
+    loss = n - win
+
+    def _avg(field: str) -> float | None:
+        vals = [s.get(field) for s in samples if s.get(field) is not None]
+        if not vals:
+            return None
+        return sum(vals) / len(vals)
+
+    avg_5d = _avg("ret_5d")
+    avg_20d = _avg("ret_20d")
+    avg_60d = _avg("ret_60d")
+    # 取最大不利的最低值（最差表现）
+    mae_vals = [s.get("max_adverse_20d") for s in samples if s.get("max_adverse_20d") is not None]
+    max_adverse = min(mae_vals) if mae_vals else None
+
+    # 累积收益曲线：按 entry_date 排序的 ret_20d 累乘 - 1
+    curve_values: list[float] = []
+    curve_dates: list[str] = []
+    acc = 1.0
+    for s in samples:
+        r = s.get("ret_20d")
+        if r is None:
+            continue
+        acc *= 1.0 + float(r)
+        curve_values.append(acc - 1.0)
+        curve_dates.append(s.get("entry_date") or "")
+
+    # 样本质量
+    if n >= 30:
+        quality = "A"
+    elif n >= 15:
+        quality = "B"
+    elif n >= 5:
+        quality = "C"
+    else:
+        quality = "insufficient"
+
+    # === #2 regime 切分：按市场状态分组算胜率 ===
+    # 同一个策略评分在不同 regime 下含金量差异巨大，必须分开统计
+    regime_buckets: dict[str, list[dict]] = {}
+    for s in samples:
+        regime = s.get("market_regime") or "unknown"
+        regime_buckets.setdefault(regime, []).append(s)
+
+    by_regime: list[dict] = []
+    for regime, bucket in regime_buckets.items():
+        bn = len(bucket)
+        bwin = sum(1 for s in bucket if s.get("success_flag") in (1, True))
+        b20 = [s.get("ret_20d") for s in bucket if s.get("ret_20d") is not None]
+        by_regime.append({
+            "regime": regime,
+            "n": bn,
+            "win": bwin,
+            "win_rate": (bwin / bn) if bn > 0 else None,
+            "avg_20d": (sum(b20) / len(b20)) if b20 else None,
+        })
+    # 按样本数倒序，让最有统计意义的 regime 排前
+    by_regime.sort(key=lambda x: x["n"], reverse=True)
+
+    return ApiResponse(
+        success=True,
+        data={
+            "symbol": normalized,
+            "strategy_version": strategy,
+            "n": n,
+            "win": win,
+            "loss": loss,
+            "win_rate": (win / n) if n > 0 else None,
+            "avg_5d": avg_5d,
+            "avg_20d": avg_20d,
+            "avg_60d": avg_60d,
+            "max_adverse": max_adverse,
+            "curve": curve_values,
+            "curve_dates": curve_dates,
+            "sample_quality": quality,
+            "by_regime": by_regime,
+            "data_quality": {
+                "disclosure": "累积曲线 = ret_20d 连乘 - 1，仅供参考；sample_quality=insufficient 时结论不可靠。by_regime 按市场状态切分，样本少时不显著。",
+            },
+        },
+    )
+
+
+# =============================================================================
+# Phase 3 BE-5 + BE-7: 公司事件 / 龙虎榜外部数据接入
+# =============================================================================
+
+
+class CorporateSyncRequest(BaseModel):
+    symbols: list[str] = Field(default_factory=list)
+    end: str | None = None
+
+
+@router.post("/corporate-events/sync", response_model=ApiResponse)
+async def sync_corporate_events(request: CorporateSyncRequest):
+    """BE-5: 同步公司事件（限售解禁 / 分红派息）到 corporate_events 表。
+
+    akshare 不可用时直接返回 success=true, rows_written=0。
+    """
+    from tradingagents.dataflows import akshare_events as ev
+
+    init_db()
+    started = time.perf_counter()
+    if not ev.is_available():
+        return ApiResponse(
+            success=True,
+            data={
+                "available": False,
+                "rows_written": 0,
+                "elapsed_ms": int((time.perf_counter() - started) * 1000),
+                "disclosure": "akshare 未安装或不可用；公司事件保持空态",
+            },
+        )
+
+    symbols = _sync_symbols(request.symbols)
+    rows_written = 0
+    failures: list[dict] = []
+    for symbol in symbols:
+        normalized = normalize_market_symbol(symbol)
+        events: list[dict] = []
+        try:
+            events.extend(ev.fetch_unlock_events(normalized))
+        except Exception as exc:
+            failures.append({"symbol": normalized, "source": "unlock", "error": str(exc)})
+        try:
+            events.extend(ev.fetch_dividend_events(normalized))
+        except Exception as exc:
+            failures.append({"symbol": normalized, "source": "dividend", "error": str(exc)})
+
+        if not events:
+            continue
+        with get_connection() as conn:
+            for e in events:
+                conn.execute(
+                    """
+                    INSERT INTO corporate_events (
+                        event_id, symbol, event_date, event_type,
+                        title, tone, note, source, url, amount, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(event_id) DO UPDATE SET
+                        title = excluded.title,
+                        tone = excluded.tone,
+                        note = excluded.note,
+                        amount = excluded.amount,
+                        source = excluded.source,
+                        url = excluded.url
+                    """,
+                    (
+                        e["event_id"],
+                        e["symbol"],
+                        e["event_date"],
+                        e["event_type"],
+                        e["title"],
+                        e["tone"],
+                        e["note"],
+                        e["source"],
+                        e.get("url"),
+                        e.get("amount"),
+                        e["created_at"],
+                    ),
+                )
+                rows_written += 1
+            conn.commit()
+
+    return ApiResponse(
+        success=True,
+        data={
+            "available": True,
+            "rows_written": rows_written,
+            "failures": failures,
+            "elapsed_ms": int((time.perf_counter() - started) * 1000),
+            "disclosure": "数据来自 akshare，更新频率受外部接口影响",
+        },
+    )
+
+
+@router.post("/lhb/sync", response_model=ApiResponse)
+async def sync_lhb(request: CorporateSyncRequest):
+    """BE-7: 同步龙虎榜机构席位到 lhb_desk 表。"""
+    from tradingagents.dataflows import akshare_events as ev
+
+    init_db()
+    started = time.perf_counter()
+    if not ev.is_available():
+        return ApiResponse(
+            success=True,
+            data={
+                "available": False,
+                "rows_written": 0,
+                "elapsed_ms": int((time.perf_counter() - started) * 1000),
+                "disclosure": "akshare 未安装或不可用；龙虎榜保持空态",
+            },
+        )
+
+    end = request.end or dt_date.today().isoformat()
+    start = _default_start(end, 30)
+    symbols = _sync_symbols(request.symbols)
+    rows_written = 0
+    for symbol in symbols:
+        normalized = normalize_market_symbol(symbol)
+        try:
+            desks = ev.fetch_lhb_desks(normalized, start, end)
+        except Exception:
+            desks = []
+        if not desks:
+            continue
+        with get_connection() as conn:
+            for d in desks:
+                conn.execute(
+                    """
+                    INSERT INTO lhb_desk (
+                        desk_id, date, symbol, desk_name, desk_tag,
+                        net_buy, buy_amount, sell_amount, source, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(desk_id) DO UPDATE SET
+                        net_buy = excluded.net_buy,
+                        buy_amount = excluded.buy_amount,
+                        sell_amount = excluded.sell_amount,
+                        source = excluded.source
+                    """,
+                    (
+                        d["desk_id"],
+                        d["date"],
+                        d["symbol"],
+                        d["desk_name"],
+                        d["desk_tag"],
+                        d.get("net_buy"),
+                        d.get("buy_amount"),
+                        d.get("sell_amount"),
+                        d.get("source"),
+                        d["created_at"],
+                    ),
+                )
+                rows_written += 1
+            conn.commit()
+    return ApiResponse(
+        success=True,
+        data={
+            "available": True,
+            "rows_written": rows_written,
+            "elapsed_ms": int((time.perf_counter() - started) * 1000),
+        },
+    )
+
+
+def _holding_score(row: dict) -> float | None:
+    components = [
+        ("northbound_float_pct", 0.15, 0.30),
+        ("fund_float_pct", 0.10, 0.25),
+        ("top10_holder_pct", 0.60, 0.20),
+    ]
+    earned = 0.0
+    possible = 0.0
+    for key, threshold, weight in components:
+        value = _finite_number(row.get(key))
+        if value is None:
+            continue
+        possible += weight
+        earned += weight * min(max(value / threshold, 0.0), 1.0)
+
+    shareholder_delta = _finite_number(row.get("shareholder_count_delta_pct"))
+    if shareholder_delta is not None:
+        possible += 0.25
+        earned += 0.25 * min(max((-shareholder_delta) / 0.10, 0.0), 1.0)
+    return earned / possible if possible else None
+
+
+def _holding_item(key: str, label: str, value: float | int | None, tone: str, detail: str) -> dict:
+    return {
+        "key": key,
+        "label": label,
+        "value": value,
+        "tone": tone,
+        "detail": detail,
+    }
+
+
+def _holding_items(row: dict) -> list[dict]:
+    north = _finite_number(row.get("northbound_float_pct"))
+    fund = _finite_number(row.get("fund_float_pct"))
+    holders = row.get("shareholder_count")
+    holder_delta = _finite_number(row.get("shareholder_count_delta_pct"))
+    top10 = _finite_number(row.get("top10_holder_pct"))
+    return [
+        _holding_item(
+            "northbound",
+            "北向占流通",
+            north,
+            "success" if north is not None and north >= 0.05 else "neutral",
+            "陆股通持股占流通股比例",
+        ),
+        _holding_item(
+            "fund",
+            "公募重仓",
+            fund,
+            "success" if fund is not None and fund >= 0.05 else "neutral",
+            "基金重仓持股占流通股比例",
+        ),
+        _holding_item(
+            "shareholders",
+            "股东户数变化",
+            holder_delta,
+            "success" if holder_delta is not None and holder_delta < 0 else "warning" if holder_delta is not None and holder_delta > 0 else "neutral",
+            f"最新股东户数 {int(holders)}" if holders is not None else "股东户数未披露",
+        ),
+        _holding_item(
+            "top10",
+            "前十大持股",
+            top10,
+            "info" if top10 is not None and top10 >= 0.5 else "neutral",
+            "前十大股东持股比例",
+        ),
+    ]
+
+
+@router.post("/holding-concentration/sync", response_model=ApiResponse)
+async def sync_holding_concentration(request: CorporateSyncRequest):
+    """同步筹码集中度数据。
+
+    akshare 不可用时保持 success=true，前端展示空态。
+    """
+    from tradingagents.dataflows import akshare_events as ev
+
+    init_db()
+    started = time.perf_counter()
+    if not ev.is_available():
+        return ApiResponse(
+            success=True,
+            data={
+                "available": False,
+                "rows_written": 0,
+                "elapsed_ms": int((time.perf_counter() - started) * 1000),
+                "disclosure": "akshare 未安装或不可用；筹码集中度保持空态",
+            },
+        )
+
+    end = request.end or dt_date.today().isoformat()
+    rows_written = 0
+    failures: list[dict] = []
+    for symbol in _sync_symbols(request.symbols):
+        normalized = normalize_market_symbol(symbol)
+        try:
+            row = ev.fetch_holding_concentration(normalized, end)
+        except Exception as exc:
+            failures.append({"symbol": normalized, "error": str(exc)})
+            continue
+        if not row:
+            continue
+        with get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO holding_concentration (
+                    date, symbol, northbound_float_pct, northbound_total_pct,
+                    fund_float_pct, fund_count, shareholder_count,
+                    shareholder_count_delta_pct, top10_holder_pct, source, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(date, symbol) DO UPDATE SET
+                    northbound_float_pct = excluded.northbound_float_pct,
+                    northbound_total_pct = excluded.northbound_total_pct,
+                    fund_float_pct = excluded.fund_float_pct,
+                    fund_count = excluded.fund_count,
+                    shareholder_count = excluded.shareholder_count,
+                    shareholder_count_delta_pct = excluded.shareholder_count_delta_pct,
+                    top10_holder_pct = excluded.top10_holder_pct,
+                    source = excluded.source,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    row.get("date") or end,
+                    normalized,
+                    row.get("northbound_float_pct"),
+                    row.get("northbound_total_pct"),
+                    row.get("fund_float_pct"),
+                    row.get("fund_count"),
+                    row.get("shareholder_count"),
+                    row.get("shareholder_count_delta_pct"),
+                    row.get("top10_holder_pct"),
+                    row.get("source"),
+                    row.get("updated_at") or _now(),
+                ),
+            )
+            conn.commit()
+            rows_written += 1
+    return ApiResponse(
+        success=True,
+        data={
+            "available": True,
+            "rows_written": rows_written,
+            "failures": failures,
+            "elapsed_ms": int((time.perf_counter() - started) * 1000),
+            "disclosure": "数据来自 akshare；缺失字段返回 null，不进行估算。",
+        },
+    )
+
+
+@router.get("/holding-concentration", response_model=ApiResponse)
+async def get_holding_concentration(
+    symbol: str,
+    date: str | None = None,
+):
+    init_db()
+    normalized = normalize_market_symbol(symbol)
+    resolved_date = date or dt_date.today().isoformat()
+    with get_connection() as conn:
+        db_row = conn.execute(
+            """
+            SELECT *
+            FROM holding_concentration
+            WHERE symbol = ? AND date <= ?
+            ORDER BY date DESC
+            LIMIT 1
+            """,
+            (normalized, resolved_date),
+        ).fetchone()
+    row = _row(db_row)
+    if not row:
+        return ApiResponse(
+            success=True,
+            data={
+                "symbol": normalized,
+                "date": resolved_date,
+                "available": False,
+                "northbound_float_pct": None,
+                "northbound_total_pct": None,
+                "fund_float_pct": None,
+                "fund_count": None,
+                "shareholder_count": None,
+                "shareholder_count_delta_pct": None,
+                "top10_holder_pct": None,
+                "concentration_score": None,
+                "items": [],
+                "data_quality": {
+                    "available": False,
+                    "disclosure": "尚未同步筹码集中度数据",
+                },
+            },
+        )
+    score = _holding_score(row)
+    return ApiResponse(
+        success=True,
+        data={
+            "symbol": normalized,
+            "date": row.get("date") or resolved_date,
+            "available": True,
+            "northbound_float_pct": _finite_number(row.get("northbound_float_pct")),
+            "northbound_total_pct": _finite_number(row.get("northbound_total_pct")),
+            "fund_float_pct": _finite_number(row.get("fund_float_pct")),
+            "fund_count": row.get("fund_count"),
+            "shareholder_count": row.get("shareholder_count"),
+            "shareholder_count_delta_pct": _finite_number(row.get("shareholder_count_delta_pct")),
+            "top10_holder_pct": _finite_number(row.get("top10_holder_pct")),
+            "concentration_score": score,
+            "items": _holding_items(row),
+            "data_quality": {
+                "available": True,
+                "source": row.get("source"),
+                "updated_at": row.get("updated_at"),
+                "disclosure": "集中度评分由北向、公募、股东户数变化和前十大持股归一化得到。",
+            },
+        },
+    )
+
+
+# ============================================================
+# 增强 GET /catalysts —— future 部分从 corporate_events 读取
+# 旧版本仍保留为 past-only；这里新增 v2 路径
+# ============================================================
+
+
+@router.get("/catalysts-v2", response_model=ApiResponse)
+async def get_catalysts_v2(
+    symbol: str,
+    date: str | None = None,
+    past_days: int = Query(default=60, ge=1, le=365),
+    future_days: int = Query(default=30, ge=0, le=180),
+):
+    """BE-3 + BE-5 合并：past 来自 news_evidence，future 来自 corporate_events。"""
+    init_db()
+    normalized = normalize_market_symbol(symbol)
+    resolved_end = date or dt_date.today().isoformat()
+    end_dt = dt_date.fromisoformat(resolved_end)
+    past_start = (end_dt - timedelta(days=past_days)).isoformat()
+    future_end = (end_dt + timedelta(days=future_days)).isoformat()
+
+    # past
+    with get_connection() as conn:
+        past_rows = conn.execute(
+            """
+            SELECT date, headline, source, url, sentiment, summary
+            FROM news_evidence
+            WHERE symbol = ? AND date >= ? AND date <= ?
+            ORDER BY date DESC
+            """,
+            (normalized, past_start, resolved_end),
+        ).fetchall()
+    past = [
+        {
+            "date": row[0],
+            "type": _classify_catalyst_type(row[1] or ""),
+            "title": row[1] or "",
+            "tone": _tone_from_sentiment(row[4]),
+            "source_url": row[3],
+            "note": row[5],
+        }
+        for row in past_rows
+    ]
+
+    # future — corporate_events
+    with get_connection() as conn:
+        future_rows = conn.execute(
+            """
+            SELECT event_date, event_type, title, tone, note, url
+            FROM corporate_events
+            WHERE symbol = ? AND event_date > ? AND event_date <= ?
+            ORDER BY event_date ASC
+            """,
+            (normalized, resolved_end, future_end),
+        ).fetchall()
+    future = [
+        {
+            "date": row[0],
+            "type": row[1],
+            "title": row[2],
+            "tone": row[3] or "neutral",
+            "note": row[4],
+            "source_url": row[5],
+        }
+        for row in future_rows
+    ]
+
+    return ApiResponse(
+        success=True,
+        data={
+            "symbol": normalized,
+            "date": resolved_end,
+            "past": past,
+            "future": future,
+            "future_window_days": future_days,
+            "data_quality": {
+                "past_count": len(past),
+                "future_count": len(future),
+                "future_available": True,
+                "disclosure": "future 数据来自 akshare 同步任务，可能延迟数小时",
+            },
+        },
+    )
+
+
+@router.get("/institutional-desks", response_model=ApiResponse)
+async def get_institutional_desks(
+    symbol: str,
+    date: str | None = None,
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    """BE-7: 读取最近 N 条龙虎榜机构席位。"""
+    init_db()
+    normalized = normalize_market_symbol(symbol)
+    end = date or dt_date.today().isoformat()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT date, desk_name, desk_tag, net_buy, buy_amount, sell_amount
+            FROM lhb_desk
+            WHERE symbol = ? AND date <= ?
+            ORDER BY date DESC, ABS(net_buy) DESC
+            LIMIT ?
+            """,
+            (normalized, end, limit),
+        ).fetchall()
+    items = [
+        {
+            "date": row[0],
+            "name": row[1],
+            "tag": row[2] or "机构",
+            "net": row[3],
+            "buy": row[4],
+            "sell": row[5],
+        }
+        for row in rows
+    ]
+    return ApiResponse(
+        success=True,
+        data={
+            "symbol": normalized,
+            "date": end,
+            "items": items,
+            "data_quality": {
+                "available": len(items) > 0,
+                "count": len(items),
+                "disclosure": "数据来自 akshare 龙虎榜接口，需先调用 POST /lhb/sync",
+            },
+        },
+    )
+
+
+# =============================================================================
+# Symbol Workspace V2 — Phase 4 readability §3 缺失 1: 同板块联动
+# /sector-snapshot：返回标的所在行业的小样本横截面 + 大盘对比
+# =============================================================================
+
+
+@router.get("/sector-snapshot", response_model=ApiResponse)
+async def get_sector_snapshot(
+    symbol: str,
+    date: str | None = None,
+):
+    """返回标的所在板块的小样本横截面 + 大盘指数当日表现。
+
+    用于工作台头部"同板块联动"展示。
+    数据全部来自现有表，无外部依赖。
+    """
+    init_db()
+    normalized = normalize_market_symbol(symbol)
+    resolved_date = date or dt_date.today().isoformat()
+
+    with get_connection() as conn:
+        # 1) 该标的行业
+        profile = conn.execute(
+            "SELECT industry, market FROM security_master WHERE symbol = ?",
+            (normalized,),
+        ).fetchone()
+        industry = profile[0] if profile and profile[0] else None
+        market = profile[1] if profile and profile[1] else "CHINA"
+
+        # 2) 该标的当日涨跌
+        own_bar = conn.execute(
+            """
+            SELECT date, close, open
+            FROM daily_bars
+            WHERE symbol = ? AND date <= ?
+            ORDER BY date DESC LIMIT 2
+            """,
+            (normalized, resolved_date),
+        ).fetchall()
+        own_change_pct = None
+        if len(own_bar) >= 2:
+            today_close = own_bar[0][1]
+            prev_close = own_bar[1][1]
+            if today_close and prev_close:
+                own_change_pct = (today_close - prev_close) / prev_close
+
+        # 3) 同板块前 5 只标的（按市值排序，剔除自身）
+        peers: list[dict] = []
+        if industry:
+            peer_rows = conn.execute(
+                """
+                SELECT sm.symbol, sm.name, db.close, db.open
+                FROM security_master sm
+                LEFT JOIN daily_bars db ON sm.symbol = db.symbol AND db.date = (
+                    SELECT MAX(date) FROM daily_bars WHERE symbol = sm.symbol AND date <= ?
+                )
+                WHERE sm.industry = ? AND sm.symbol != ?
+                ORDER BY sm.symbol
+                LIMIT 5
+                """,
+                (resolved_date, industry, normalized),
+            ).fetchall()
+            for row in peer_rows:
+                psym, pname, pclose, popen = row[0], row[1], row[2], row[3]
+                # 拿前一日收盘
+                prev = conn.execute(
+                    """
+                    SELECT close FROM daily_bars
+                    WHERE symbol = ? AND date < ?
+                    ORDER BY date DESC LIMIT 1
+                    """,
+                    (psym, resolved_date),
+                ).fetchone()
+                change_pct = None
+                if pclose and prev and prev[0]:
+                    change_pct = (pclose - prev[0]) / prev[0]
+                peers.append({
+                    "symbol": psym,
+                    "name": pname or psym,
+                    "change_pct": change_pct,
+                })
+
+        # 4) 行业指数（如有）当日
+        # 5) 大盘指数当日（中国 = 000300.SH 沪深300；港股 = 800000.HK 等，简化用 000300）
+        index_symbol = "000300.SH" if market == "CHINA" else "HSI.HK"
+        index_rows = conn.execute(
+            """
+            SELECT date, close FROM index_bars
+            WHERE index_symbol = ? AND date <= ?
+            ORDER BY date DESC LIMIT 2
+            """,
+            (index_symbol, resolved_date),
+        ).fetchall()
+        market_change_pct = None
+        if len(index_rows) >= 2:
+            tc = index_rows[0][1]
+            pc = index_rows[1][1]
+            if tc and pc:
+                market_change_pct = (tc - pc) / pc
+
+        # 6) 行业平均涨跌（同行业所有标的当日均值）
+        sector_avg = None
+        if industry:
+            row = conn.execute(
+                """
+                SELECT AVG(
+                    CASE WHEN prev.close > 0 THEN (today.close - prev.close) / prev.close ELSE NULL END
+                ) as avg_change
+                FROM security_master sm
+                JOIN daily_bars today ON today.symbol = sm.symbol AND today.date = (
+                    SELECT MAX(date) FROM daily_bars WHERE symbol = sm.symbol AND date <= ?
+                )
+                JOIN daily_bars prev ON prev.symbol = sm.symbol AND prev.date = (
+                    SELECT MAX(date) FROM daily_bars WHERE symbol = sm.symbol AND date < today.date
+                )
+                WHERE sm.industry = ?
+                """,
+                (resolved_date, industry),
+            ).fetchone()
+            sector_avg = row[0] if row and row[0] is not None else None
+
+    return ApiResponse(
+        success=True,
+        data={
+            "symbol": normalized,
+            "date": resolved_date,
+            "industry": industry,
+            "own_change_pct": own_change_pct,
+            "sector_avg_change_pct": sector_avg,
+            "market_index": {
+                "symbol": index_symbol,
+                "change_pct": market_change_pct,
+            },
+            "peers": peers,
+            "data_quality": {
+                "industry_available": industry is not None,
+                "peer_count": len(peers),
+                "disclosure": "板块均值基于该行业所有已落库标的的等权平均",
+            },
+        },
+    )
+
+
+# =============================================================================
+# #4: 卖方一致预期 — 研报聚合
+# /research-reports/sync 同步个股研报；/consensus 聚合近 N 日评级与盈利预测
+# =============================================================================
+
+
+@router.post("/research-reports/sync", response_model=ApiResponse)
+async def sync_research_reports(request: CorporateSyncRequest):
+    """#4: 同步个股研报到 research_report 表。akshare 不可用时返回 available=false。"""
+    from tradingagents.dataflows import akshare_events as ev
+
+    init_db()
+    started = time.perf_counter()
+    if not ev.is_available():
+        return ApiResponse(
+            success=True,
+            data={
+                "available": False,
+                "rows_written": 0,
+                "elapsed_ms": int((time.perf_counter() - started) * 1000),
+                "disclosure": "akshare 未安装或不可用；卖方研报保持空态",
+            },
+        )
+
+    symbols = _sync_symbols(request.symbols)
+    rows_written = 0
+    for symbol in symbols:
+        normalized = normalize_market_symbol(symbol)
+        try:
+            reports = ev.fetch_research_reports(normalized)
+        except Exception:
+            reports = []
+        if not reports:
+            continue
+        with get_connection() as conn:
+            for r in reports:
+                conn.execute(
+                    """
+                    INSERT INTO research_report (
+                        report_id, symbol, date, org, rating, title,
+                        eps_forecast, target_price, industry, url, synced_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(report_id) DO UPDATE SET
+                        rating = excluded.rating,
+                        eps_forecast = excluded.eps_forecast,
+                        target_price = excluded.target_price,
+                        url = excluded.url,
+                        synced_at = excluded.synced_at
+                    """,
+                    (
+                        r["report_id"], r["symbol"], r["date"], r.get("org"),
+                        r.get("rating"), r.get("title"), r.get("eps_forecast"),
+                        r.get("target_price"), r.get("industry"), r.get("url"),
+                        r["synced_at"],
+                    ),
+                )
+                rows_written += 1
+            conn.commit()
+    return ApiResponse(
+        success=True,
+        data={
+            "available": True,
+            "rows_written": rows_written,
+            "elapsed_ms": int((time.perf_counter() - started) * 1000),
+        },
+    )
+
+
+# 东财评级 → 多空标准化分桶
+def _rating_bucket(rating: str | None) -> str:
+    if not rating:
+        return "其它"
+    r = str(rating)
+    if any(k in r for k in ("强烈推荐", "强推", "买入")):
+        return "买入"
+    if any(k in r for k in ("增持", "推荐", "跑赢", "优于")):
+        return "增持"
+    if any(k in r for k in ("中性", "持有", "同步", "审慎")):
+        return "中性"
+    if any(k in r for k in ("减持", "卖出", "跑输", "弱于")):
+        return "减持"
+    return "其它"
+
+
+@router.get("/consensus", response_model=ApiResponse)
+async def get_consensus(
+    symbol: str,
+    date: str | None = None,
+    window_days: int = Query(default=90, ge=7, le=365),
+):
+    """#4: 卖方一致预期聚合。
+
+    返回近 window_days 的：评级分布 / 覆盖机构数 / 研报数 / 一致预期 EPS / 目标价(若有)。
+    预期修正方向需要历史快照累积，首版返回 revision_hint=null 并说明。
+    """
+    init_db()
+    normalized = normalize_market_symbol(symbol)
+    resolved_end = date or dt_date.today().isoformat()
+    end_dt = dt_date.fromisoformat(resolved_end)
+    start_str = (end_dt - timedelta(days=window_days)).isoformat()
+    recent30_str = (end_dt - timedelta(days=30)).isoformat()
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT date, org, rating, title, eps_forecast, target_price, url
+            FROM research_report
+            WHERE symbol = ? AND date >= ? AND date <= ?
+            ORDER BY date DESC
+            """,
+            (normalized, start_str, resolved_end),
+        ).fetchall()
+    reports = _rows(rows)
+
+    if not reports:
+        return ApiResponse(
+            success=True,
+            data={
+                "symbol": normalized,
+                "date": resolved_end,
+                "window_days": window_days,
+                "total_reports": 0,
+                "org_count": 0,
+                "recent_30d_count": 0,
+                "rating_distribution": [],
+                "eps_consensus": None,
+                "target_price_avg": None,
+                "revision_hint": None,
+                "data_quality": {
+                    "available": False,
+                    "disclosure": "近期无研报覆盖，或数据尚未同步",
+                },
+            },
+        )
+
+    # 评级分布（按机构去重最新评级，避免一家机构多篇报告重复计数）
+    latest_by_org: dict[str, dict] = {}
+    for r in reports:  # reports 已按 date DESC，首次出现即最新
+        org = r.get("org") or f"_anon_{len(latest_by_org)}"
+        if org not in latest_by_org:
+            latest_by_org[org] = r
+
+    bucket_counts: dict[str, int] = {}
+    for r in latest_by_org.values():
+        b = _rating_bucket(r.get("rating"))
+        bucket_counts[b] = bucket_counts.get(b, 0) + 1
+    order = ["买入", "增持", "中性", "减持", "其它"]
+    rating_distribution = [
+        {"rating": b, "count": bucket_counts[b]}
+        for b in order
+        if b in bucket_counts
+    ]
+
+    eps_vals = [r["eps_forecast"] for r in reports if r.get("eps_forecast") is not None]
+    target_vals = [r["target_price"] for r in reports if r.get("target_price") is not None]
+    recent_30d = sum(1 for r in reports if (r.get("date") or "") >= recent30_str)
+
+    return ApiResponse(
+        success=True,
+        data={
+            "symbol": normalized,
+            "date": resolved_end,
+            "window_days": window_days,
+            "total_reports": len(reports),
+            "org_count": len(latest_by_org),
+            "recent_30d_count": recent_30d,
+            "rating_distribution": rating_distribution,
+            "eps_consensus": (sum(eps_vals) / len(eps_vals)) if eps_vals else None,
+            "target_price_avg": (sum(target_vals) / len(target_vals)) if target_vals else None,
+            # 修正方向需多次快照对比，首版不臆测
+            "revision_hint": None,
+            "data_quality": {
+                "available": True,
+                "eps_sample": len(eps_vals),
+                "target_sample": len(target_vals),
+                "disclosure": "评级按机构去重取最新；目标价/EPS 来自研报披露，部分机构未提供。预期修正方向需积累历史快照后启用。",
             },
         },
     )

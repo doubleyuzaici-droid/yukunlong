@@ -1,0 +1,1990 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>个股工作台 V2 · 贵州茅台 600519.SH</title>
+<style>
+/* ============================================================
+   1. Design Tokens (CSS Variables)
+   对应 bridge §4 与原 design brief §4
+   ============================================================ */
+:root {
+  --bg-canvas:    #0B0E14;
+  --bg-surface:   #11151E;
+  --bg-surface-2: #161B26;
+  --bg-hover:     #1B2230;
+  --bg-input:     #0E131C;
+
+  --border-subtle: #1F2530;
+  --border-strong: #2A3140;
+  --border-focus:  #3B82F6;
+
+  --text-primary:   #E6EDF3;
+  --text-secondary: #9AA5B1;
+  --text-tertiary:  #5D6773;
+  --text-disabled:  #3D4651;
+
+  --success: #22C55E;
+  --warning: #F59E0B;
+  --danger:  #EF4444;
+  --info:    #3B82F6;
+  --neutral: #64748B;
+
+  --success-bg: rgba(34,197,94,0.10);
+  --warning-bg: rgba(245,158,11,0.10);
+  --danger-bg:  rgba(239,68,68,0.10);
+  --info-bg:    rgba(59,130,246,0.10);
+  --neutral-bg: rgba(100,116,139,0.10);
+
+  --success-border: rgba(34,197,94,0.25);
+  --warning-border: rgba(245,158,11,0.25);
+  --danger-border:  rgba(239,68,68,0.25);
+  --info-border:    rgba(59,130,246,0.25);
+
+  --font-sans: 'Inter', 'PingFang SC', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, 'Cascadia Code', monospace;
+
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+
+  --r-sm: 4px; --r-md: 6px; --r-lg: 8px;
+}
+
+/* ============================================================
+   2. Reset & Base
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 22px;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+button { font: inherit; color: inherit; background: transparent; border: 0; cursor: pointer; }
+input, textarea, select { font: inherit; color: inherit; background: transparent; border: 0; outline: 0; }
+input:focus-visible, textarea:focus-visible, button:focus-visible {
+  outline: 2px solid var(--border-focus); outline-offset: 2px;
+}
+ul { list-style: none; }
+a { color: inherit; text-decoration: none; }
+
+/* ============================================================
+   3. Atoms
+   ============================================================ */
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.eyebrow {
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 20px; padding: 0 8px;
+  border-radius: var(--r-sm);
+  font-size: 11px; font-weight: 600; line-height: 1;
+}
+.pill--success { background: var(--success-bg); color: var(--success); }
+.pill--warning { background: var(--warning-bg); color: var(--warning); }
+.pill--danger  { background: var(--danger-bg);  color: var(--danger); }
+.pill--info    { background: var(--info-bg);    color: var(--info); }
+.pill--neutral { background: var(--neutral-bg); color: var(--neutral); }
+
+.dot { display:inline-block; width: 6px; height: 6px; border-radius: 50%; }
+.dot--success { background: var(--success); }
+.dot--warning { background: var(--warning); }
+.dot--danger  { background: var(--danger); }
+.dot--info    { background: var(--info); }
+.dot--neutral { background: var(--neutral); }
+
+.dot.pulse { animation: pulse 1.6s ease-out infinite; }
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 var(--warning-border); }
+  70%  { box-shadow: 0 0 0 8px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.tone-success { color: var(--success); }
+.tone-warning { color: var(--warning); }
+.tone-danger  { color: var(--danger); }
+.tone-info    { color: var(--info); }
+.tone-neutral { color: var(--text-secondary); }
+
+.muted { color: var(--text-secondary); }
+.faint { color: var(--text-tertiary); }
+
+/* ============================================================
+   4. Top Header Bar
+   ============================================================ */
+.header {
+  position: sticky; top: 0; z-index: 50;
+  height: 56px;
+  display: grid; grid-template-columns: 320px 1fr auto;
+  align-items: center; gap: var(--sp-6);
+  padding: 0 var(--sp-6);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.header__search {
+  display: flex; align-items: center; gap: var(--sp-2);
+  height: 36px; padding: 0 var(--sp-3);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+.header__search input {
+  flex: 1; font-family: var(--font-mono); font-size: 13px;
+  letter-spacing: 0.02em;
+}
+.header__search kbd {
+  font-family: var(--font-mono); font-size: 10px;
+  padding: 2px 6px; border-radius: var(--r-sm);
+  background: var(--bg-hover); color: var(--text-tertiary);
+  border: 1px solid var(--border-subtle);
+}
+
+.header__brand {
+  display: flex; align-items: baseline; gap: var(--sp-3);
+}
+.header__brand h1 {
+  font-size: 16px; font-weight: 600; line-height: 1;
+}
+.header__brand .code {
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);
+}
+.header__brand .price {
+  font-family: var(--font-mono); font-size: 18px; font-weight: 600;
+  margin-left: var(--sp-4);
+}
+.header__brand .chg { font-family: var(--font-mono); font-size: 12px; }
+.header__brand .freshness {
+  margin-left: var(--sp-3);
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--text-tertiary);
+}
+
+.header__actions {
+  display: flex; align-items: center; gap: var(--sp-2);
+}
+.btn {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  height: 32px; padding: 0 var(--sp-3);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  font-size: 13px; color: var(--text-primary);
+  transition: background 120ms, border-color 120ms;
+}
+.btn:hover { background: var(--bg-hover); border-color: var(--border-strong); }
+.btn--primary {
+  background: var(--info); border-color: var(--info); color: white; font-weight: 600;
+}
+.btn--primary:hover { background: #2563eb; border-color: #2563eb; }
+.btn--icon { width: 32px; padding: 0; justify-content: center; }
+
+/* ============================================================
+   5. Profile Strip
+   ============================================================ */
+.profile-strip {
+  display: grid; grid-template-columns: repeat(8, 1fr);
+  gap: 1px; padding: 0; background: var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.profile-strip__cell {
+  background: var(--bg-canvas);
+  padding: var(--sp-3) var(--sp-4);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.profile-strip__label {
+  font-size: 11px; color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+}
+.profile-strip__value {
+  font-family: var(--font-mono); font-size: 14px; font-weight: 600;
+}
+.profile-strip__value .unit { font-size: 11px; color: var(--text-tertiary); margin-left: 2px; }
+.profile-strip__sub { font-size: 11px; color: var(--text-secondary); }
+
+/* ============================================================
+   6. Status Banner
+   ============================================================ */
+.status-banner {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-6);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.status-banner--partial {
+  background: var(--warning-bg); border-bottom-color: var(--warning-border);
+  color: var(--warning);
+}
+.status-banner__msg { flex: 1; font-size: 13px; }
+.status-banner button {
+  font-size: 12px; padding: 4px 10px;
+  border: 1px solid currentColor; border-radius: var(--r-sm);
+  color: inherit;
+}
+
+/* ============================================================
+   7. Three Column Body Layout
+   ============================================================ */
+.body {
+  display: grid;
+  grid-template-columns: 240px 1fr 320px;
+  min-height: calc(100vh - 56px - 64px);
+  max-width: 1680px; margin: 0 auto;
+}
+
+/* ============================================================
+   8. Left Nav Rail
+   ============================================================ */
+.nav-rail {
+  border-right: 1px solid var(--border-subtle);
+  padding: var(--sp-4);
+  display: flex; flex-direction: column; gap: var(--sp-5);
+  overflow-y: auto;
+  max-height: calc(100vh - 56px - 64px);
+  position: sticky; top: 56px;
+}
+.nav-rail__search {
+  display: flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 var(--sp-3);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+.nav-rail__search input { flex: 1; font-size: 13px; }
+
+.nav-group__head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--sp-2);
+}
+.nav-group__title { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.nav-group__count { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+
+.nav-item {
+  display: grid; grid-template-columns: 8px 1fr auto;
+  align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-2);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  position: relative;
+}
+.nav-item:hover { background: var(--bg-hover); }
+.nav-item.active {
+  background: var(--bg-hover);
+  box-shadow: inset 2px 0 0 var(--info);
+}
+.nav-item__name {
+  display: flex; flex-direction: column; min-width: 0;
+}
+.nav-item__name strong { font-size: 13px; font-weight: 500; }
+.nav-item__name span {
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--text-tertiary); margin-top: 1px;
+}
+.nav-item__trailing {
+  font-family: var(--font-mono); font-size: 11px;
+  text-align: right;
+}
+
+/* ============================================================
+   9. Workspace Main
+   ============================================================ */
+.workspace {
+  display: flex; flex-direction: column;
+  min-width: 0;
+  padding: 0;
+}
+.tab-bar {
+  position: sticky; top: 56px; z-index: 40;
+  display: flex; align-items: stretch;
+  background: var(--bg-canvas);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0 var(--sp-6);
+}
+.tab {
+  position: relative;
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+  display: flex; flex-direction: column; gap: 2px;
+  font-size: 14px; font-weight: 600;
+  color: var(--text-secondary);
+}
+.tab:hover { color: var(--text-primary); }
+.tab.active {
+  color: var(--text-primary);
+}
+.tab.active::after {
+  content: ''; position: absolute; bottom: -1px; left: var(--sp-4); right: var(--sp-4);
+  height: 2px; background: var(--info); border-radius: 1px;
+}
+.tab small { font-size: 11px; font-weight: 400; color: var(--text-tertiary); }
+
+.tab-panel { padding: var(--sp-6); display: none; flex-direction: column; gap: var(--sp-5); }
+.tab-panel.active { display: flex; }
+
+/* ============================================================
+   10. Hero Decision Card (Tab 1)
+   ============================================================ */
+.hero {
+  display: grid; grid-template-columns: 1.4fr 1fr;
+  gap: var(--sp-6);
+  padding: var(--sp-5) var(--sp-6);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+}
+.hero--neutral { border-left: 3px solid var(--neutral); }
+.hero--opportunity { border-left: 3px solid var(--success); }
+.hero--warn { border-left: 3px solid var(--warning); }
+.hero--risk { border-left: 3px solid var(--danger); }
+
+.hero__left { display: flex; flex-direction: column; gap: var(--sp-3); }
+.hero__title { font-size: 22px; font-weight: 600; line-height: 28px; letter-spacing: -0.01em; }
+.hero__reason { font-size: 13px; color: var(--text-secondary); line-height: 20px; max-width: 520px; }
+.hero__controls { display: flex; align-items: center; gap: var(--sp-4); margin-top: var(--sp-2); }
+
+.segmented {
+  display: inline-flex; padding: 2px;
+  background: var(--bg-input); border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+.segmented button {
+  padding: 4px 12px; font-size: 12px; font-weight: 600;
+  border-radius: var(--r-sm); color: var(--text-secondary);
+}
+.segmented button.active { background: var(--bg-hover); color: var(--text-primary); }
+
+.hero__right { display: flex; flex-direction: column; gap: var(--sp-2); }
+.score-tree { display: grid; grid-template-columns: 60px 1fr 60px 20px; gap: 6px var(--sp-2); align-items: center; }
+.score-tree__label { font-size: 12px; color: var(--text-secondary); }
+.score-tree__bar { height: 6px; background: var(--bg-input); border-radius: 999px; overflow: hidden; }
+.score-tree__bar i { display: block; height: 100%; background: var(--info); border-radius: inherit; }
+.score-tree__bar i.tone-success { background: var(--success); }
+.score-tree__bar i.tone-warning { background: var(--warning); }
+.score-tree__bar i.tone-danger  { background: var(--danger); }
+.score-tree__value { font-family: var(--font-mono); font-size: 12px; text-align: right; }
+.score-tree__check { font-size: 12px; text-align: center; }
+
+.score-summary { display: flex; gap: var(--sp-4); margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border-subtle); }
+.score-summary__big { display: flex; flex-direction: column; }
+.score-summary__big strong { font-family: var(--font-mono); font-size: 28px; line-height: 32px; font-weight: 600; }
+.score-summary__big span { font-size: 11px; color: var(--text-tertiary); }
+.score-summary__hint { font-size: 12px; color: var(--text-secondary); align-self: end; line-height: 16px; }
+
+/* ============================================================
+   11. Bull vs Falsify
+   ============================================================ */
+.narrative {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3);
+}
+.narrative__card {
+  padding: var(--sp-4); border-radius: var(--r-lg);
+  border: 1px solid;
+}
+.narrative__card--bull { background: var(--success-bg); border-color: var(--success-border); }
+.narrative__card--falsify { background: var(--danger-bg); border-color: var(--danger-border); }
+.narrative__title {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--sp-3);
+}
+.narrative__title h3 { font-size: 13px; font-weight: 600; }
+.narrative__list { display: flex; flex-direction: column; gap: var(--sp-2); }
+.narrative__row {
+  display: grid; grid-template-columns: 16px 1fr auto; gap: var(--sp-2);
+  align-items: center; font-size: 13px;
+}
+.narrative__icon { font-family: var(--font-mono); font-size: 12px; font-weight: 700; text-align: center; }
+.narrative__icon.ok { color: var(--success); }
+.narrative__icon.no { color: var(--danger); }
+.narrative__icon.warn { color: var(--warning); }
+.narrative__row.occurred { color: var(--warning); }
+.narrative__row.occurred .dot { margin-right: 6px; vertical-align: middle; }
+.narrative__row time { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+
+/* ============================================================
+   12. Indicator Matrix (3 columns by horizon)
+   ============================================================ */
+.matrix { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-3); }
+.matrix__col {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  padding: var(--sp-4);
+  display: flex; flex-direction: column; gap: var(--sp-3);
+}
+.matrix__head { display: flex; flex-direction: column; gap: 2px; padding-bottom: var(--sp-3); border-bottom: 1px solid var(--border-subtle); }
+.matrix__head h4 { font-size: 13px; font-weight: 600; }
+.matrix__head small { font-size: 11px; color: var(--text-tertiary); }
+.matrix__rows { display: flex; flex-direction: column; gap: var(--sp-3); }
+.matrix__row {
+  display: grid; grid-template-columns: 1fr auto 80px; align-items: center; gap: var(--sp-3);
+}
+.matrix__row .lbl { font-size: 12px; color: var(--text-secondary); }
+.matrix__row .val { font-family: var(--font-mono); font-size: 13px; font-weight: 600; text-align: right; }
+.matrix__row svg { display: block; }
+
+.matrix__empty {
+  padding: var(--sp-5); text-align: center; font-size: 12px;
+  color: var(--text-tertiary); border: 1px dashed var(--border-subtle);
+  border-radius: var(--r-md);
+}
+
+/* ============================================================
+   13. Risk Budget Calculator
+   ============================================================ */
+.risk-budget {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  padding: var(--sp-5);
+}
+.risk-budget__head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--sp-4);
+}
+.risk-budget__head h3 { font-size: 14px; font-weight: 600; }
+
+.risk-inputs { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.risk-input {
+  background: var(--bg-input); border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md); padding: var(--sp-2) var(--sp-3);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.risk-input label { font-size: 11px; color: var(--text-tertiary); }
+.risk-input input, .risk-input select {
+  font-family: var(--font-mono); font-size: 14px; font-weight: 600;
+}
+
+.risk-output {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-4);
+  padding: var(--sp-4); background: var(--bg-surface-2);
+  border-radius: var(--r-md);
+}
+.risk-output__cell { display: flex; flex-direction: column; gap: 2px; }
+.risk-output__cell .lbl { font-size: 11px; color: var(--text-tertiary); }
+.risk-output__cell .val { font-family: var(--font-mono); font-size: 18px; font-weight: 600; }
+.risk-output__cell .sub { font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono); }
+.risk-output__cell.danger .val { color: var(--danger); }
+
+.risk-budget__footer {
+  margin-top: var(--sp-3); font-size: 12px; color: var(--text-secondary);
+  display: flex; align-items: center; gap: var(--sp-2);
+}
+
+/* ============================================================
+   14. Chart Tab
+   ============================================================ */
+.chart-toolbar {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  flex-wrap: wrap;
+}
+.chart-toolbar__group { display: inline-flex; gap: 4px; }
+.chip {
+  padding: 4px 10px; font-size: 12px;
+  background: var(--bg-surface-2); border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm); color: var(--text-secondary);
+}
+.chip.active { background: var(--bg-hover); color: var(--text-primary); border-color: var(--border-strong); }
+
+.kline-shell {
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg); overflow: hidden;
+}
+.kline {
+  position: relative; height: 420px; padding: var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.kline svg { width: 100%; height: 100%; display: block; }
+
+.catalyst {
+  position: relative; height: 120px; padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-canvas);
+}
+.catalyst__axis {
+  position: absolute; left: var(--sp-4); right: var(--sp-4);
+  top: 50%; height: 1px; background: var(--border-strong);
+}
+.catalyst__today {
+  position: absolute; top: 8px; bottom: 8px; width: 1px;
+  background: var(--info); opacity: 0.7;
+}
+.catalyst__today::before {
+  content: '今天'; position: absolute; top: -2px; left: 4px;
+  font-size: 10px; color: var(--info); font-weight: 600;
+}
+.catalyst__event {
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-canvas);
+}
+.catalyst__event--past { background: var(--neutral); border-color: transparent; }
+.catalyst__event--past.tone-success { background: var(--success); }
+.catalyst__event--past.tone-danger  { background: var(--danger); }
+.catalyst__event--past.tone-warning { background: var(--warning); }
+.catalyst__event--future { background: transparent; }
+
+.catalyst__label {
+  position: absolute; transform: translateX(-50%);
+  font-size: 10px; color: var(--text-tertiary);
+  white-space: nowrap; max-width: 80px; overflow: hidden; text-overflow: ellipsis;
+}
+.catalyst__label--top { bottom: calc(50% + 14px); }
+.catalyst__label--bot { top: calc(50% + 14px); }
+
+.subchart-tabs { display: flex; padding: var(--sp-2) var(--sp-3); gap: var(--sp-1); }
+.subchart-tabs .chip { font-size: 11px; }
+.subchart { height: 140px; padding: var(--sp-3) var(--sp-4); }
+.subchart svg { width: 100%; height: 100%; }
+
+/* ============================================================
+   15. Fundamentals Tab (2x2)
+   ============================================================ */
+.fund-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4);
+}
+.panel {
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg); padding: var(--sp-4);
+}
+.panel__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-3); }
+.panel__head h3 { font-size: 13px; font-weight: 600; }
+.panel__head small { font-size: 11px; color: var(--text-tertiary); }
+
+.valuation-row {
+  display: grid; grid-template-columns: 80px 1fr 80px 1fr;
+  gap: var(--sp-3); align-items: center;
+  padding: var(--sp-2) 0; border-bottom: 1px dashed var(--border-subtle);
+}
+.valuation-row:last-child { border-bottom: 0; }
+.valuation-row .name { font-size: 12px; color: var(--text-secondary); }
+.valuation-row .name b { display:block; font-family: var(--font-mono); font-size: 13px; color: var(--text-primary); font-weight: 600; }
+.valuation-row .bar { position: relative; height: 8px; background: var(--bg-input); border-radius: 999px; }
+.valuation-row .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--info); border-radius: inherit; }
+.valuation-row .bar small { position: absolute; right: 6px; top: -16px; font-size: 10px; color: var(--text-tertiary); font-family: var(--font-mono); }
+.valuation-row .axis-label { font-size: 10px; color: var(--text-tertiary); text-align: right; }
+
+.fin-charts { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--sp-3); }
+.fin-chart { display: flex; flex-direction: column; gap: 4px; }
+.fin-chart h4 { font-size: 11px; color: var(--text-secondary); font-weight: 500; }
+.fin-chart .latest { font-family: var(--font-mono); font-size: 14px; font-weight: 600; }
+.fin-chart svg { width: 100%; height: 60px; display: block; }
+.fin-chart .yoy { font-size: 10px; color: var(--text-tertiary); font-family: var(--font-mono); }
+
+.disclosure-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+.disclosure-row {
+  display: grid; grid-template-columns: 72px auto 1fr; gap: var(--sp-3);
+  padding: var(--sp-2) 0; border-bottom: 1px dashed var(--border-subtle);
+  align-items: center; font-size: 13px;
+}
+.disclosure-row .date { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+.disclosure-row .title { color: var(--text-primary); }
+.disclosure-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: var(--sp-2); }
+
+.institutional-row {
+  display: grid; grid-template-columns: 1fr auto auto auto; gap: var(--sp-3);
+  padding: var(--sp-2) 0; border-bottom: 1px dashed var(--border-subtle);
+  font-size: 12px; align-items: center;
+}
+.institutional-row .net { font-family: var(--font-mono); font-weight: 600; }
+.institutional-row .net.positive { color: var(--success); }
+.institutional-row .net.negative { color: var(--danger); }
+
+/* ============================================================
+   16. Playbook Tab
+   ============================================================ */
+.playbook-grid {
+  display: grid; grid-template-columns: 1.5fr 1fr; gap: var(--sp-4);
+}
+.signal-detail__head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--sp-3); padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.signal-detail__title h3 { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
+.signal-detail__title small { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
+
+.signal-detail__grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4);
+}
+.signal-detail__col h4 {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-tertiary); margin-bottom: var(--sp-2);
+}
+.signal-detail__col ul { display: flex; flex-direction: column; gap: 6px; }
+.signal-detail__col li {
+  display: grid; grid-template-columns: 16px 1fr; gap: var(--sp-2);
+  font-size: 12px; align-items: start;
+}
+.signal-detail__col li::before { content: ''; }
+
+.agent-card {
+  margin-top: var(--sp-3); padding: var(--sp-3);
+  background: var(--info-bg); border: 1px solid var(--info-border);
+  border-radius: var(--r-md);
+}
+.agent-card h5 { font-size: 11px; color: var(--info); margin-bottom: 4px; letter-spacing: 0.04em; text-transform: uppercase; font-weight: 600; }
+.agent-card p { font-size: 12px; line-height: 18px; }
+
+.backtest__stats { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+.backtest__stats .row {
+  display: flex; justify-content: space-between; padding: 6px 0;
+  border-bottom: 1px dashed var(--border-subtle);
+}
+.backtest__stats .row span { font-size: 12px; color: var(--text-secondary); }
+.backtest__stats .row b { font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+.backtest__curve { height: 120px; }
+.backtest__curve svg { width: 100%; height: 100%; }
+
+.notes-timeline {
+  margin-top: var(--sp-4);
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg); padding: var(--sp-4);
+}
+.notes-list { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-3); }
+.note {
+  display: grid; grid-template-columns: 80px 1fr auto; gap: var(--sp-3);
+  padding: var(--sp-3); background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle); border-radius: var(--r-md);
+  font-size: 13px;
+}
+.note time { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+.note p { line-height: 20px; }
+.note .tag {
+  display: inline-block; padding: 1px 6px; margin-right: 4px;
+  background: var(--info-bg); color: var(--info); font-size: 11px;
+  border-radius: var(--r-sm); font-weight: 500;
+}
+
+/* ============================================================
+   17. Right Context Rail
+   ============================================================ */
+.context-rail {
+  border-left: 1px solid var(--border-subtle);
+  padding: var(--sp-4);
+  display: flex; flex-direction: column; gap: var(--sp-4);
+  position: sticky; top: 56px;
+  max-height: calc(100vh - 56px);
+  overflow-y: auto;
+}
+.rail-price {
+  display: flex; flex-direction: column; gap: 4px;
+  padding-bottom: var(--sp-4); border-bottom: 1px solid var(--border-subtle);
+}
+.rail-price .big { font-family: var(--font-mono); font-size: 28px; line-height: 32px; font-weight: 600; }
+.rail-price .chg { font-family: var(--font-mono); font-size: 14px; font-weight: 600; }
+.rail-price .meta { font-size: 11px; color: var(--text-tertiary); display: flex; align-items: center; gap: 6px; }
+
+.rail-cta {
+  width: 100%; padding: var(--sp-3); font-weight: 600; justify-content: center;
+}
+
+.rail-card {
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md); padding: var(--sp-3);
+}
+.rail-card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-2); }
+.rail-card__head h4 { font-size: 12px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.02em; text-transform: uppercase; }
+.rail-card__body { font-size: 13px; line-height: 20px; }
+.rail-card__body li { padding: 4px 0; display: flex; align-items: center; gap: 6px; }
+
+.note-input {
+  width: 100%; min-height: 80px;
+  background: var(--bg-input); border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md); padding: var(--sp-2) var(--sp-3);
+  font-size: 13px; line-height: 20px; resize: vertical;
+}
+.note-input:focus { border-color: var(--border-focus); }
+.note-actions { display: flex; justify-content: space-between; align-items: center; margin-top: var(--sp-2); font-size: 11px; color: var(--text-tertiary); }
+.note-actions button { font-size: 11px; padding: 4px 10px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--bg-surface-2); }
+.note-actions button:hover { background: var(--bg-hover); }
+
+/* ============================================================
+   18. Section heading
+   ============================================================ */
+.section-head { display: flex; align-items: baseline; justify-content: space-between; }
+.section-head h2 { font-size: 13px; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.04em; text-transform: uppercase; }
+.section-head small { font-size: 11px; color: var(--text-tertiary); }
+
+/* ============================================================
+   19. Scrollbar
+   ============================================================ */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     A. Sticky Header Bar
+     ============================================================ -->
+<header class="header" role="banner">
+  <div class="header__search">
+    <span class="faint mono">⌕</span>
+    <input type="text" placeholder="搜索代码、简称、关键词..." value="600519.SH" aria-label="搜索股票" />
+    <kbd>⌘K</kbd>
+  </div>
+  <div class="header__brand">
+    <h1>贵州茅台</h1>
+    <span class="code mono">600519.SH</span>
+    <span class="price tone-danger mono">¥1,623.50</span>
+    <span class="chg tone-danger mono">-14.50 / -0.89%</span>
+    <span class="freshness">
+      <span class="dot dot--warning"></span>
+      延迟 3 min · 2026-05-23 14:32
+    </span>
+  </div>
+  <div class="header__actions">
+    <button class="btn">＋ 加入自选</button>
+    <button class="btn">✎ 笔记</button>
+    <button class="btn btn--icon" aria-label="分享">↗</button>
+    <button class="btn btn--icon" aria-label="刷新">↻</button>
+  </div>
+</header>
+
+<!-- ============================================================
+     B. Profile Strip (8 cells)
+     ============================================================ -->
+<section class="profile-strip" aria-label="标的画像条">
+  <div class="profile-strip__cell">
+    <span class="profile-strip__label">行业</span>
+    <span class="profile-strip__value" style="font-family: var(--font-sans); font-size: 13px;">白酒</span>
+    <span class="profile-strip__sub">高端白酒</span>
+  </div>
+  <div class="profile-strip__cell">
+    <span class="profile-strip__label">市值</span>
+    <span class="profile-strip__value mono">20,384<span class="unit">亿</span></span>
+    <span class="profile-strip__sub">总市值</span>
+  </div>
+  <div class="profile-strip__cell">
+    <span class="profile-strip__label">自由流通</span>
+    <span class="profile-strip__value mono">13,260<span class="unit">亿</span></span>
+    <span class="profile-strip__sub">65% 流通比</span>
+  </div>
+  <div class="profile-strip__cell">
+    <span class="profile-strip__label">换手率</span>
+    <span class="profile-strip__value mono">0.42<span class="unit">%</span></span>
+    <span class="profile-strip__sub">20D 均 0.51%</span>
+  </div>
+  <div class="profile-strip__cell">
+    <span class="profile-strip__label">PE TTM</span>
+    <span class="profile-strip__value mono">26.4</span>
+    <span class="profile-strip__sub tone-success">行业 42%位</span>
+  </div>
+  <div class="profile-strip__cell">
+    <span class="profile-strip__label">PB</span>
+    <span class="profile-strip__value mono">9.1</span>
+    <span class="profile-strip__sub">历史 38%位</span>
+  </div>
+  <div class="profile-strip__cell">
+    <span class="profile-strip__label">股息率</span>
+    <span class="profile-strip__value mono">2.4<span class="unit">%</span></span>
+    <span class="profile-strip__sub">近12月</span>
+  </div>
+  <div class="profile-strip__cell">
+    <span class="profile-strip__label">状态</span>
+    <span class="profile-strip__value" style="font-family: var(--font-sans); font-size: 13px;">常规</span>
+    <span class="profile-strip__sub">上市15年</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     C. Status Banner (partial 态示例)
+     ============================================================ -->
+<div class="status-banner status-banner--partial" role="status">
+  <span class="dot dot--warning"></span>
+  <div class="status-banner__msg">
+    <strong>部分数据缺失</strong>：龙虎榜 2026-05-22 未刷新，已用 5-21 数据近似替代；
+    长线指标（ROE 趋势、自由现金流）来自待接入的基本面接口。
+  </div>
+  <button>查看详情</button>
+  <button>稍后提醒</button>
+</div>
+
+<!-- ============================================================
+     D-F. Three Column Body
+     ============================================================ -->
+<div class="body">
+
+  <!-- D. Left Nav Rail -->
+  <aside class="nav-rail" aria-label="标的导航">
+    <div class="nav-rail__search">
+      <span class="faint mono">⌕</span>
+      <input type="search" placeholder="筛选自选..." aria-label="筛选自选" />
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group__head">
+        <span class="nav-group__title">自选</span>
+        <span class="nav-group__count">12</span>
+      </div>
+      <div class="nav-item active" data-symbol="600519.SH">
+        <span class="dot dot--success"></span>
+        <div class="nav-item__name"><strong>贵州茅台</strong><span>600519.SH</span></div>
+        <span class="nav-item__trailing tone-danger">-0.89%</span>
+      </div>
+      <div class="nav-item">
+        <span class="dot dot--success"></span>
+        <div class="nav-item__name"><strong>宁德时代</strong><span>300750.SZ</span></div>
+        <span class="nav-item__trailing tone-success">+2.14%</span>
+      </div>
+      <div class="nav-item">
+        <span class="dot dot--warning"></span>
+        <div class="nav-item__name"><strong>比亚迪</strong><span>002594.SZ</span></div>
+        <span class="nav-item__trailing tone-danger">-1.42%</span>
+      </div>
+      <div class="nav-item">
+        <span class="dot dot--success"></span>
+        <div class="nav-item__name"><strong>招商银行</strong><span>600036.SH</span></div>
+        <span class="nav-item__trailing tone-success">+0.68%</span>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group__head">
+        <span class="nav-group__title">今日机会</span>
+        <span class="nav-group__count">5</span>
+      </div>
+      <div class="nav-item">
+        <span class="dot dot--success"></span>
+        <div class="nav-item__name"><strong>药明康德</strong><span>603259.SH</span></div>
+        <span class="nav-item__trailing">82</span>
+      </div>
+      <div class="nav-item">
+        <span class="dot dot--success"></span>
+        <div class="nav-item__name"><strong>中国中免</strong><span>601888.SH</span></div>
+        <span class="nav-item__trailing">76</span>
+      </div>
+      <div class="nav-item">
+        <span class="dot dot--info"></span>
+        <div class="nav-item__name"><strong>恒瑞医药</strong><span>600276.SH</span></div>
+        <span class="nav-item__trailing">71</span>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group__head">
+        <span class="nav-group__title">风险升高</span>
+        <span class="nav-group__count">3</span>
+      </div>
+      <div class="nav-item">
+        <span class="dot dot--danger"></span>
+        <div class="nav-item__name"><strong>东方财富</strong><span>300059.SZ</span></div>
+        <span class="nav-item__trailing tone-danger">高位</span>
+      </div>
+      <div class="nav-item">
+        <span class="dot dot--warning"></span>
+        <div class="nav-item__name"><strong>万科A</strong><span>000002.SZ</span></div>
+        <span class="nav-item__trailing tone-warning">破位</span>
+      </div>
+      <div class="nav-item">
+        <span class="dot dot--warning"></span>
+        <div class="nav-item__name"><strong>中信证券</strong><span>600030.SH</span></div>
+        <span class="nav-item__trailing tone-warning">背离</span>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group__head">
+        <span class="nav-group__title">最近</span>
+        <span class="nav-group__count">8</span>
+      </div>
+      <div class="nav-item">
+        <span class="dot dot--neutral"></span>
+        <div class="nav-item__name"><strong>五粮液</strong><span>000858.SZ</span></div>
+        <span class="nav-item__trailing faint">5分钟前</span>
+      </div>
+      <div class="nav-item">
+        <span class="dot dot--neutral"></span>
+        <div class="nav-item__name"><strong>泸州老窖</strong><span>000568.SZ</span></div>
+        <span class="nav-item__trailing faint">12分钟前</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- E. Main Workspace -->
+  <main class="workspace">
+    <nav class="tab-bar" role="tablist">
+      <button class="tab active" data-tab="pulse" role="tab" aria-selected="true">
+        现状速览<small>30 秒看懂</small>
+      </button>
+      <button class="tab" data-tab="chart" role="tab" aria-selected="false">
+        图表与信号<small>K 线 · 催化剂</small>
+      </button>
+      <button class="tab" data-tab="fundamentals" role="tab" aria-selected="false">
+        基本面 & 催化剂<small>估值 · 财务 · 公告</small>
+      </button>
+      <button class="tab" data-tab="playbook" role="tab" aria-selected="false">
+        决策与复盘<small>审查 · 后验 · 笔记</small>
+      </button>
+    </nav>
+
+    <!-- ===== Tab 1: 现状速览 ===== -->
+    <section class="tab-panel active" data-panel="pulse" role="tabpanel">
+
+      <!-- Hero Decision Card -->
+      <div class="hero hero--warn">
+        <div class="hero__left">
+          <span class="eyebrow">V2 共振策略 · 保守模式 · 2026-05-23</span>
+          <h2 class="hero__title">观察等待，趋势确认中</h2>
+          <p class="hero__reason">
+            MACD 顶部钝化、北向连续 2 日净流出 1.1 亿，建议等待回踩 EMA89（约 ¥1,580）后再评估买点。
+            若跌破将触发反向证据，转入风险态。
+          </p>
+          <div class="hero__controls">
+            <div class="segmented" role="radiogroup" aria-label="策略模式">
+              <button class="active" data-mode="conservative">保守模式</button>
+              <button data-mode="aggressive">激进模式</button>
+            </div>
+            <span class="faint" style="font-size: 11px;">
+              切到激进：买入阈值 0.55→0.45 · 仓位上限 8%→15%
+            </span>
+          </div>
+        </div>
+
+        <div class="hero__right">
+          <span class="eyebrow">5 因子评分</span>
+          <div class="score-tree">
+            <span class="score-tree__label">趋势</span>
+            <div class="score-tree__bar"><i class="tone-success" style="width: 82%"></i></div>
+            <span class="score-tree__value">0.82</span>
+            <span class="score-tree__check tone-success">✓</span>
+
+            <span class="score-tree__label">动能</span>
+            <div class="score-tree__bar"><i class="tone-warning" style="width: 41%"></i></div>
+            <span class="score-tree__value">0.41</span>
+            <span class="score-tree__check tone-warning">⚠</span>
+
+            <span class="score-tree__label">量能</span>
+            <div class="score-tree__bar"><i class="tone-success" style="width: 55%"></i></div>
+            <span class="score-tree__value">0.55</span>
+            <span class="score-tree__check tone-success">✓</span>
+
+            <span class="score-tree__label">大盘</span>
+            <div class="score-tree__bar"><i class="tone-danger" style="width: 30%"></i></div>
+            <span class="score-tree__value">0.30</span>
+            <span class="score-tree__check tone-danger">✗</span>
+
+            <span class="score-tree__label">资金</span>
+            <div class="score-tree__bar"><i class="tone-success" style="width: 68%"></i></div>
+            <span class="score-tree__value">0.68</span>
+            <span class="score-tree__check tone-success">✓</span>
+          </div>
+          <div class="score-summary">
+            <div class="score-summary__big">
+              <strong id="hero-score">76</strong>
+              <span>综合评分 / 100</span>
+            </div>
+            <div class="score-summary__hint">
+              因子完整度 <b class="mono tone-success">82%</b><br/>
+              <span class="faint">评分可信</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bull vs Falsify -->
+      <div class="narrative">
+        <div class="narrative__card narrative__card--bull">
+          <div class="narrative__title">
+            <h3 class="tone-success">多头叙事</h3>
+            <span class="pill pill--success">3 项成立</span>
+          </div>
+          <div class="narrative__list">
+            <div class="narrative__row"><span class="narrative__icon ok">✓</span>EMA21/89 多头排列，趋势强度 0.82<time>持续 23 天</time></div>
+            <div class="narrative__row"><span class="narrative__icon ok">✓</span>申万白酒行业 RS 排名进入前 15%<time>5D 改善</time></div>
+            <div class="narrative__row"><span class="narrative__icon ok">✓</span>主力 5 日净流入 2.3 亿元<time>近10D</time></div>
+          </div>
+        </div>
+        <div class="narrative__card narrative__card--falsify">
+          <div class="narrative__title">
+            <h3 class="tone-danger">若以下任一发生即证伪</h3>
+            <span class="pill pill--warning">1 项已发生</span>
+          </div>
+          <div class="narrative__list">
+            <div class="narrative__row"><span class="narrative__icon no">✗</span>跌破 EMA89 (¥1,580)<time>未触发</time></div>
+            <div class="narrative__row"><span class="narrative__icon no">✗</span>北向连续 3 日净流出<time>已 2/3 日</time></div>
+            <div class="narrative__row"><span class="narrative__icon no">✗</span>沪深 300 跌破 60 日线<time>未触发</time></div>
+            <div class="narrative__row occurred">
+              <span class="dot dot--warning pulse"></span>
+              <span>MACD 顶背离持续 5 天，警惕动能衰竭</span>
+              <time>2026-05-19 起</time>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Indicator Matrix by Horizon -->
+      <div class="matrix">
+        <div class="matrix__col">
+          <div class="matrix__head"><h4>短线 5–20D</h4><small>决定进出场 · 4 指标</small></div>
+          <div class="matrix__rows">
+            <div class="matrix__row">
+              <span class="lbl">RSI14</span>
+              <span class="val tone-warning">67.3</span>
+              <svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true">
+                <polyline points="0,12 8,10 16,11 24,9 32,8 40,7 48,6 56,8 64,5 72,4 80,3"
+                          fill="none" stroke="var(--warning)" stroke-width="1.5" />
+              </svg>
+            </div>
+            <div class="matrix__row">
+              <span class="lbl">KDJ-K</span>
+              <span class="val tone-warning">78.0</span>
+              <svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true">
+                <polyline points="0,15 8,13 16,11 24,10 32,9 40,7 48,6 56,5 64,4 72,3 80,2"
+                          fill="none" stroke="var(--warning)" stroke-width="1.5" />
+              </svg>
+            </div>
+            <div class="matrix__row">
+              <span class="lbl">量比</span>
+              <span class="val tone-success">1.4×</span>
+              <svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true">
+                <polyline points="0,15 8,14 16,13 24,15 32,12 40,10 48,11 56,8 64,9 72,7 80,5"
+                          fill="none" stroke="var(--success)" stroke-width="1.5" />
+              </svg>
+            </div>
+            <div class="matrix__row">
+              <span class="lbl">MACD</span>
+              <span class="val tone-warning">顶背离</span>
+              <svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true">
+                <line x1="0" y1="10" x2="80" y2="10" stroke="var(--border-strong)" stroke-width="0.5" stroke-dasharray="2,2"/>
+                <g fill="var(--success)">
+                  <rect x="2" y="8" width="4" height="2"/><rect x="10" y="7" width="4" height="3"/>
+                  <rect x="18" y="5" width="4" height="5"/><rect x="26" y="4" width="4" height="6"/>
+                  <rect x="34" y="6" width="4" height="4"/>
+                </g>
+                <g fill="var(--danger)">
+                  <rect x="42" y="10" width="4" height="2"/><rect x="50" y="10" width="4" height="3"/>
+                  <rect x="58" y="10" width="4" height="4"/><rect x="66" y="10" width="4" height="5"/>
+                  <rect x="74" y="10" width="4" height="6"/>
+                </g>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="matrix__col">
+          <div class="matrix__head"><h4>中线 1–3M</h4><small>决定持有 · 4 指标</small></div>
+          <div class="matrix__rows">
+            <div class="matrix__row">
+              <span class="lbl">EMA21/89</span>
+              <span class="val tone-success">多头</span>
+              <svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true">
+                <polyline points="0,15 10,14 20,13 30,11 40,9 50,8 60,7 70,6 80,5" fill="none" stroke="var(--info)" stroke-width="1.5"/>
+                <polyline points="0,17 10,16 20,16 30,15 40,14 50,13 60,12 70,11 80,10" fill="none" stroke="var(--success)" stroke-width="1.5"/>
+              </svg>
+            </div>
+            <div class="matrix__row">
+              <span class="lbl">行业 RS</span>
+              <span class="val tone-success">+3.0%</span>
+              <svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true">
+                <polyline points="0,12 10,13 20,11 30,10 40,9 50,8 60,7 70,6 80,5" fill="none" stroke="var(--success)" stroke-width="1.5"/>
+              </svg>
+            </div>
+            <div class="matrix__row">
+              <span class="lbl">北向 5D</span>
+              <span class="val tone-success">+2.0 亿</span>
+              <svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true">
+                <g>
+                  <rect x="2" y="10" width="6" height="6" fill="var(--success)"/>
+                  <rect x="12" y="8" width="6" height="8" fill="var(--success)"/>
+                  <rect x="22" y="12" width="6" height="4" fill="var(--danger)"/>
+                  <rect x="32" y="6" width="6" height="10" fill="var(--success)"/>
+                  <rect x="42" y="5" width="6" height="11" fill="var(--success)"/>
+                  <rect x="52" y="9" width="6" height="7" fill="var(--success)"/>
+                  <rect x="62" y="12" width="6" height="4" fill="var(--danger)"/>
+                  <rect x="72" y="14" width="6" height="2" fill="var(--danger)"/>
+                </g>
+              </svg>
+            </div>
+            <div class="matrix__row">
+              <span class="lbl">相对沪深</span>
+              <span class="val tone-success">+5.2%</span>
+              <svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true">
+                <polyline points="0,15 10,14 20,13 30,11 40,10 50,8 60,7 70,5 80,4" fill="none" stroke="var(--success)" stroke-width="1.5"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="matrix__col">
+          <div class="matrix__head"><h4>长线 季度+</h4><small>决定配置 · 待接入</small></div>
+          <div class="matrix__rows">
+            <div class="matrix__row">
+              <span class="lbl">ROE TTM</span>
+              <span class="val tone-success">18.4%</span>
+              <svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true">
+                <g fill="var(--success)">
+                  <rect x="2" y="10" width="6" height="10"/><rect x="12" y="9" width="6" height="11"/>
+                  <rect x="22" y="8" width="6" height="12"/><rect x="32" y="7" width="6" height="13"/>
+                  <rect x="42" y="6" width="6" height="14"/><rect x="52" y="5" width="6" height="15"/>
+                  <rect x="62" y="5" width="6" height="15"/><rect x="72" y="4" width="6" height="16"/>
+                </g>
+              </svg>
+            </div>
+            <div class="matrix__row">
+              <span class="lbl">PE 行业百分位</span>
+              <span class="val tone-success">35%</span>
+              <svg viewBox="0 0 80 20" preserveAspectRatio="none" aria-hidden="true">
+                <rect x="0" y="8" width="80" height="4" fill="var(--bg-input)" rx="2"/>
+                <rect x="0" y="8" width="28" height="4" fill="var(--success)" rx="2"/>
+                <circle cx="28" cy="10" r="3" fill="var(--success)"/>
+              </svg>
+            </div>
+            <div class="matrix__empty" style="grid-column: 1 / -1;">
+              自由现金流序列待接入<br/>
+              <span class="faint" style="font-size: 11px;">基本面 API ETA 2026-Q3</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Risk Budget Calculator -->
+      <div class="risk-budget">
+        <div class="risk-budget__head">
+          <h3>风险预算 · 单笔交易</h3>
+          <span class="faint" style="font-size: 11px;">所有计算前端纯函数，不发请求</span>
+        </div>
+        <div class="risk-inputs">
+          <div class="risk-input">
+            <label for="rb-capital">投入本金 (¥)</label>
+            <input id="rb-capital" type="number" value="200000" min="0" step="10000" />
+          </div>
+          <div class="risk-input">
+            <label for="rb-risk-pct">单笔风险</label>
+            <select id="rb-risk-pct">
+              <option value="0.005">0.5%</option>
+              <option value="0.01" selected>1.0%</option>
+              <option value="0.015">1.5%</option>
+              <option value="0.02">2.0%</option>
+            </select>
+          </div>
+          <div class="risk-input">
+            <label for="rb-stop-method">止损算法</label>
+            <select id="rb-stop-method">
+              <option value="atr" selected>ATR14 × 2.5</option>
+              <option value="support">支撑位 (¥1,520)</option>
+              <option value="fixed">固定百分比 -7%</option>
+            </select>
+          </div>
+        </div>
+        <div class="risk-output">
+          <div class="risk-output__cell">
+            <span class="lbl">建议手数</span>
+            <span class="val" id="rb-shares">100 股</span>
+            <span class="sub">按 100 股一手</span>
+          </div>
+          <div class="risk-output__cell">
+            <span class="lbl">建议仓位</span>
+            <span class="val" id="rb-pos">8.1%</span>
+            <span class="sub" id="rb-pos-cny">¥162,350</span>
+          </div>
+          <div class="risk-output__cell">
+            <span class="lbl">止损价</span>
+            <span class="val" id="rb-stop">¥1,503</span>
+            <span class="sub" id="rb-stop-pct">距入场 -7.4%</span>
+          </div>
+          <div class="risk-output__cell danger">
+            <span class="lbl">触发止损时</span>
+            <span class="val" id="rb-loss">¥-2,000</span>
+            <span class="sub" id="rb-port">组合损失 -0.10%</span>
+          </div>
+        </div>
+        <div class="risk-budget__footer">
+          <span class="dot dot--info"></span>
+          假设入场参考价 <b class="mono">¥1,623.50</b>，ATR14 = <b class="mono">¥48.20</b>。
+          调整左侧参数可实时联动右侧输出。
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ===== Tab 2: 图表与信号 ===== -->
+    <section class="tab-panel" data-panel="chart" role="tabpanel">
+      <div class="chart-toolbar">
+        <div class="chart-toolbar__group">
+          <button class="chip active">1D</button>
+          <button class="chip">1W</button>
+          <button class="chip">1M</button>
+        </div>
+        <div class="chart-toolbar__group">
+          <button class="chip active">前复权</button>
+          <button class="chip">不复权</button>
+        </div>
+        <div class="chart-toolbar__group">
+          <button class="chip active">MA20/60/120</button>
+          <button class="chip active">EMA21/89</button>
+          <button class="chip">BOLL</button>
+          <button class="chip">VWAP</button>
+          <button class="chip">行业指数</button>
+        </div>
+        <div style="margin-left: auto; font-size: 11px;" class="faint">
+          K 线区落地用 <span class="mono">lightweight-charts</span> · 本原型为 SVG 模拟
+        </div>
+      </div>
+
+      <div class="kline-shell">
+        <!-- K-line + overlays -->
+        <div class="kline" id="kline-svg-host">
+          <!-- SVG rendered by JS -->
+        </div>
+
+        <!-- Catalyst Timeline -->
+        <div class="catalyst" id="catalyst-host">
+          <div class="catalyst__axis"></div>
+          <div class="catalyst__today" style="left: 50%;"></div>
+          <!-- 过去事件 -->
+          <div class="catalyst__event catalyst__event--past tone-success" style="left: 18%;" title="2026-04-29 Q1 财报"></div>
+          <div class="catalyst__label catalyst__label--top" style="left: 18%;">Q1 财报</div>
+          <div class="catalyst__event catalyst__event--past tone-success" style="left: 28%;" title="2026-05-10 中金给买入"></div>
+          <div class="catalyst__label catalyst__label--bot" style="left: 28%;">中金买入</div>
+          <div class="catalyst__event catalyst__event--past tone-success" style="left: 38%;" title="2026-05-15 深股通净买入 1.2 亿"></div>
+          <div class="catalyst__label catalyst__label--top" style="left: 38%;">龙虎榜 +</div>
+          <div class="catalyst__event catalyst__event--past tone-warning" style="left: 46%;" title="MACD 顶背离"></div>
+          <div class="catalyst__label catalyst__label--bot" style="left: 46%;">MACD 背离</div>
+          <!-- 未来事件 -->
+          <div class="catalyst__event catalyst__event--future" style="left: 60%;" title="2026-06-10 中期业绩预披露"></div>
+          <div class="catalyst__label catalyst__label--top" style="left: 60%;">业绩预披</div>
+          <div class="catalyst__event catalyst__event--future" style="left: 72%;" title="2026-06-20 限售解禁"></div>
+          <div class="catalyst__label catalyst__label--bot" style="left: 72%;">⚠ 解禁</div>
+          <div class="catalyst__event catalyst__event--future" style="left: 88%;" title="2026-07-05 秋糖会"></div>
+          <div class="catalyst__label catalyst__label--top" style="left: 88%;">秋糖会</div>
+        </div>
+
+        <!-- Sub-chart -->
+        <div class="subchart-tabs">
+          <button class="chip active">成交量</button>
+          <button class="chip">资金流</button>
+          <button class="chip">北向</button>
+          <button class="chip">MACD</button>
+          <button class="chip">KDJ</button>
+          <button class="chip">RSI</button>
+          <button class="chip">OBV</button>
+        </div>
+        <div class="subchart" id="subchart-host">
+          <!-- SVG rendered by JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Tab 3: 基本面 & 催化剂 ===== -->
+    <section class="tab-panel" data-panel="fundamentals" role="tabpanel">
+      <div class="fund-grid">
+
+        <!-- 估值百分位 -->
+        <div class="panel">
+          <div class="panel__head">
+            <h3>估值定位</h3>
+            <small>行业百分位 vs 历史百分位</small>
+          </div>
+          <div class="valuation-row">
+            <span class="name">PE TTM<b>26.4</b></span>
+            <div class="bar"><i style="width: 42%"></i><small>行业 42%</small></div>
+            <span class="axis-label">vs 自身</span>
+            <div class="bar"><i style="width: 35%; background: var(--success);"></i><small>历史 35%</small></div>
+          </div>
+          <div class="valuation-row">
+            <span class="name">PB<b>9.1</b></span>
+            <div class="bar"><i style="width: 55%"></i><small>行业 55%</small></div>
+            <span class="axis-label">vs 自身</span>
+            <div class="bar"><i style="width: 38%; background: var(--success);"></i><small>历史 38%</small></div>
+          </div>
+          <div class="valuation-row">
+            <span class="name">PS<b>13.5</b></span>
+            <div class="bar"><i style="width: 48%"></i><small>行业 48%</small></div>
+            <span class="axis-label">vs 自身</span>
+            <div class="bar"><i style="width: 32%; background: var(--success);"></i><small>历史 32%</small></div>
+          </div>
+          <div class="valuation-row">
+            <span class="name">EV / EBITDA<b>18.2</b></span>
+            <div class="bar"><i style="width: 40%"></i><small>行业 40%</small></div>
+            <span class="axis-label">vs 自身</span>
+            <div class="bar"><i style="width: 28%; background: var(--success);"></i><small>历史 28%</small></div>
+          </div>
+        </div>
+
+        <!-- 核心财务 -->
+        <div class="panel">
+          <div class="panel__head">
+            <h3>财务走势 · 近 8 季度</h3>
+            <small>YoY 同比</small>
+          </div>
+          <div class="fin-charts">
+            <div class="fin-chart">
+              <h4>营收 (亿)</h4>
+              <div class="latest mono">412 <span class="yoy tone-success">+18.4%</span></div>
+              <svg viewBox="0 0 80 60" preserveAspectRatio="none" aria-hidden="true">
+                <g fill="var(--info)">
+                  <rect x="2"  y="35" width="6" height="25"/>
+                  <rect x="12" y="30" width="6" height="30"/>
+                  <rect x="22" y="28" width="6" height="32"/>
+                  <rect x="32" y="24" width="6" height="36"/>
+                  <rect x="42" y="22" width="6" height="38"/>
+                  <rect x="52" y="18" width="6" height="42"/>
+                  <rect x="62" y="15" width="6" height="45"/>
+                  <rect x="72" y="10" width="6" height="50" fill="var(--success)"/>
+                </g>
+              </svg>
+            </div>
+            <div class="fin-chart">
+              <h4>净利润 (亿)</h4>
+              <div class="latest mono">208 <span class="yoy tone-success">+21.7%</span></div>
+              <svg viewBox="0 0 80 60" preserveAspectRatio="none" aria-hidden="true">
+                <g fill="var(--info)">
+                  <rect x="2"  y="40" width="6" height="20"/>
+                  <rect x="12" y="36" width="6" height="24"/>
+                  <rect x="22" y="32" width="6" height="28"/>
+                  <rect x="32" y="28" width="6" height="32"/>
+                  <rect x="42" y="24" width="6" height="36"/>
+                  <rect x="52" y="20" width="6" height="40"/>
+                  <rect x="62" y="14" width="6" height="46"/>
+                  <rect x="72" y="8"  width="6" height="52" fill="var(--success)"/>
+                </g>
+              </svg>
+            </div>
+            <div class="fin-chart">
+              <h4>ROE %</h4>
+              <div class="latest mono">18.4 <span class="yoy tone-success">+1.6 pp</span></div>
+              <svg viewBox="0 0 80 60" preserveAspectRatio="none" aria-hidden="true">
+                <polyline points="2,40 12,38 22,35 32,32 42,28 52,24 62,20 72,15"
+                          fill="none" stroke="var(--success)" stroke-width="2" />
+                <circle cx="72" cy="15" r="2" fill="var(--success)" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- 公告 / 研报 -->
+        <div class="panel">
+          <div class="panel__head">
+            <h3>公告 · 研报 · 政策</h3>
+            <small>最近 10 条</small>
+          </div>
+          <div class="disclosure-filters">
+            <button class="chip active">全部</button>
+            <button class="chip">业绩</button>
+            <button class="chip">研报</button>
+            <button class="chip">监管</button>
+            <button class="chip">评级</button>
+            <button class="chip">公告</button>
+          </div>
+          <div class="disclosure-list">
+            <div class="disclosure-row">
+              <span class="date">05-22</span>
+              <span class="pill pill--success">研报</span>
+              <span class="title">中金：维持「跑赢行业」评级，目标价上调至 ¥1,820</span>
+            </div>
+            <div class="disclosure-row">
+              <span class="date">05-15</span>
+              <span class="pill pill--info">公告</span>
+              <span class="title">关于召开 2025 年度股东大会的通知</span>
+            </div>
+            <div class="disclosure-row">
+              <span class="date">05-10</span>
+              <span class="pill pill--success">业绩</span>
+              <span class="title">2026 Q1 营收 412 亿 / 净利 208 亿，超市场一致预期</span>
+            </div>
+            <div class="disclosure-row">
+              <span class="date">05-08</span>
+              <span class="pill pill--warning">监管</span>
+              <span class="title">收到上交所对子公司销售费用的关注函</span>
+            </div>
+            <div class="disclosure-row">
+              <span class="date">05-03</span>
+              <span class="pill pill--success">研报</span>
+              <span class="title">华泰：高端白酒动销改善，给予「买入」评级</span>
+            </div>
+            <div class="disclosure-row">
+              <span class="date">04-29</span>
+              <span class="pill pill--success">业绩</span>
+              <span class="title">2026 年第一季度报告（已审计）</span>
+            </div>
+            <div class="disclosure-row">
+              <span class="date">04-20</span>
+              <span class="pill pill--info">公告</span>
+              <span class="title">2025 年年度权益分派方案：每 10 股派 30.51 元</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 机构动作 -->
+        <div class="panel">
+          <div class="panel__head">
+            <h3>机构动作 · 北向</h3>
+            <small>近 30 日</small>
+          </div>
+
+          <!-- 北向曲线 -->
+          <div style="margin-bottom: var(--sp-3);">
+            <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">
+              <span>北向持股市值</span>
+              <span class="mono tone-success">+12.4 亿 (30D)</span>
+            </div>
+            <svg viewBox="0 0 100 30" preserveAspectRatio="none" style="width: 100%; height: 60px;">
+              <defs>
+                <linearGradient id="grad-nb" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="var(--success)" stop-opacity="0.4"/>
+                  <stop offset="100%" stop-color="var(--success)" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path d="M 0,25 L 5,24 L 10,23 L 15,22 L 20,20 L 25,21 L 30,19 L 35,18 L 40,16 L 45,15 L 50,14 L 55,13 L 60,12 L 65,11 L 70,10 L 75,9 L 80,8 L 85,9 L 90,7 L 95,6 L 100,5 L 100,30 L 0,30 Z"
+                    fill="url(#grad-nb)" />
+              <polyline points="0,25 5,24 10,23 15,22 20,20 25,21 30,19 35,18 40,16 45,15 50,14 55,13 60,12 65,11 70,10 75,9 80,8 85,9 90,7 95,6 100,5"
+                        fill="none" stroke="var(--success)" stroke-width="1" />
+            </svg>
+          </div>
+
+          <h4 class="muted" style="font-size: 11px; margin: var(--sp-3) 0 var(--sp-2);">龙虎榜机构席位 (近 7 日)</h4>
+          <div class="institutional-row">
+            <span>机构专用 (上海)</span>
+            <span class="pill pill--info">机构</span>
+            <span class="net positive mono">+0.82 亿</span>
+            <span class="faint mono">05-15</span>
+          </div>
+          <div class="institutional-row">
+            <span>沪股通专用</span>
+            <span class="pill pill--success">北向</span>
+            <span class="net positive mono">+1.21 亿</span>
+            <span class="faint mono">05-15</span>
+          </div>
+          <div class="institutional-row">
+            <span>中信证券 北京安立路</span>
+            <span class="pill pill--info">机构</span>
+            <span class="net negative mono">-0.34 亿</span>
+            <span class="faint mono">05-12</span>
+          </div>
+          <div class="institutional-row">
+            <span>沪股通专用</span>
+            <span class="pill pill--success">北向</span>
+            <span class="net positive mono">+0.45 亿</span>
+            <span class="faint mono">05-10</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===== Tab 4: 决策与复盘 ===== -->
+    <section class="tab-panel" data-panel="playbook" role="tabpanel">
+
+      <div class="playbook-grid">
+
+        <!-- Signal Detail -->
+        <div class="panel">
+          <div class="signal-detail__head">
+            <div class="signal-detail__title">
+              <h3>V2-RES-0523-01 · 共振买入观察</h3>
+              <small>2026-05-23 14:32 生成 · 评分 0.76 / 100 满</small>
+            </div>
+            <span class="pill pill--warning">观察等待</span>
+          </div>
+
+          <div class="signal-detail__grid">
+            <div class="signal-detail__col">
+              <h4>证据</h4>
+              <ul>
+                <li><span class="tone-success">✓</span>EMA21 在 EMA89 上方 6.2%，趋势强度 0.82</li>
+                <li><span class="tone-success">✓</span>5D 主力净流入 2.3 亿，量比 1.4×</li>
+                <li><span class="tone-success">✓</span>行业 RS 进入前 15%</li>
+                <li><span class="tone-success">✓</span>Q1 净利同比 +21.7%，超一致预期</li>
+              </ul>
+            </div>
+            <div class="signal-detail__col">
+              <h4>风险</h4>
+              <ul>
+                <li><span class="tone-warning">⚠</span>MACD 顶背离 5 日，动能衰竭</li>
+                <li><span class="tone-warning">⚠</span>北向连续 2 日净流出 1.1 亿</li>
+                <li><span class="tone-danger">✗</span>沪深 300 跌破 60 日线，大盘环境转弱</li>
+                <li><span class="tone-warning">⚠</span>6-20 限售解禁 0.4 亿股 (流通增加 0.3%)</li>
+              </ul>
+            </div>
+            <div class="signal-detail__col">
+              <h4>失效条件</h4>
+              <ul>
+                <li><span class="tone-danger">✗</span>跌破 EMA89 (¥1,580)</li>
+                <li><span class="tone-danger">✗</span>北向连续 3 日净流出</li>
+                <li><span class="tone-danger">✗</span>沪深 300 单日跌幅 &gt; -2%</li>
+              </ul>
+            </div>
+            <div class="signal-detail__col">
+              <h4>下一步动作</h4>
+              <ul>
+                <li><span class="tone-info">→</span>等待回踩 EMA89 区间 ¥1,580–1,600</li>
+                <li><span class="tone-info">→</span>若 MACD 金叉，重新评分</li>
+                <li><span class="tone-info">→</span>6-10 业绩预披露前后做仓位决策</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="agent-card">
+            <h5>Agent 审查结论</h5>
+            <p>
+              四个 Agent 一致结论「<strong>观察等待</strong>」。
+              基本面 Agent 给 8.2/10（高估值但有业绩支撑），技术面 Agent 给 6.5/10（动能背离），
+              资金 Agent 给 7.0/10（主力流入但北向走弱），风控 Agent 标记
+              <strong class="tone-warning">中度警示</strong>。
+              建议在 ¥1,580–1,600 区间做小仓位试探，止损 ¥1,520。
+              <a href="#" style="color: var(--info); text-decoration: underline;">查看完整推理链 →</a>
+            </p>
+          </div>
+        </div>
+
+        <!-- Backtest Summary -->
+        <div class="panel">
+          <div class="panel__head">
+            <h3>同类信号后验</h3>
+            <small>该标的过去 48 次 V2 买入观察信号</small>
+          </div>
+          <div class="backtest__stats">
+            <div class="row"><span>样本数</span><b class="mono">48</b></div>
+            <div class="row"><span>胜率</span><b class="mono tone-success">62.5%</b></div>
+            <div class="row"><span>5D 均收益</span><b class="mono tone-success">+1.8%</b></div>
+            <div class="row"><span>20D 均收益</span><b class="mono tone-success">+4.3%</b></div>
+            <div class="row"><span>60D 均收益</span><b class="mono tone-success">+8.7%</b></div>
+            <div class="row"><span>最大不利 MAE</span><b class="mono tone-danger">-6.2%</b></div>
+            <div class="row"><span>盈亏比</span><b class="mono tone-success">1.84</b></div>
+            <div class="row"><span>样本质量</span><b class="mono">A</b></div>
+          </div>
+          <h4 class="muted" style="font-size: 11px; margin: var(--sp-3) 0 var(--sp-2);">累积收益曲线 (60D)</h4>
+          <div class="backtest__curve">
+            <svg viewBox="0 0 100 50" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="grad-bt" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="var(--success)" stop-opacity="0.3"/>
+                  <stop offset="100%" stop-color="var(--success)" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <line x1="0" y1="40" x2="100" y2="40" stroke="var(--border-strong)" stroke-width="0.4" stroke-dasharray="2,2"/>
+              <path d="M 0,40 L 8,38 L 16,36 L 24,42 L 32,34 L 40,32 L 48,28 L 56,30 L 64,24 L 72,20 L 80,18 L 88,14 L 100,12 L 100,50 L 0,50 Z"
+                    fill="url(#grad-bt)"/>
+              <polyline points="0,40 8,38 16,36 24,42 32,34 40,32 48,28 56,30 64,24 72,20 80,18 88,14 100,12"
+                        fill="none" stroke="var(--success)" stroke-width="1.2"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Notes Timeline -->
+      <div class="notes-timeline">
+        <div class="panel__head">
+          <h3>分析师笔记 · 时间线</h3>
+          <small>按 symbol + date 自动落地 · 支持 <span class="mono">#标签</span></small>
+        </div>
+        <div class="notes-list">
+          <div class="note">
+            <time>05-22 16:30</time>
+            <div>
+              <p>Q1 业绩超预期但股价反应平淡，<span class="tone-warning">怀疑机构在分批兑现 20%+ 的年内涨幅</span>。
+              观察 5-30 公告窗口前的成交量。</p>
+              <div style="margin-top: 6px;">
+                <span class="tag">#业绩</span><span class="tag">#观察</span><span class="tag">#高端白酒</span>
+              </div>
+            </div>
+            <button class="btn btn--icon" aria-label="置顶">★</button>
+          </div>
+          <div class="note">
+            <time>05-19 09:15</time>
+            <div>
+              <p>MACD 顶背离 day1，距离 EMA89 6.2%。设置回踩 ¥1,580 提醒。
+              如果跌破直接转入风险态，不抄底。</p>
+              <div style="margin-top: 6px;">
+                <span class="tag">#技术面</span><span class="tag">#背离</span>
+              </div>
+            </div>
+            <button class="btn btn--icon" aria-label="置顶">☆</button>
+          </div>
+          <div class="note">
+            <time>05-12 21:45</time>
+            <div>
+              <p>中金研报上调目标价至 ¥1,820（隐含 +12%）。但 Q2 高基数，注意营销费用率指引。</p>
+              <div style="margin-top: 6px;">
+                <span class="tag">#研报</span><span class="tag">#目标价</span>
+              </div>
+            </div>
+            <button class="btn btn--icon" aria-label="置顶">☆</button>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- F. Right Context Rail -->
+  <aside class="context-rail" aria-label="标的上下文">
+    <div class="rail-price">
+      <span class="eyebrow">最新价</span>
+      <span class="big tone-danger">¥1,623.50</span>
+      <span class="chg tone-danger">-14.50 / -0.89%</span>
+      <span class="meta">
+        <span class="dot dot--warning"></span>
+        延迟 3 min · 来源 行情研究库
+      </span>
+    </div>
+
+    <button class="btn btn--primary rail-cta" id="rail-cta">
+      ⌥ 等待回踩 EMA89 后再评估
+    </button>
+
+    <div class="rail-card">
+      <div class="rail-card__head">
+        <h4>多头叙事</h4>
+        <span class="pill pill--success">3 条</span>
+      </div>
+      <ul class="rail-card__body">
+        <li><span class="tone-success">✓</span>EMA21/89 多头排列</li>
+        <li><span class="tone-success">✓</span>行业 RS 进前 15%</li>
+        <li><span class="tone-success">✓</span>主力 5D 净流入 2.3 亿</li>
+      </ul>
+    </div>
+
+    <div class="rail-card">
+      <div class="rail-card__head">
+        <h4>风险旗标</h4>
+        <span class="pill pill--warning">4 项</span>
+      </div>
+      <ul class="rail-card__body">
+        <li><span class="dot dot--warning pulse"></span>MACD 顶背离 5 天</li>
+        <li><span class="dot dot--warning"></span>北向连续 2 日净流出</li>
+        <li><span class="dot dot--danger"></span>大盘环境转弱</li>
+        <li><span class="dot dot--warning"></span>6-20 解禁 0.4 亿股</li>
+      </ul>
+    </div>
+
+    <div class="rail-card">
+      <div class="rail-card__head">
+        <h4>笔记 · 实时落地</h4>
+        <span class="faint" style="font-size: 11px;" id="note-status">未保存</span>
+      </div>
+      <textarea
+        class="note-input"
+        id="note-input"
+        placeholder="记录今天的思考... 输入 # 添加标签"
+        aria-label="分析师笔记"></textarea>
+      <div class="note-actions">
+        <span class="faint">⌘ + S 保存 · 自动按 600519.SH + 2026-05-23 落地</span>
+        <button id="note-save">保存</button>
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<script>
+/* ============================================================
+   I. Tab Switching
+   ============================================================ */
+(function setupTabs() {
+  const tabs = document.querySelectorAll('.tab');
+  const panels = document.querySelectorAll('.tab-panel');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.tab;
+      tabs.forEach(t => {
+        t.classList.toggle('active', t === tab);
+        t.setAttribute('aria-selected', t === tab ? 'true' : 'false');
+      });
+      panels.forEach(p => {
+        p.classList.toggle('active', p.dataset.panel === target);
+      });
+      // 切到 chart tab 时按需绘制 SVG
+      if (target === 'chart') renderKline();
+    });
+  });
+})();
+
+/* ============================================================
+   II. Strategy Mode Toggle
+   ============================================================ */
+(function setupMode() {
+  const buttons = document.querySelectorAll('.segmented button');
+  buttons.forEach(b => {
+    b.addEventListener('click', () => {
+      buttons.forEach(x => x.classList.toggle('active', x === b));
+      // 模拟模式切换：激进模式下评分微变化
+      const mode = b.dataset.mode;
+      const scoreEl = document.getElementById('hero-score');
+      if (scoreEl) {
+        scoreEl.textContent = mode === 'aggressive' ? '83' : '76';
+      }
+      const hero = document.querySelector('.hero');
+      if (hero) {
+        hero.classList.remove('hero--warn', 'hero--opportunity');
+        hero.classList.add(mode === 'aggressive' ? 'hero--opportunity' : 'hero--warn');
+      }
+      const title = document.querySelector('.hero__title');
+      if (title) {
+        title.textContent = mode === 'aggressive'
+          ? '试探建仓，注意回撤'
+          : '观察等待，趋势确认中';
+      }
+    });
+  });
+})();
+
+/* ============================================================
+   III. Risk Budget Calculator (纯函数 + 双向绑定)
+   对应 bridge §6 的 computeRiskBudget()
+   ============================================================ */
+(function setupRiskBudget() {
+  const entry = 1623.50;
+  const atr14 = 48.20;
+  const supportPrice = 1520.00;
+  const lotSize = 100;          // A 股按 100 股一手
+
+  const $cap = document.getElementById('rb-capital');
+  const $rp = document.getElementById('rb-risk-pct');
+  const $sm = document.getElementById('rb-stop-method');
+
+  const $shares = document.getElementById('rb-shares');
+  const $pos = document.getElementById('rb-pos');
+  const $posCny = document.getElementById('rb-pos-cny');
+  const $stop = document.getElementById('rb-stop');
+  const $stopPct = document.getElementById('rb-stop-pct');
+  const $loss = document.getElementById('rb-loss');
+  const $port = document.getElementById('rb-port');
+
+  function computeStopPrice(method) {
+    if (method === 'atr')     return entry - atr14 * 2.5;
+    if (method === 'support') return supportPrice;
+    if (method === 'fixed')   return entry * (1 - 0.07);
+    return entry * 0.93;
+  }
+
+  function fmtCny(v) {
+    return '¥' + Math.round(v).toLocaleString('zh-CN');
+  }
+  function fmtPct(v, digits = 1) {
+    return (v * 100).toFixed(digits) + '%';
+  }
+
+  function recompute() {
+    const capital = Number($cap.value) || 0;
+    const riskPct = Number($rp.value);
+    const method = $sm.value;
+    const stopPrice = computeStopPrice(method);
+    const stopDist = entry - stopPrice;
+    const stopPctVal = stopDist / entry;
+    const totalRisk = capital * riskPct;
+    const rawShares = stopDist > 0 ? totalRisk / stopDist : 0;
+    const shares = Math.max(lotSize, Math.floor(rawShares / lotSize) * lotSize);
+    const positionValue = shares * entry;
+    const positionPct = capital > 0 ? positionValue / capital : 0;
+    const realizedLoss = shares * stopDist;
+    const portfolioLoss = capital > 0 ? -realizedLoss / capital : 0;
+
+    $shares.textContent = shares.toLocaleString('zh-CN') + ' 股';
+    $pos.textContent = fmtPct(positionPct, 1);
+    $posCny.textContent = fmtCny(positionValue);
+    $stop.textContent = '¥' + stopPrice.toFixed(2);
+    $stopPct.textContent = '距入场 ' + fmtPct(-stopPctVal, 1);
+    $loss.textContent = '¥-' + Math.round(realizedLoss).toLocaleString('zh-CN');
+    $port.textContent = '组合损失 ' + fmtPct(portfolioLoss, 2);
+  }
+
+  [$cap, $rp, $sm].forEach(el => el.addEventListener('input', recompute));
+  recompute();
+})();
+
+/* ============================================================
+   IV. K-line SVG Renderer
+   ============================================================ */
+function renderKline() {
+  const host = document.getElementById('kline-svg-host');
+  if (!host || host.dataset.rendered) return;
+  host.dataset.rendered = '1';
+
+  const W = 1000, H = 380;
+  const padL = 40, padR = 60, padT = 8, padB = 24;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+
+  // 生成 90 根 mock 蜡烛
+  const N = 90;
+  let price = 1450;
+  const candles = [];
+  for (let i = 0; i < N; i++) {
+    const drift = i > 70 ? 0.6 : 0.3;
+    const open = price;
+    const change = (Math.random() - 0.45 + drift * 0.04) * 30;
+    const close = open + change;
+    const high = Math.max(open, close) + Math.random() * 15;
+    const low = Math.min(open, close) - Math.random() * 15;
+    candles.push({ open, close, high, low, i });
+    price = close;
+  }
+  const lastIdx = candles.length - 1;
+  candles[lastIdx].close = 1623.50;
+
+  const minP = Math.min(...candles.map(c => c.low));
+  const maxP = Math.max(...candles.map(c => c.high));
+  const range = maxP - minP;
+  const yOf = p => padT + (1 - (p - minP) / range) * innerH;
+  const xOf = i => padL + (i + 0.5) * (innerW / N);
+  const cw = (innerW / N) * 0.65;
+
+  // EMA21、EMA89
+  function ema(values, period) {
+    const k = 2 / (period + 1);
+    const out = [];
+    let prev = values[0];
+    values.forEach((v, i) => {
+      const e = i === 0 ? v : v * k + prev * (1 - k);
+      out.push(e); prev = e;
+    });
+    return out;
+  }
+  const closes = candles.map(c => c.close);
+  const ema21 = ema(closes, 21);
+  const ema89 = ema(closes, 89);
+
+  const candleSvg = candles.map(c => {
+    const up = c.close >= c.open;
+    const color = up ? 'var(--success)' : 'var(--danger)';
+    const x = xOf(c.i);
+    const yHi = yOf(c.high), yLo = yOf(c.low);
+    const yO = yOf(c.open), yC = yOf(c.close);
+    const bodyY = Math.min(yO, yC);
+    const bodyH = Math.max(1.5, Math.abs(yO - yC));
+    return `
+      <line x1="${x}" x2="${x}" y1="${yHi}" y2="${yLo}" stroke="${color}" stroke-width="1"/>
+      <rect x="${x - cw/2}" y="${bodyY}" width="${cw}" height="${bodyH}" fill="${color}" rx="0.5"/>`;
+  }).join('');
+
+  const emaLine = (arr, color, dash = '') => `
+    <polyline points="${arr.map((v, i) => `${xOf(i)},${yOf(v)}`).join(' ')}"
+              fill="none" stroke="${color}" stroke-width="1.2" ${dash ? `stroke-dasharray="${dash}"` : ''}/>`;
+
+  // Y 轴刻度
+  const yTicks = 5;
+  const yAxis = Array.from({length: yTicks + 1}, (_, k) => {
+    const v = minP + (range * k) / yTicks;
+    const y = yOf(v);
+    return `
+      <line x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}" stroke="var(--border-subtle)" stroke-width="0.4" stroke-dasharray="2,3"/>
+      <text x="${W - padR + 6}" y="${y + 3}" font-family="var(--font-mono)" font-size="10" fill="var(--text-tertiary)">${v.toFixed(0)}</text>`;
+  }).join('');
+
+  // 当前价线
+  const currentY = yOf(1623.50);
+  const priceLine = `
+    <line x1="${padL}" x2="${W - padR}" y1="${currentY}" y2="${currentY}" stroke="var(--danger)" stroke-width="0.6" stroke-dasharray="3,2"/>
+    <rect x="${W - padR + 2}" y="${currentY - 8}" width="46" height="16" fill="var(--danger)" rx="2"/>
+    <text x="${W - padR + 25}" y="${currentY + 4}" font-family="var(--font-mono)" font-size="10" fill="white" text-anchor="middle" font-weight="600">1623.50</text>`;
+
+  // 信号 marker
+  const signals = [
+    { i: 45, kind: 'buy',  label: 'V2 买入 (62)' },
+    { i: 60, kind: 'add',  label: '加仓 (54)' },
+    { i: 78, kind: 'warn', label: '减仓预警' },
+  ];
+  const markerSvg = signals.map(s => {
+    const c = candles[s.i];
+    const isBuy = s.kind === 'buy' || s.kind === 'add';
+    const y = isBuy ? yOf(c.low) + 14 : yOf(c.high) - 14;
+    const color = s.kind === 'warn' ? 'var(--warning)' : 'var(--success)';
+    const arrow = isBuy
+      ? `M ${xOf(s.i) - 5},${y - 5} L ${xOf(s.i)},${y - 12} L ${xOf(s.i) + 5},${y - 5} Z`
+      : `M ${xOf(s.i) - 5},${y + 5} L ${xOf(s.i)},${y + 12} L ${xOf(s.i) + 5},${y + 5} Z`;
+    return `<path d="${arrow}" fill="${color}"/>`;
+  }).join('');
+
+  host.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="日 K 线">
+      ${yAxis}
+      ${candleSvg}
+      ${emaLine(ema21, 'var(--info)', '')}
+      ${emaLine(ema89, 'var(--warning)', '4,2')}
+      ${markerSvg}
+      ${priceLine}
+      <g font-family="var(--font-sans)" font-size="10" fill="var(--text-tertiary)">
+        <rect x="${padL + 8}" y="${padT + 4}" width="180" height="18" fill="var(--bg-surface-2)" rx="2"/>
+        <circle cx="${padL + 18}" cy="${padT + 13}" r="3" fill="var(--info)"/>
+        <text x="${padL + 26}" y="${padT + 16}">EMA21</text>
+        <circle cx="${padL + 70}" cy="${padT + 13}" r="3" fill="var(--warning)"/>
+        <text x="${padL + 78}" y="${padT + 16}">EMA89</text>
+        <text x="${padL + 130}" y="${padT + 16}" font-family="var(--font-mono)">2026-02-15 ~ 05-23</text>
+      </g>
+    </svg>`;
+
+  // 副图：成交量
+  const subHost = document.getElementById('subchart-host');
+  if (subHost) {
+    const bars = candles.map(c => {
+      const vol = Math.abs(c.close - c.open) * 1000 + 5000 + Math.random() * 10000;
+      return { x: xOf(c.i), vol, up: c.close >= c.open };
+    });
+    const maxVol = Math.max(...bars.map(b => b.vol));
+    const subW = 1000, subH = 120;
+    const barW = (innerW / N) * 0.65;
+    const barsSvg = bars.map(b => {
+      const h = (b.vol / maxVol) * (subH - 20);
+      const y = subH - 10 - h;
+      return `<rect x="${b.x - barW/2}" y="${y}" width="${barW}" height="${h}" fill="${b.up ? 'var(--success)' : 'var(--danger)'}" opacity="0.8" rx="0.5"/>`;
+    }).join('');
+    subHost.innerHTML = `<svg viewBox="0 0 ${subW} ${subH}" preserveAspectRatio="none">${barsSvg}</svg>`;
+  }
+}
+
+/* ============================================================
+   V. Analyst Notes (localStorage)
+   ============================================================ */
+(function setupNotes() {
+  const $input = document.getElementById('note-input');
+  const $save = document.getElementById('note-save');
+  const $status = document.getElementById('note-status');
+  if (!$input) return;
+  const key = 'symbol-workspace-v2.notes.600519.SH.2026-05-23';
+
+  // 读取
+  const saved = localStorage.getItem(key);
+  if (saved) {
+    $input.value = saved;
+    $status.textContent = '已保存于 ' + new Date(Number(localStorage.getItem(key + '.ts')) || Date.now()).toLocaleTimeString('zh-CN');
+  }
+
+  let timer;
+  function save() {
+    localStorage.setItem(key, $input.value);
+    localStorage.setItem(key + '.ts', String(Date.now()));
+    $status.textContent = '已保存 ' + new Date().toLocaleTimeString('zh-CN');
+    $status.style.color = 'var(--success)';
+    setTimeout(() => { $status.style.color = ''; }, 1500);
+  }
+
+  $input.addEventListener('input', () => {
+    $status.textContent = '编辑中...';
+    clearTimeout(timer);
+    timer = setTimeout(save, 800);   // 0.8s debounce 自动保存
+  });
+  $save.addEventListener('click', save);
+
+  // ⌘+S
+  $input.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      e.preventDefault(); save();
+    }
+  });
+})();
+
+/* ============================================================
+   VI. 初始渲染（如果用户直接进入 chart tab）
+   ============================================================ */
+if (document.querySelector('.tab-panel.active')?.dataset.panel === 'chart') {
+  renderKline();
+}
+</script>
+
+</body>
+</html>

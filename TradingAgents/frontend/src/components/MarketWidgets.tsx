@@ -52,7 +52,17 @@ import {
   buildPriceGapAnnotations,
   buildPriceStructureTrendLines,
   buildReadableStrategyDecisionCopy,
+  buildStrategyFactorTooltip,
+  buildStrategyStrengthTooltip,
+  buildStrategyBacktestTradeMarkers,
+  buildStrategyTradeMarkerLabel,
+  buildTradeDecisionChecklistTooltip,
+  buildStrategyPriceLevelTooltip,
+  buildRiskBudgetTooltip,
+  isActionableStrategyTradeMarker,
+  isStrategyTradeMarker,
   buildReadableStrategyGateText,
+  resolveStrategyTradeMarkerKind,
   buildSupportResistanceLevels,
   buildTdsSequentialAnnotations,
   buildTechnicalDivergenceAnnotations,
@@ -280,6 +290,7 @@ interface TradingChartPreferences {
   vwap: boolean;
   levels: boolean;
   limitLines: boolean;
+  tradeMarkers: boolean;
   signals: boolean;
   events: boolean;
   relative: boolean;
@@ -441,6 +452,14 @@ export interface StrategyKlineBacktest {
       bar_count?: number;
     };
     equity_curve?: { date: string; equity: number; drawdown?: number }[];
+    signals?: {
+      date: string;
+      action: string;
+      label?: string;
+      buy_score?: number | null;
+      sell_score?: number | null;
+      position_shares?: number | null;
+    }[];
     trades?: { date: string; side: string; price: number; quantity: number; reason?: string }[];
   };
 }
@@ -499,6 +518,7 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   vwap: false,
   levels: true,
   limitLines: true,
+  tradeMarkers: true,
   signals: true,
   events: true,
   relative: false,
@@ -620,6 +640,7 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     vwap: typeof next.vwap === "boolean" ? next.vwap : DEFAULT_TRADING_CHART_PREFS.vwap,
     levels: typeof next.levels === "boolean" ? next.levels : DEFAULT_TRADING_CHART_PREFS.levels,
     limitLines: typeof next.limitLines === "boolean" ? next.limitLines : DEFAULT_TRADING_CHART_PREFS.limitLines,
+    tradeMarkers: typeof next.tradeMarkers === "boolean" ? next.tradeMarkers : DEFAULT_TRADING_CHART_PREFS.tradeMarkers,
     signals: typeof next.signals === "boolean" ? next.signals : DEFAULT_TRADING_CHART_PREFS.signals,
     events: typeof next.events === "boolean" ? next.events : DEFAULT_TRADING_CHART_PREFS.events,
     relative: typeof next.relative === "boolean" ? next.relative : DEFAULT_TRADING_CHART_PREFS.relative,
@@ -1593,9 +1614,21 @@ export function TradingSignalKlinePanel({
     () => (usingIntradayPeriod ? null : buildStrategyChartSignal(strategyAnalysis, safeBars)),
     [safeBars, strategyAnalysis, usingIntradayPeriod],
   );
+  const strategyBacktestSignals = useMemo<ChartSignalMarker[]>(
+    () =>
+      usingIntradayPeriod
+        ? []
+        : buildStrategyBacktestTradeMarkers({
+            symbol: strategyAnalysis?.symbol || drawingScope || safeBars[safeBars.length - 1]?.symbol,
+            mode: strategyControls?.mode || strategyAnalysis?.mode,
+            trades: strategyControls?.backtest?.result?.trades || [],
+            signals: strategyControls?.backtest?.result?.signals || [],
+          }) as ChartSignalMarker[],
+    [drawingScope, safeBars, strategyAnalysis?.mode, strategyAnalysis?.symbol, strategyControls?.backtest?.result?.signals, strategyControls?.backtest?.result?.trades, strategyControls?.mode, usingIntradayPeriod],
+  );
   const rawMergedSignals = useMemo(
-    () => (usingIntradayPeriod ? [] : mergeStrategySignals(safeSignals, strategySignal)),
-    [safeSignals, strategySignal, usingIntradayPeriod],
+    () => (usingIntradayPeriod ? [] : mergeStrategySignals([...safeSignals, ...strategyBacktestSignals], strategySignal)),
+    [safeSignals, strategyBacktestSignals, strategySignal, usingIntradayPeriod],
   );
   const mergedSignals = useMemo(
     () => (usingIntradayPeriod ? [] : adjustChartSignalsForPriceAdjustment(rawMergedSignals, safeBars, priceAdjustedHistory)),
@@ -1637,6 +1670,25 @@ export function TradingSignalKlinePanel({
     [chartFactorRows, chartFundFlowRows, chartParams, effectiveSplitSubCharts, periodData, priceAxisMode, range, rightOffset, strategyLevelPrices],
   );
   const chartMarkers = chart.markers || [];
+  const strategyTradeMarkers = useMemo(
+    () => chartMarkers.filter((marker) => isActionableStrategyTradeMarker(marker.signal)),
+    [chartMarkers],
+  );
+  const technicalSignalMarkers = useMemo(
+    () => chartMarkers.filter((marker) => !isStrategyTradeMarker(marker.signal)),
+    [chartMarkers],
+  );
+  const visibleChartMarkers = useMemo(
+    () => [
+      ...(chartPrefs.tradeMarkers ? strategyTradeMarkers : []),
+      ...(chartPrefs.signals ? technicalSignalMarkers : []),
+    ],
+    [chartPrefs.signals, chartPrefs.tradeMarkers, strategyTradeMarkers, technicalSignalMarkers],
+  );
+  const visibleSignalIds = useMemo(
+    () => new Set(visibleChartMarkers.map((marker) => marker.signal.signal_id)),
+    [visibleChartMarkers],
+  );
   const evidenceEventMarkers = chart.eventMarkers || [];
   const showDenseAnnotations = shouldRenderDenseChartLayer(annotationLabelMode, "annotations", denseLayerSelection);
   const showDenseProfile = shouldRenderDenseChartLayer(annotationLabelMode, "profile", denseLayerSelection);
@@ -1749,10 +1801,10 @@ export function TradingSignalKlinePanel({
     [indicatorPanelReadouts],
   );
   const hoveredMarker =
-    chartMarkers.find((marker) => marker.signal.signal_id === hoveredSignalId) ||
+    visibleChartMarkers.find((marker) => marker.signal.signal_id === hoveredSignalId) ||
     null;
   const selectedMarker =
-    chartMarkers.find((marker) => marker.signal.signal_id === selectedSignalId) ||
+    visibleChartMarkers.find((marker) => marker.signal.signal_id === selectedSignalId) ||
     null;
   const hoveredTradePlanLevel =
     tradePlanLevels.find((level) => level.key === hoveredTradePlanLevelKey) ||
@@ -1763,8 +1815,8 @@ export function TradingSignalKlinePanel({
   const activeMarker =
     hoveredMarker ||
     selectedMarker ||
-    chartMarkers.find((marker) => marker.signal.signal_id === strategySignal?.signal_id) ||
-    chartMarkers[0] ||
+    visibleChartMarkers.find((marker) => marker.signal.signal_id === strategySignal?.signal_id) ||
+    visibleChartMarkers[0] ||
     null;
   const tooltipMarker = hoveredMarker;
   const hoverSignalTooltip = tooltipMarker ? buildSignalHoverTooltip(tooltipMarker, period, chart) : null;
@@ -1776,8 +1828,8 @@ export function TradingSignalKlinePanel({
     : null;
   const activeSignal =
     activeMarker?.signal ||
-    strategySignal ||
-    mergedSignals[0] ||
+    (strategySignal && isActionableStrategyTradeMarker(strategySignal) ? strategySignal : null) ||
+    visibleChartMarkers[0]?.signal ||
     null;
   const activeIndicators = activeMarker?.indicators || chart.latestIndicators;
   const readoutIndicators = indicatorReadoutSnapshot;
@@ -2482,6 +2534,14 @@ export function TradingSignalKlinePanel({
               <button className={chartPrefs.boll ? "active" : ""} onClick={() => toggleChartPref("boll")} type="button">BOLL</button>
               <button className={chartPrefs.vwap ? "active" : ""} onClick={() => toggleChartPref("vwap")} type="button">VWAP</button>
               <button className={chartPrefs.levels ? "active" : ""} onClick={() => toggleChartPref("levels")} type="button">价位线</button>
+              <button
+                className={chartPrefs.tradeMarkers ? "active trade-marker-toggle" : "trade-marker-toggle"}
+                onClick={() => toggleChartPref("tradeMarkers")}
+                title="显示 V2 策略建议买/卖/减/察点"
+                type="button"
+              >
+                买卖点
+              </button>
               <button className={chartPrefs.signals ? "active" : ""} onClick={() => toggleChartPref("signals")} type="button">信号</button>
               <button className={chartPrefs.events ? "active" : ""} onClick={() => toggleChartPref("events")} type="button">事件</button>
               <span>图层</span>
@@ -2796,7 +2856,7 @@ export function TradingSignalKlinePanel({
           )}
           {chartPrefs.levels && tradePlanLevels.map((level) => (
             <g
-              aria-label={`策略价位 ${level.label} ${formatNumber(level.price, 2)}`}
+              aria-label={`策略价位 ${level.label} ${formatNumber(level.price, 2)}：${buildStrategyPriceLevelTooltip(level)}`}
               className={`trade-plan-level ${level.tone} ${level.emphasis ? "emphasis" : ""} ${hoveredTradePlanLevelKey === level.key ? "active" : ""}`}
               key={level.key}
               onBlur={() => setHoveredTradePlanLevelKey(null)}
@@ -2809,7 +2869,7 @@ export function TradingSignalKlinePanel({
               <line className="trade-plan-hit-target" x1={chart.plotLeft} x2={chart.plotRight} y1={level.y} y2={level.y} />
               <line x1={chart.plotLeft} x2={chart.plotRight} y1={level.y} y2={level.y} />
               <circle className="trade-plan-dot" cx={chart.plotRight - 3} cy={level.y} r={level.emphasis ? "4.8" : "3.8"} />
-              <title>{level.label} {formatNumber(level.price, 2)}</title>
+              <title>{level.label} {formatNumber(level.price, 2)} · {buildStrategyPriceLevelTooltip(level)}</title>
             </g>
           ))}
           {chartPrefs.relative && chart.relativeLine && (
@@ -3223,7 +3283,9 @@ export function TradingSignalKlinePanel({
           {chartPrefs.volume && chart.volumeMa5Line && <polyline className="volume-ma-line ma5" points={chart.volumeMa5Line} />}
           {chartPrefs.volume && chart.volumeMa10Line && <polyline className="volume-ma-line ma10" points={chart.volumeMa10Line} />}
           {chartPrefs.volume && chart.volumeMa20Line && <polyline className="volume-ma-line ma20" points={chart.volumeMa20Line} />}
-          {chartPrefs.signals && chart.entryLinks.map((link) => (
+          {(chartPrefs.tradeMarkers || chartPrefs.signals) && chart.entryLinks
+            .filter((link) => visibleSignalIds.has(link.signalId))
+            .map((link) => (
             <g className="signal-entry-link" key={link.id}>
               <line x1={link.signalX} x2={link.entryX} y1={link.signalY} y2={link.entryY} />
               <circle cx={link.entryX} cy={link.entryY} r="4" />
@@ -3249,15 +3311,17 @@ export function TradingSignalKlinePanel({
               <title>{marker.event.title} · {marker.event.detail}</title>
             </g>
           ))}
-          {chartPrefs.signals && chartMarkers.map((marker) => {
+          {visibleChartMarkers.map((marker) => {
             const hovered = marker.signal.signal_id === hoveredSignalId;
             const active =
               marker.signal.signal_id === selectedSignalId ||
               hovered;
+            const strategyMarker = isStrategyTradeMarker(marker.signal);
+            const labelY = marker.tone === "risk" ? marker.y - 14 : marker.y + 21;
             return (
               <g
                 aria-label={`${marker.label} ${marker.signal.signal_name} ${signalDateLabel(marker.signal)}`}
-                className={`trade-signal-marker ${marker.tone} ${active ? "active" : ""}`}
+                className={`trade-signal-marker ${marker.tone} ${strategyMarker ? "strategy-trade-marker" : "technical-signal-marker"} ${active ? "active" : ""}`}
                 key={marker.signal.signal_id}
                 onClick={() => chooseSignal(marker.signal.signal_id)}
                 onKeyDown={(event) => handleMarkerKey(event, marker.signal.signal_id)}
@@ -3283,6 +3347,12 @@ export function TradingSignalKlinePanel({
                 )}
                 <circle cx={marker.x} cy={marker.dotY} r={active ? "6.2" : "4.2"} />
                 <circle className="signal-lane-dot" cx={marker.x} cy={chart.signalLaneY} r={active ? "5" : "3.6"} />
+                {strategyMarker && (
+                  <g className="strategy-trade-marker-badge">
+                    <rect className="signal-marker-label-bg" x={marker.x - 10} y={labelY - 12} width="20" height="16" rx="5" />
+                    <text x={marker.x} y={labelY}>{marker.label}</text>
+                  </g>
+                )}
                 <title>
                   {signalDateLabel(marker.signal)} {marker.signal.signal_name} {marker.signal.signal_level || ""}{" "}
                   {formatNumber(marker.signal.score, 1)}
@@ -3476,8 +3546,26 @@ export function TradingSignalKlinePanel({
                 <strong>{activeDecision.label}</strong>
                 <p>{activeDecision.summary}</p>
                 <div className="decision-score-row">
-                  <span>买入确认 <b>{activeDecision.buyScore}/5</b></span>
-                  <span>卖出压力 <b>{activeDecision.sellScore}/5</b></span>
+                  <span>
+                    <em className="strategy-score-label">
+                      买入确认
+                      <StrategyHelpDot
+                        label="买入确认解释"
+                        tooltip={buildTradeDecisionChecklistTooltip({ side: "buy", activeCount: activeDecision.buyScore, total: 5 })}
+                      />
+                    </em>
+                    <b>{activeDecision.buyScore}/5</b>
+                  </span>
+                  <span>
+                    <em className="strategy-score-label">
+                      卖出压力
+                      <StrategyHelpDot
+                        label="卖出压力解释"
+                        tooltip={buildTradeDecisionChecklistTooltip({ side: "sell", activeCount: activeDecision.sellScore, total: 5 })}
+                      />
+                    </em>
+                    <b>{activeDecision.sellScore}/5</b>
+                  </span>
                 </div>
               </div>
               <div className="signal-inspector-block">
@@ -3529,7 +3617,7 @@ export function TradingSignalKlinePanel({
       </div>
 
       <div className="signal-badge-tape" aria-label="交易信号序列">
-        {chartMarkers.slice(-12).map((marker) => (
+        {visibleChartMarkers.slice(-12).map((marker) => (
           <button
             className={`signal-tape-pill ${marker.tone} ${marker.signal.signal_id === activeMarker?.signal.signal_id ? "active" : ""}`}
             key={marker.signal.signal_id}
@@ -3541,7 +3629,7 @@ export function TradingSignalKlinePanel({
             <em>{formatNumber(marker.signal.score, 0)}</em>
           </button>
         ))}
-        {chartMarkers.length === 0 && <span className="empty-state">当前区间暂无可落图信号。</span>}
+        {visibleChartMarkers.length === 0 && <span className="empty-state">当前区间暂无可落图信号。</span>}
       </div>
 
       <div className="chart-legend">
@@ -3852,10 +3940,40 @@ function StrategyDecisionWorkbench({
           ))}
         </div>
         <div className="strategy-score-strip">
-          <span>买入强度 <b>{formatNumber(analysis.buy_signal?.score, 3)}</b></span>
-          <span>卖出压力 <b>{formatNumber(analysis.sell_signal?.score, 2)}</b></span>
-          <span>买入确认 <b>{technicalDecision.buyScore}/5</b></span>
-          <span>风险确认 <b>{technicalDecision.sellScore}/5</b></span>
+          <span>
+            <em className="strategy-score-label">
+              买入强度
+              <StrategyHelpDot label="买入强度解释" tooltip={buildStrategyStrengthTooltip({ kind: "buy", value: analysis.buy_signal?.score })} />
+            </em>
+            <b>{formatNumber(analysis.buy_signal?.score, 3)}</b>
+          </span>
+          <span>
+            <em className="strategy-score-label">
+              卖出压力
+              <StrategyHelpDot label="卖出压力解释" tooltip={buildStrategyStrengthTooltip({ kind: "sell", value: analysis.sell_signal?.score })} />
+            </em>
+            <b>{formatNumber(analysis.sell_signal?.score, 2)}</b>
+          </span>
+          <span>
+            <em className="strategy-score-label">
+              买入确认
+              <StrategyHelpDot
+                label="买入确认解释"
+                tooltip={buildTradeDecisionChecklistTooltip({ side: "buy", activeCount: technicalDecision.buyScore, total: 5 })}
+              />
+            </em>
+            <b>{technicalDecision.buyScore}/5</b>
+          </span>
+          <span>
+            <em className="strategy-score-label">
+              风险确认
+              <StrategyHelpDot
+                label="风险确认解释"
+                tooltip={buildTradeDecisionChecklistTooltip({ side: "sell", activeCount: technicalDecision.sellScore, total: 5 })}
+              />
+            </em>
+            <b>{technicalDecision.sellScore}/5</b>
+          </span>
         </div>
       </section>
 
@@ -3997,6 +4115,15 @@ function buildStrategyFactorRows(analysis: StrategyKlineAnalysis): StrategyFacto
   ];
 }
 
+function StrategyHelpDot({ label, tooltip }: { label: string; tooltip: string }) {
+  return (
+    <button className="factor-help strategy-help-dot" type="button" aria-label={`${label}：${tooltip}`} title={tooltip}>
+      ?
+      <span role="tooltip">{tooltip}</span>
+    </button>
+  );
+}
+
 function StrategyFactorWorkbench({
   analysis,
   backtest,
@@ -4048,13 +4175,17 @@ function StrategyFactorComparison({ analysis }: { analysis: StrategyKlineAnalysi
       {rows.map((row) => {
         const buyWidth = Math.max(4, Math.abs(row.buy || 0) / maxAbs * 100);
         const sellWidth = Math.max(4, Math.abs(row.sell || 0) / maxAbs * 100);
+        const tooltip = buildStrategyFactorTooltip(row);
         return (
           <div className="strategy-factor-row" key={row.label}>
             <div className="factor-bar buy">
               <i style={{ width: `${buyWidth}%` }} />
               <strong>{formatNumber(row.buy, 3)}</strong>
             </div>
-            <span>{row.label}</span>
+            <span className="strategy-factor-label">
+              <span>{row.label}</span>
+              <StrategyHelpDot label={`${row.label}策略解释`} tooltip={tooltip} />
+            </span>
             <div className="factor-bar sell">
               <i style={{ width: `${sellWidth}%` }} />
               <strong>{formatNumber(row.sell, 3)}</strong>
@@ -4083,15 +4214,30 @@ function StrategyTradePlanCard({ analysis }: { analysis: StrategyKlineAnalysis }
   return (
     <div className="strategy-trade-plan-card">
       <div className="section-subhead">
-        <h2>交易计划</h2>
+        <div className="strategy-section-title">
+          <h2>交易计划</h2>
+          <StrategyHelpDot label="交易计划解释" tooltip={buildStrategyPriceLevelTooltip({ label: "交易计划" })} />
+        </div>
         <span className="muted">仓位 · 止损 · 目标</span>
       </div>
-      {rows.map(([label, value]) => (
-        <p key={String(label)}>
-          <span>{label}</span>
-          <strong>{typeof value === "string" ? value : formatNumber(value as number | undefined, 2)}</strong>
-        </p>
-      ))}
+      {rows.map(([label, value]) => {
+        const labelText = String(label);
+        const isPositionRow = /建议股数|建议仓位/.test(labelText);
+        return (
+          <p key={labelText}>
+            <span className="strategy-plan-label">
+              {labelText}
+              {isPositionRow && (
+                <StrategyHelpDot
+                  label={`${labelText}解释`}
+                  tooltip={buildRiskBudgetTooltip({ lotSize: 100 })}
+                />
+              )}
+            </span>
+            <strong>{typeof value === "string" ? value : formatNumber(value as number | undefined, 2)}</strong>
+          </p>
+        );
+      })}
     </div>
   );
 }
@@ -4264,6 +4410,7 @@ function buildStrategyChartSignal(
   const date = analysis.latest_bar?.date || latestBar?.date;
   if (!date) return null;
   const direction = strategySignalDirection(analysis);
+  if (direction === "neutral") return null;
   const score = normalizedStrategyScore(
     direction === "risk" ? analysis.sell_signal?.score : analysis.buy_signal?.score,
   );
@@ -6151,6 +6298,7 @@ function buildTradingSignalGeometry(
     return [
       {
         id: `${marker.signal.signal_id}-entry`,
+        signalId: marker.signal.signal_id,
         signalX: marker.x,
         signalY: marker.dotY,
         entryX: xOf(entryIndex),
@@ -6551,10 +6699,14 @@ function buildSignalHoverTooltip(marker: Record<string, any>, period: CandlePeri
   const indicators = (marker.indicators || {}) as TradingIndicatorSnapshot;
   const periodLabel = CANDLE_PERIODS.find((item) => item.key === period)?.unit || "日线";
   const signalPrice = signal.entry_price ?? indicators.close ?? null;
+  const strategyKind = resolveStrategyTradeMarkerKind(signal);
+  const directionLabel = strategyKind
+    ? `策略建议：${buildStrategyTradeMarkerLabel(signal)}`
+    : signalDirectionLabel(signal.direction);
   const rows = [
     { label: "信号日", value: signalDateLabel(signal) },
     { label: "周期落点", value: `${periodLabel} · ${signal.date}` },
-    { label: "方向", value: signalDirectionLabel(signal.direction) },
+    { label: strategyKind ? "买卖点" : "方向", value: directionLabel },
     { label: "价格/评分", value: `${formatNumber(signalPrice, 2)} / ${formatNumber(signal.score, 1)}` },
     { label: "级别", value: signal.signal_level || "-" },
     { label: "RSI/PSYMA/MACD", value: `${formatNumber(indicators.rsi14, 1)} / ${formatNumber(indicators.psy, 1)} / ${formatNumber(indicators.psyMa, 1)} / ${formatNumber(indicators.macd, 2)}` },
@@ -6750,28 +6902,38 @@ function buildChartDiagnostics(
 }
 
 function signalTone(signal: ChartSignalMarker) {
-  if (signal.direction === "risk") return "risk";
-  if (signal.direction === "opportunity") return "opportunity";
+  const strategyKind = resolveStrategyTradeMarkerKind(signal);
+  if (strategyKind === "buy" || strategyKind === "add") return "opportunity";
+  if (strategyKind === "sell" || strategyKind === "reduce") return "risk";
+  if (signal.direction === "risk" || signal.direction === "sell" || signal.direction === "reduce") return "risk";
+  if (signal.direction === "opportunity" || signal.direction === "buy" || signal.direction === "add") return "opportunity";
   return "neutral";
 }
 
 function signalMarkerLabel(signal: ChartSignalMarker) {
-  if (signal.direction === "risk") return "卖";
-  if (signal.direction === "opportunity") return "买";
+  const strategyLabel = buildStrategyTradeMarkerLabel(signal);
+  if (isStrategyTradeMarker(signal)) return strategyLabel;
+  if (signal.direction === "risk" || signal.direction === "sell") return "卖";
+  if (signal.direction === "reduce") return "减";
+  if (signal.direction === "opportunity" || signal.direction === "buy") return "买";
+  if (signal.direction === "add") return "加";
   return "察";
 }
 
 function signalDirectionLabel(direction?: string) {
-  if (direction === "risk") return "风险/卖出";
-  if (direction === "opportunity") return "机会/买入";
+  if (direction === "risk" || direction === "sell") return "风险/卖出";
+  if (direction === "reduce") return "风险/减仓";
+  if (direction === "opportunity" || direction === "buy") return "机会/买入";
+  if (direction === "add") return "机会/加仓";
   return "观察";
 }
 
 function summarizeSignals(signals: ChartSignalMarker[]) {
   return signals.reduce(
     (acc, signal) => {
-      if (signal.direction === "risk") acc.risk += 1;
-      else if (signal.direction === "opportunity") acc.opportunity += 1;
+      const tone = signalTone(signal);
+      if (tone === "risk") acc.risk += 1;
+      else if (tone === "opportunity") acc.opportunity += 1;
       else acc.neutral += 1;
       return acc;
     },
@@ -6930,11 +7092,19 @@ function DecisionChecklist({
   tone: DecisionTone;
   checks: DecisionCheck[];
 }) {
+  const activeCount = checks.filter((check) => check.active).length;
+  const side = tone === "opportunity" ? "buy" : "sell";
   return (
     <div className={`decision-checklist ${tone}`}>
       <div className="decision-checklist-head">
-        <strong>{title}</strong>
-        <span>{checks.filter((check) => check.active).length}/{checks.length}</span>
+        <strong className="decision-checklist-title">
+          {title}
+          <StrategyHelpDot
+            label={`${title}解释`}
+            tooltip={buildTradeDecisionChecklistTooltip({ side, activeCount, total: checks.length })}
+          />
+        </strong>
+        <span>{activeCount}/{checks.length}</span>
       </div>
       {checks.map((check) => (
         <p className={check.active ? "active" : ""} key={check.label}>

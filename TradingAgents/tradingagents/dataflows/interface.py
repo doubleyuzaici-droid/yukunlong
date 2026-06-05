@@ -235,7 +235,7 @@ def get_vendor(category: str, method: str = None) -> str:
     return config.get("data_vendors", {}).get(category, "default")
 
 
-def route_to_vendor(method: str, *args, **kwargs):
+def route_to_vendor(method: str, *args, vendor: str | None = None, **kwargs):
     """Route method calls to appropriate vendor implementation with fallback support.
 
     Automatically detects China/HK symbols and routes to tushare/akshare vendors.
@@ -250,7 +250,9 @@ def route_to_vendor(method: str, *args, **kwargs):
         except Exception:
             market = None
 
-    if market in (Market.CHINA, Market.HONGKONG):
+    if vendor:
+        vendor_config = vendor
+    elif market in (Market.CHINA, Market.HONGKONG):
         vendor_config = "tushare,akshare"
     else:
         vendor_config = get_vendor(category, method)

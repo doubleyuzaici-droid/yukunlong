@@ -137,6 +137,83 @@ export interface ReadableStrategyDecisionCopy {
   reasons: string[];
 }
 
+export interface StrategyFactorTooltipInput {
+  label: string;
+  buy?: number | null;
+  sell?: number | null;
+}
+
+export interface StrategyScoreTooltipInput {
+  score?: number | null;
+  mode?: "conservative" | "aggressive" | string | null;
+  readiness?: number | null;
+}
+
+export interface StrategyStrengthTooltipInput {
+  kind: "buy" | "sell";
+  value?: number | null;
+}
+
+export interface TradeDecisionChecklistTooltipInput {
+  side: "buy" | "sell";
+  activeCount?: number | null;
+  total?: number | null;
+}
+
+export interface StrategyPriceLevelTooltipInput {
+  key?: string | null;
+  label?: string | null;
+}
+
+export interface RiskBudgetTooltipInput {
+  method?: "atr" | "support" | "fixed_pct" | string | null;
+  lotSize?: number | null;
+}
+
+export type StrategyTradeMarkerKind = "buy" | "add" | "sell" | "reduce" | "watch";
+
+export interface StrategyTradeMarkerLike {
+  signal_id?: string | null;
+  signal_name?: string | null;
+  signal_level?: string | null;
+  direction?: string | null;
+}
+
+export interface StrategyBacktestTradeLike {
+  date?: string | null;
+  side?: string | null;
+  price?: number | null;
+  quantity?: number | null;
+  reason?: string | null;
+}
+
+export interface StrategyBacktestSignalLike {
+  date?: string | null;
+  action?: string | null;
+  label?: string | null;
+  buy_score?: number | null;
+  sell_score?: number | null;
+  position_shares?: number | null;
+}
+
+export interface StrategyBacktestTradeMarkersInput {
+  symbol?: string | null;
+  mode?: string | null;
+  trades?: StrategyBacktestTradeLike[] | null;
+  signals?: StrategyBacktestSignalLike[] | null;
+}
+
+export interface StrategyBacktestTradeMarker extends StrategyTradeMarkerLike {
+  signal_id: string;
+  date: string;
+  signal_name: string;
+  signal_level?: string;
+  direction: "buy" | "add" | "sell" | "reduce";
+  entry_date: string;
+  entry_price?: number | null;
+  score?: number | null;
+}
+
 function isFiniteStrategyNumber(value?: number | null): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -294,6 +371,200 @@ export function buildReadableStrategyDecisionCopy(input: ReadableStrategyDecisio
     subtitle,
     reasons: Array.from(new Set(reasons)).slice(0, 3),
   };
+}
+
+export function buildStrategyFactorTooltip(input: StrategyFactorTooltipInput) {
+  const currentValues = `当前机会 ${formatStrategyNumber(input.buy, 3)}；当前风险 ${formatStrategyNumber(input.sell, 3)}。`;
+  const riskBinary = "右侧风险因子是 0/1 条件，1 表示风险触发，0 表示未触发。";
+  const fallback = "机会因子参与 S_buy 买入评分，正值加分，负值拖累买入分；风险因子参与 S_sell 卖出评分。";
+  const explanations: Record<string, string> = {
+    "趋势": "机会因子看现价相对 EMA60 的偏离，正值支持买入，负值拖累买入分；风险因子在现价跌破 EMA21 时触发。",
+    "趋势转弱": "风险因子在现价跌破 EMA21 时触发；机会侧的趋势因子看现价相对 EMA60 的偏离。",
+    "动能 / MACD": "机会因子看 MACD 柱相对 ATR 的强弱，正值代表动能扩张，负值代表动能走弱；风险因子在 DIF < DEA 且 DIF < 0 时触发。",
+    "动能": "机会因子看 MACD 柱相对 ATR 的强弱，正值代表动能扩张，负值代表动能走弱；风险因子在 DIF < DEA 且 DIF < 0 时触发。",
+    "MACD": "风险因子在 DIF < DEA 且 DIF < 0 时触发；机会侧的动能因子看 MACD 柱相对 ATR 的强弱。",
+    "超卖 / KDJ": "机会因子看 KDJ-J 低于 30 的超卖程度，数值越高代表反弹机会越强；风险因子在 J 值从高位回落时触发。",
+    "超卖": "机会因子看 KDJ-J 低于 30 的超卖程度，数值越高代表反弹机会越强；风险因子在 J 值从高位回落时触发。",
+    "KDJ": "风险因子在 KDJ-J 从高位回落时触发；机会侧的超卖因子看 J 值低于 30 的程度。",
+    "量能 / 资金": "机会因子看 log(5 日均量 / 20 日均量)，正值代表放量确认，负值代表缩量拖累；风险因子在资金代理指标高位回落时触发。",
+    "量能": "机会因子看 log(5 日均量 / 20 日均量)，正值代表放量确认，负值代表缩量拖累；风险因子在资金代理指标高位回落时触发。",
+    "资金撤离": "风险因子在资金代理指标高位回落时触发；机会侧的量能因子看 5 日均量相对 20 日均量。",
+    "大盘": "机会因子看基准指数相对 EMA21 的 ATR 距离，正值代表顺风，负值代表逆风；风险因子在基准指数跌破 EMA21 时触发。",
+    "大盘恶化": "风险因子在基准指数跌破 EMA21 时触发；机会侧的大盘因子看基准指数相对 EMA21 的 ATR 距离。",
+  };
+
+  return `${explanations[input.label] || fallback} ${riskBinary} ${currentValues}`;
+}
+
+export function buildStrategyScoreTooltip(input: StrategyScoreTooltipInput) {
+  const threshold = input.mode === "aggressive" ? "激进模式门槛 45" : "保守模式门槛 55";
+  const score = isFiniteStrategyNumber(input.score) ? String(Math.round(input.score)) : "-";
+  const readiness = isFiniteStrategyNumber(input.readiness)
+    ? `因子完整度 ${Math.round(input.readiness * 100)}%，完整度越高，评分参考价值越高。`
+    : "因子完整度缺失时，评分只作为观察提示。";
+  return `买入强度是把后端 S_buy 加权结果转成 0-100 的阅读口径，表示当前做多条件的综合强弱，不是胜率、公司质量分或风险分。当前买入强度 ${score}；${threshold}。5 因子按 0.4/0.7 分为弱/中/强。${readiness}`;
+}
+
+export function buildStrategyStrengthTooltip(input: StrategyStrengthTooltipInput) {
+  if (input.kind === "buy") {
+    return `买入强度来自 S_buy 加权评分：趋势、动能、超卖、量能和大盘共同加权。正因子越多越接近买入触发，但仍要通过趋势、大盘和仓位约束。当前买入强度 ${formatStrategyNumber(input.value, 3)}。`;
+  }
+  return `卖出风险来自 S_sell 加权评分：趋势转弱、MACD、KDJ、大盘和资金撤离等风险条件按权重累加。它是风险压力读数，不能和买入强度直接相减。当前卖出风险 ${formatStrategyNumber(input.value, 3)}。`;
+}
+
+export function buildTradeDecisionChecklistTooltip(input: TradeDecisionChecklistTooltipInput) {
+  const total = input.total || 5;
+  const active = input.activeCount || 0;
+  const sideLabel = input.side === "buy" ? "买入确认" : "卖出压力";
+  const checks = input.side === "buy"
+    ? "收盘站上 MA20、MA5 强于 MA20、MACD 多头扩张、RSI 健康强势、量能确认"
+    : "收盘跌破 MA20、MA5 弱于 MA20、MACD 空头扩张、RSI 过热或转弱、放量下跌";
+  return `${sideLabel}是 5 项技术检查的通过数量，不是模型置信度。检查项包括：${checks}。当前通过 ${active}/${total}，用于辅助复核主策略结论。`;
+}
+
+export function buildStrategyPriceLevelTooltip(input: StrategyPriceLevelTooltipInput) {
+  const key = String(input.key || "").toLowerCase();
+  const label = readableToken(input.label, "策略价位");
+  if (key === "stop" || /止损/.test(label)) {
+    return `${label}是风控线，当前策略用 ATR 波动距离生成止损参考；跌破后优先按风险预算处理，而不是继续用目标价解释。`;
+  }
+  if (key === "entry" || /入场|买回/.test(label)) {
+    return `${label}是重新观察或买回参考线，来自区间低位/策略通道，不代表自动下单，需要和买入强度、趋势和量能共同确认。`;
+  }
+  if (key === "target1" || key === "target2" || /目标/.test(label)) {
+    return `${label}是 ATR 分层目标价，用来规划止盈和复核盈亏比；它不是价格预测承诺。`;
+  }
+  if (key === "high" || /预测高/.test(label)) {
+    return `${label}来自短期均线加 ATR 的上沿，用于观察上行空间和压力。`;
+  }
+  if (key === "low" || /预测低/.test(label)) {
+    return `${label}来自短期均线减 ATR 的下沿，用于观察回撤空间和支撑。`;
+  }
+  return `${label}是策略价位参考，用于把买入强度、风险预算和图表位置放到同一张 K 线上复核。`;
+}
+
+export function buildRiskBudgetTooltip(input: RiskBudgetTooltipInput = {}) {
+  const lotSize = isFiniteStrategyNumber(input.lotSize) ? input.lotSize : 100;
+  const method =
+    input.method === "support"
+      ? "支撑位止损"
+      : input.method === "fixed_pct"
+        ? "固定百分比止损"
+        : "ATR14 × 2.5 止损";
+  return `建议股数按风险预算估算：单笔可承受亏损 = 本金 × 单笔风险，建议股数约等于单笔可承受亏损 / 止损距离，再按每手 ${formatStrategyCompactNumber(lotSize)} 股取整。当前止损算法为 ${method}，结果是仓位上限参考，不是满仓建议。`;
+}
+
+function strategyTradeMarkerSearchText(input?: StrategyTradeMarkerLike | null) {
+  if (!input) return "";
+  return [
+    input.signal_id,
+    input.signal_name,
+    input.signal_level,
+    input.direction,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+export function isStrategyTradeMarker(input?: StrategyTradeMarkerLike | null) {
+  const text = strategyTradeMarkerSearchText(input);
+  return /resonance|v2|多指标共振|共振|策略/.test(text);
+}
+
+export function resolveStrategyTradeMarkerKind(
+  input?: StrategyTradeMarkerLike | null,
+): StrategyTradeMarkerKind | null {
+  if (!isStrategyTradeMarker(input)) return null;
+  const text = strategyTradeMarkerSearchText(input);
+  if (/add|加仓|加码/.test(text)) return "add";
+  if (/buy|entry|opportunity|买入|买点|机会/.test(text)) return "buy";
+  if (/reduce|trim|减仓|减码|减/.test(text)) return "reduce";
+  if (/sell|exit|risk|stop|卖出|卖点|止损|退出|风险|预警/.test(text)) return "sell";
+  return "watch";
+}
+
+export function buildStrategyTradeMarkerLabel(input?: StrategyTradeMarkerLike | null) {
+  const kind = resolveStrategyTradeMarkerKind(input);
+  if (kind === "buy") return "买";
+  if (kind === "add") return "加";
+  if (kind === "sell") return "卖";
+  if (kind === "reduce") return "减";
+  return "察";
+}
+
+export function isActionableStrategyTradeMarker(input?: StrategyTradeMarkerLike | null) {
+  const kind = resolveStrategyTradeMarkerKind(input);
+  return kind === "buy" || kind === "add" || kind === "sell" || kind === "reduce";
+}
+
+function strategyTradeDirectionFromBacktestTrade(
+  trade: StrategyBacktestTradeLike,
+): StrategyBacktestTradeMarker["direction"] | null {
+  const side = String(trade.side || "").toLowerCase();
+  const reason = String(trade.reason || "").toLowerCase();
+  if (/entry|buy|long|买/.test(side)) return "buy";
+  if (/exit|sell|reduce|卖|减/.test(side)) {
+    return /reduce|trim|减/.test(reason) ? "reduce" : "sell";
+  }
+  return null;
+}
+
+function strategyTradeDirectionFromBacktestAction(
+  signal: StrategyBacktestSignalLike,
+): StrategyBacktestTradeMarker["direction"] | null {
+  const action = String(signal.action || "").toLowerCase();
+  if (action === "buy_allowed" || action === "buy" || action === "entry") return "buy";
+  if (action === "add" || action === "increase") return "add";
+  if (action === "reduce") return "reduce";
+  if (action === "exit" || action === "sell" || action === "stop" || action === "stop_price") return "sell";
+  return null;
+}
+
+function strategyTradeMarkerLevel(direction: StrategyBacktestTradeMarker["direction"]) {
+  if (direction === "buy") return "买入";
+  if (direction === "add") return "加仓";
+  if (direction === "reduce") return "减仓";
+  return "卖出";
+}
+
+export function buildStrategyBacktestTradeMarkers(
+  input: StrategyBacktestTradeMarkersInput = {},
+): StrategyBacktestTradeMarker[] {
+  const symbol = input.symbol || "symbol";
+  const mode = input.mode || "mode";
+  const trades = Array.isArray(input.trades) ? input.trades : [];
+  const tradeMarkers = trades.flatMap((trade, index): StrategyBacktestTradeMarker[] => {
+    if (!trade.date) return [];
+    const direction = strategyTradeDirectionFromBacktestTrade(trade);
+    if (!direction) return [];
+    return [{
+      signal_id: `resonance-v2-backtest:${mode}:${symbol}:trade:${direction}:${trade.date}:${index}`,
+      date: trade.date,
+      signal_name: "V2策略买卖点",
+      signal_level: strategyTradeMarkerLevel(direction),
+      direction,
+      entry_date: trade.date,
+      entry_price: isFiniteStrategyNumber(trade.price) ? trade.price : null,
+      score: null,
+    }];
+  });
+  if (tradeMarkers.length > 0) return tradeMarkers;
+
+  const signals = Array.isArray(input.signals) ? input.signals : [];
+  return signals.flatMap((signal, index): StrategyBacktestTradeMarker[] => {
+    if (!signal.date) return [];
+    const direction = strategyTradeDirectionFromBacktestAction(signal);
+    if (!direction) return [];
+    const score = direction === "buy" || direction === "add" ? signal.buy_score : signal.sell_score;
+    return [{
+      signal_id: `resonance-v2-backtest:${mode}:${symbol}:signal:${direction}:${signal.date}:${index}`,
+      date: signal.date,
+      signal_name: "V2策略买卖点",
+      signal_level: signal.label || strategyTradeMarkerLevel(direction),
+      direction,
+      entry_date: signal.date,
+      entry_price: null,
+      score: isFiniteStrategyNumber(score) ? score * 100 : null,
+    }];
+  });
 }
 
 export interface TechnicalIndicatorBarLike extends PriceExtremaBarLike {
@@ -749,6 +1020,7 @@ export type ChartPreferenceName =
   | "vwap"
   | "levels"
   | "limitLines"
+  | "tradeMarkers"
   | "signals"
   | "events"
   | "relative"
@@ -845,6 +1117,7 @@ const BASE_CHART_PRESET_VALUES: Record<ChartPreferenceName, boolean> = {
   vwap: false,
   levels: true,
   limitLines: true,
+  tradeMarkers: true,
   signals: true,
   events: true,
   relative: false,
@@ -1067,6 +1340,7 @@ const CHART_LAYER_SUBCHARTS: ChartLayerSummaryOption[] = [
 const CHART_LAYER_ANNOTATIONS: ChartLayerSummaryOption[] = [
   ["levels", "价位"],
   ["limitLines", "涨跌停"],
+  ["tradeMarkers", "买卖"],
   ["signals", "信号"],
   ["events", "事件"],
   ["relative", "相对"],
