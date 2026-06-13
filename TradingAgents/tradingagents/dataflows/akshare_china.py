@@ -2,10 +2,24 @@ import pandas as pd
 
 from tradingagents.markets.china import normalize_china_symbol
 from tradingagents.markets.hongkong import normalize_hk_symbol
+from tradingagents.research.index_catalog import akshare_index_symbol, normalize_index_symbol
 
 DAILY_BAR_COLUMNS = [
     "date",
     "symbol",
+    "market",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "amount",
+    "source",
+]
+
+INDEX_BAR_COLUMNS = [
+    "date",
+    "index_symbol",
     "market",
     "open",
     "high",
@@ -57,6 +71,24 @@ def _stock_hk_daily(**kwargs):
     return ak.stock_hk_daily(**kwargs)
 
 
+def _stock_zh_index_daily_em(**kwargs):
+    import akshare as ak
+
+    return ak.stock_zh_index_daily_em(**kwargs)
+
+
+def _stock_zh_index_daily(**kwargs):
+    import akshare as ak
+
+    return ak.stock_zh_index_daily(**kwargs)
+
+
+def _stock_hk_index_daily_sina(**kwargs):
+    import akshare as ak
+
+    return ak.stock_hk_index_daily_sina(**kwargs)
+
+
 def _stock_news_em(**kwargs):
     import akshare as ak
 
@@ -79,6 +111,10 @@ def _fmt_date(value: str) -> str:
 
 def _empty_daily_frame() -> pd.DataFrame:
     return pd.DataFrame(columns=DAILY_BAR_COLUMNS)
+
+
+def _empty_index_frame() -> pd.DataFrame:
+    return pd.DataFrame(columns=INDEX_BAR_COLUMNS)
 
 
 def _pick_column(frame: pd.DataFrame, names: tuple[str, ...]) -> pd.Series:
@@ -118,6 +154,32 @@ def _standardize_daily_frame(
     result["source"] = source
     result = result.sort_values("date", kind="stable")
     return result[DAILY_BAR_COLUMNS].reset_index(drop=True)
+
+
+def _standardize_index_frame(
+    frame: pd.DataFrame | None,
+    index_symbol: str,
+    *,
+    source: str,
+    market: str = "CHINA",
+) -> pd.DataFrame:
+    if frame is None or frame.empty:
+        return _empty_index_frame()
+
+    canonical = normalize_index_symbol(index_symbol)
+    result = pd.DataFrame(index=frame.index)
+    result["date"] = _normalize_date_column(frame)
+    result["index_symbol"] = canonical
+    result["market"] = market
+    for column in ("open", "high", "low", "close", "volume", "amount"):
+        result[column] = pd.to_numeric(
+            _pick_column(frame, _AKSHARE_DAILY_COLUMN_ALIASES[column]),
+            errors="coerce",
+        )
+    result["source"] = source
+    result = result.dropna(subset=["date", "open", "high", "low", "close"])
+    result = result.sort_values("date", kind="stable")
+    return result[INDEX_BAR_COLUMNS].reset_index(drop=True)
 
 
 def _filter_date_range(frame: pd.DataFrame, start_date: str, end_date: str) -> pd.DataFrame:
@@ -208,6 +270,60 @@ def get_hk_stock_data_frame_akshare(
             ) from exc
         raise
 
+
+
+def get_china_index_data_frame_akshare(
+    index_symbol: str, start_date: str, end_date: str
+) -> pd.DataFrame:
+    canonical = normalize_index_symbol(index_symbol)
+    ak_symbol = akshare_index_symbol(canonical)
+    primary_error: Exception | None = None
+    try:
+        frame = _stock_zh_index_daily_em(
+            symbol=ak_symbol,
+            start_date=_fmt_date(start_date),
+            end_date=_fmt_date(end_date),
+        )
+        standardized = _standardize_index_frame(
+            frame,
+            canonical,
+            source="akshare_index_em",
+        )
+        if not standardized.empty:
+            return standardized
+    except Exception as exc:
+        primary_error = exc
+
+    try:
+        frame = _stock_zh_index_daily(symbol=ak_symbol)
+        standardized = _standardize_index_frame(
+            frame,
+            canonical,
+            source="akshare_index_sina",
+        )
+        return _filter_date_range(standardized, start_date, end_date)
+    except Exception as exc:
+        if primary_error is not None:
+            raise RuntimeError(
+                f"AKShare China index requests failed: eastmoney={primary_error}; "
+                f"sina={exc}"
+            ) from exc
+        raise
+
+
+def get_hk_index_data_frame_akshare(
+    index_symbol: str, start_date: str, end_date: str
+) -> pd.DataFrame:
+    canonical = normalize_index_symbol(index_symbol)
+    ak_symbol = akshare_index_symbol(canonical)
+    frame = _stock_hk_index_daily_sina(symbol=ak_symbol)
+    standardized = _standardize_index_frame(
+        frame,
+        canonical,
+        source="akshare_hk_index_sina",
+        market="HONGKONG",
+    )
+    return _filter_date_range(standardized, start_date, end_date)
 
 
 def get_china_stock_data_akshare(symbol: str, start_date: str, end_date: str) -> str:

@@ -3,12 +3,17 @@ from __future__ import annotations
 import argparse
 import json
 
-from .data_sync import DATA_SOURCES, sync_watchlist_bars, sync_watchlist_fund_flows
+from .data_sync import (
+    DATA_SOURCES,
+    sync_index_bars,
+    sync_watchlist_bars,
+    sync_watchlist_fund_flows,
+)
 from .db import init_db
 from .factor_pipeline import compute_watchlist_factors
 from .quality import list_quality_issues
 from .pipeline import run_pipeline
-from .repository import list_watchlist, upsert_watchlist_symbols
+from .repository import ensure_core_watchlist_symbols, list_watchlist, upsert_watchlist_symbols
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -19,6 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_watchlist = subparsers.add_parser("add-watchlist")
     add_watchlist.add_argument("symbols", nargs="+")
+
+    bootstrap_watchlist = subparsers.add_parser("bootstrap-watchlist")
+    bootstrap_watchlist.add_argument("symbols", nargs="*")
 
     list_watchlist_parser = subparsers.add_parser("list-watchlist")
     list_watchlist_parser.add_argument("--all", action="store_true")
@@ -31,6 +39,17 @@ def build_parser() -> argparse.ArgumentParser:
         choices=DATA_SOURCES,
         default=None,
         help="daily bar source; defaults to TRADINGAGENTS_DATA_SOURCE or akshare",
+    )
+
+    sync_indices = subparsers.add_parser("sync-indices")
+    sync_indices.add_argument("--start", required=True)
+    sync_indices.add_argument("--end", required=True)
+    sync_indices.add_argument("--index", dest="indices", action="append")
+    sync_indices.add_argument(
+        "--source",
+        choices=("akshare", "auto"),
+        default=None,
+        help="index data source; defaults to akshare",
     )
 
     sync_flow = subparsers.add_parser("sync-fund-flow")
@@ -63,6 +82,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"added {len(args.symbols)} symbols")
         return 0
 
+    if args.command == "bootstrap-watchlist":
+        rows = ensure_core_watchlist_symbols(args.symbols or None)
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return 0
+
     if args.command == "list-watchlist":
         rows = list_watchlist(active_only=not args.all)
         print(json.dumps(rows, ensure_ascii=False, indent=2))
@@ -71,6 +95,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "sync-bars":
         rows_synced = sync_watchlist_bars(args.start, args.end, source=args.source)
         print(f"synced {rows_synced} daily bars")
+        return 0
+
+    if args.command == "sync-indices":
+        rows_synced = sync_index_bars(
+            args.start,
+            args.end,
+            index_symbols=args.indices,
+            source=args.source,
+        )
+        print(f"synced {rows_synced} index bars")
         return 0
 
     if args.command == "sync-fund-flow":

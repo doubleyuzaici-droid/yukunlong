@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -13,7 +14,32 @@ from tradingagents.research.db import get_connection, init_db
 
 ALLOWED_ACTIONS = {"upgrade", "keep", "downgrade", "reject"}
 ALLOWED_CONFIDENCE = {"low", "medium", "high"}
-PROHIBITED_TERMS = ("买入", "卖出", "目标价", "仓位", "满仓", "稳赚")
+ALLOWED_DECISION_STATUS = {"pending", "adopted", "rejected", "watch", "expired"}
+ALLOWED_ANALYTIC_PHRASES = (
+    "买入评分",
+    "卖出评分",
+    "建议仓位",
+    "买入确认",
+    "卖出压力",
+    "卖出因子",
+    "卖警",
+    "S_buy",
+    "S_sell",
+)
+PROHIBITED_ADVICE_PATTERNS = (
+    r"立即\s*买入",
+    r"建议\s*买入",
+    r"可以买入",
+    r"直接\s*买入",
+    r"立即\s*卖出",
+    r"建议\s*卖出",
+    r"直接\s*卖出",
+    r"目标价\s*[:：]?\s*\d",
+    r"满仓",
+    r"全仓",
+    r"稳赚",
+    r"保证收益",
+)
 
 
 def _now() -> str:
@@ -53,7 +79,7 @@ def _normalize_review(review: dict) -> dict:
     if normalized["confidence"] not in ALLOWED_CONFIDENCE:
         normalized["confidence"] = "low"
     serialized = json.dumps(normalized, ensure_ascii=False)
-    if any(term in serialized for term in PROHIBITED_TERMS):
+    if _contains_prohibited_advice(serialized):
         normalized.update(
             {
                 "action": "reject",
@@ -62,6 +88,13 @@ def _normalize_review(review: dict) -> dict:
             }
         )
     return normalized
+
+
+def _contains_prohibited_advice(text: str) -> bool:
+    sanitized = text
+    for phrase in ALLOWED_ANALYTIC_PHRASES:
+        sanitized = sanitized.replace(phrase, "")
+    return any(re.search(pattern, sanitized) for pattern in PROHIBITED_ADVICE_PATTERNS)
 
 
 def _persist_review(
@@ -124,4 +157,59 @@ def get_review(review_id: str) -> dict | None:
     result["bear_points"] = json.loads(result.pop("bear_points_json") or "[]")
     result["risk_flags"] = json.loads(result.pop("risk_flags_json") or "[]")
     result["missing_data"] = json.loads(result.pop("missing_data_json") or "[]")
+    result["decision_status"] = result.get("decision_status") or "pending"
     return result
+
+
+def list_reviews(signal_id: str | None = None, limit: int = 50) -> list[dict]:
+    init_db()
+    limit = max(1, min(limit, 200))
+    params: list[object] = []
+    query = "SELECT * FROM agent_decision_log"
+    if signal_id:
+        query += " WHERE signal_id = ?"
+        params.append(signal_id)
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+    with get_connection() as conn:
+        rows = conn.execute(query, params).fetchall()
+    reviews = []
+    for row in rows:
+        item = dict(row)
+        item["bull_points"] = json.loads(item.pop("bull_points_json") or "[]")
+        item["bear_points"] = json.loads(item.pop("bear_points_json") or "[]")
+        item["risk_flags"] = json.loads(item.pop("risk_flags_json") or "[]")
+        item["missing_data"] = json.loads(item.pop("missing_data_json") or "[]")
+        item["decision_status"] = item.get("decision_status") or "pending"
+        reviews.append(item)
+    return reviews
+
+
+def update_review_decision(
+    review_id: str,
+    *,
+    decision_status: str,
+    decision_note: str | None = None,
+) -> dict | None:
+    init_db()
+    normalized_status = decision_status if decision_status in ALLOWED_DECISION_STATUS else "pending"
+    resolved_at = _now()
+    with get_connection() as conn:
+        existing = conn.execute(
+            "SELECT review_id FROM agent_decision_log WHERE review_id = ?",
+            (review_id,),
+        ).fetchone()
+        if existing is None:
+            return None
+        conn.execute(
+            """
+            UPDATE agent_decision_log
+            SET decision_status = ?,
+                decision_note = ?,
+                resolved_at = ?
+            WHERE review_id = ?
+            """,
+            (normalized_status, decision_note, resolved_at, review_id),
+        )
+        conn.commit()
+    return get_review(review_id)

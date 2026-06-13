@@ -63,6 +63,37 @@ def _signal(symbol: str = "600519.SH", market: str = "CHINA"):
     }
 
 
+def _insert_index_rows(symbol: str = "000300.SH", market: str = "CHINA"):
+    from tradingagents.research.db import get_connection
+
+    start = date(2026, 1, 1)
+    with get_connection() as conn:
+        for index in range(45):
+            current = start + timedelta(days=index)
+            close = 3000.0 + index * 3
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO index_bars (
+                    date, index_symbol, market, open, high, low, close, volume, amount, source
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    current.isoformat(),
+                    symbol,
+                    market,
+                    close - 1,
+                    close + 2,
+                    close - 2,
+                    close,
+                    1_000_000,
+                    1_000_000_000,
+                    "fixture",
+                ),
+            )
+        conn.commit()
+
+
 def test_portfolio_backtest_generates_trade_log_and_equity_curve(tmp_path, monkeypatch):
     monkeypatch.setenv("TRADINGAGENTS_DATA_DIR", str(tmp_path))
 
@@ -81,11 +112,44 @@ def test_portfolio_backtest_generates_trade_log_and_equity_curve(tmp_path, monke
     assert result["metrics"]["max_drawdown"] <= 0
     assert result["metrics"]["win_rate"] == 1.0
     assert result["metrics"]["profit_loss_ratio"] > 0
+    assert result["position_lifecycle"][0]["symbol"] == "600519.SH"
+    assert result["position_lifecycle"][0]["net_return"] > 0
+    assert result["trade_attribution"][0]["symbol"] == "600519.SH"
+    assert result["trade_attribution"][0]["net_pnl"] > 0
+    assert result["capital_usage"]
+    assert result["exposures"][0]["market"] == "CHINA"
     with get_connection() as conn:
         trade_count = conn.execute("SELECT COUNT(*) FROM trade_log").fetchone()[0]
         equity_count = conn.execute("SELECT COUNT(*) FROM equity_curve").fetchone()[0]
     assert trade_count == 2
     assert equity_count >= 1
+
+
+def test_portfolio_backtest_returns_benchmark_distribution_and_risk_diagnostics(tmp_path, monkeypatch):
+    monkeypatch.setenv("TRADINGAGENTS_DATA_DIR", str(tmp_path))
+
+    from tradingagents.backtest.portfolio_backtester import run_portfolio_backtest
+    from tradingagents.research.db import init_db
+    from tradingagents.research.repository import upsert_daily_bars, upsert_signals
+
+    init_db()
+    upsert_daily_bars(_daily_rows())
+    upsert_signals([_signal()])
+    _insert_index_rows()
+
+    result = run_portfolio_backtest("2026-01-01", "2026-02-28")
+
+    assert result["metrics"]["benchmark_symbol"] == "000300.SH"
+    assert result["metrics"]["benchmark_coverage"] == 1.0
+    assert result["metrics"]["benchmark_total_return"] > 0
+    assert result["metrics"]["excess_return"] != result["metrics"]["total_return"]
+    assert len(result["benchmark_curve"]) == len(result["equity_curve"])
+    assert {"date", "benchmark_equity", "excess_return"}.issubset(result["benchmark_curve"][0])
+    assert result["return_distribution"]["total_count"] == 1
+    assert result["return_distribution"]["win_count"] == 1
+    assert result["return_distribution"]["buckets"]
+    assert result["risk_diagnostics"]["monthly_returns"]
+    assert result["risk_diagnostics"]["benchmark_status"] == "matched"
 
 
 def test_portfolio_backtest_skips_suspended_entry(tmp_path, monkeypatch):

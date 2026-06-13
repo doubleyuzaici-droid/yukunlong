@@ -7,10 +7,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .agent_review_routes import router as agent_review_router
 from .backtest_routes import router as backtest_router
+from .config_routes import router as config_router
+from .market_routes import router as market_router
+from .operability_routes import router as operability_router
+from .professional_routes import router as professional_router
 from .research_routes import router as research_router
 from .routes import router
 from .report_routes import router as report_router
 from .signal_routes import router as signal_router
+from .strategy_routes import router as strategy_router
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +41,11 @@ def create_app() -> FastAPI:
     app.include_router(backtest_router)
     app.include_router(agent_review_router)
     app.include_router(research_router)
+    app.include_router(operability_router)
+    app.include_router(market_router)
+    app.include_router(config_router)
+    app.include_router(professional_router)
+    app.include_router(strategy_router)
 
     @app.get("/health")
     async def health():

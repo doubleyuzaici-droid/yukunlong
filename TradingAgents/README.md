@@ -148,6 +148,25 @@ export OPENROUTER_API_KEY=...      # OpenRouter
 export ALPHA_VANTAGE_API_KEY=...   # Alpha Vantage
 ```
 
+### Optional Futu market data
+
+TradingAgents can use Futu OpenAPI as an optional A/H/US market data source. Start and log in to Futu OpenD first, then install the optional SDK:
+
+```bash
+uv pip install -e ".[futu]"
+```
+
+Configure OpenD and choose which path should use Futu:
+
+```bash
+export TRADINGAGENTS_FUTU_HOST=127.0.0.1
+export TRADINGAGENTS_FUTU_PORT=11111
+export TRADINGAGENTS_DATA_SOURCE=futu       # historical daily-bar sync
+export TRADINGAGENTS_QUOTE_PROVIDER=futu    # realtime quote panel
+```
+
+If OpenD is offline, the SDK is not installed, or the account lacks quote permission, realtime quotes fall back to local daily bars when fallback is enabled. Futu data is for research display only; this project does not place orders or access trading accounts.
+
 For enterprise providers (e.g. Azure OpenAI, AWS Bedrock), copy `.env.enterprise.example` to `.env.enterprise` and fill in your credentials.
 
 For local models, configure Ollama with `llm_provider: "ollama"` in your config.

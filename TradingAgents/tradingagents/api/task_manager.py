@@ -7,7 +7,7 @@ import traceback
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from tradingagents.default_config import DEFAULT_CONFIG
 
@@ -77,6 +77,8 @@ REPORT_SECTION_KEYS = {
     "fundamentals_report": "基本面分析",
     "investment_plan": "研究团队决策",
     "trader_investment_plan": "交易团队计划",
+    "investment_debate_summary": "多空研究辩论",
+    "risk_debate_summary": "风险团队辩论",
     "final_trade_decision": "最终投资决策",
 }
 
@@ -87,6 +89,8 @@ class TaskManager:
     def __init__(self):
         self._tasks: dict[str, TaskProgress] = {}
         self._reports: dict[str, dict] = {}
+        self._task_requests: dict[str, AnalyzeRequest] = {}
+        self._cancelled_tasks: set[str] = set()
         self._lock = threading.Lock()
 
     @classmethod
@@ -121,6 +125,7 @@ class TaskManager:
         )
         with self._lock:
             self._tasks[task_id] = progress
+            self._task_requests[task_id] = request
 
         thread = threading.Thread(
             target=self._run_analysis,
@@ -129,6 +134,38 @@ class TaskManager:
         )
         thread.start()
         return task_id
+
+    def list_tasks(self, limit: int = 100) -> list[dict]:
+        with self._lock:
+            tasks = list(self._tasks.values())
+        tasks.sort(key=lambda item: item.started_at or item.task_id, reverse=True)
+        return [task.model_dump() for task in tasks[: max(1, min(limit, 500))]]
+
+    def cancel_task(self, task_id: str) -> dict | None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return None
+            self._cancelled_tasks.add(task_id)
+            if task.status in (TaskStatus.PENDING, TaskStatus.RUNNING, TaskStatus.FAILED):
+                task.status = TaskStatus.CANCELLED
+                task.current_step = "已取消"
+                task.finished_at = datetime.now(timezone.utc).isoformat()
+                task.messages.append(
+                    {
+                        "time": datetime.now(timezone.utc).isoformat(),
+                        "type": "warning",
+                        "content": "任务已标记取消",
+                    }
+                )
+            return task.model_dump()
+
+    def retry_task(self, task_id: str) -> str | None:
+        with self._lock:
+            request = self._task_requests.get(task_id)
+        if request is None:
+            return None
+        return self.create_task(request)
 
     def _build_stages(self, selected_analysts: list) -> list[StageInfo]:
         selected_keys = set()
@@ -250,8 +287,75 @@ class TaskManager:
                     }
                 )
 
+    def _debate_state_to_markdown(self, state: object, labels: dict[str, str]) -> str:
+        if not isinstance(state, dict):
+            return ""
+        parts: list[str] = []
+        for key, label in labels.items():
+            value = state.get(key)
+            if value:
+                parts.append(f"### {label}\n\n{value}")
+        return "\n\n".join(parts)
+
+    def _sanitize_tool_value(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            sanitized = {}
+            for key, item in value.items():
+                lowered = str(key).lower()
+                if any(token in lowered for token in ("key", "token", "secret", "password")):
+                    sanitized[key] = "***"
+                else:
+                    sanitized[key] = self._sanitize_tool_value(item)
+            return sanitized
+        if isinstance(value, list):
+            return [self._sanitize_tool_value(item) for item in value[:20]]
+        if isinstance(value, str):
+            return value if len(value) <= 500 else f"{value[:497]}..."
+        return value
+
+    def _extract_tool_events(self, state: object) -> list[dict[str, Any]]:
+        if not isinstance(state, dict):
+            return []
+        events: list[dict[str, Any]] = []
+        for index, message in enumerate(state.get("messages") or []):
+            tool_calls = getattr(message, "tool_calls", None) or []
+            for call in tool_calls:
+                name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
+                args = call.get("args", {}) if isinstance(call, dict) else getattr(call, "args", {})
+                call_id = call.get("id") if isinstance(call, dict) else getattr(call, "id", None)
+                events.append(
+                    {
+                        "event_type": "tool_call",
+                        "message_index": index,
+                        "tool_call_id": call_id,
+                        "tool_name": name or "unknown_tool",
+                        "args": self._sanitize_tool_value(args or {}),
+                    }
+                )
+            tool_call_id = getattr(message, "tool_call_id", None)
+            if tool_call_id:
+                content = getattr(message, "content", "")
+                events.append(
+                    {
+                        "event_type": "tool_result",
+                        "message_index": index,
+                        "tool_call_id": tool_call_id,
+                        "tool_name": getattr(message, "name", None) or "tool",
+                        "content_preview": self._sanitize_tool_value(str(content)),
+                    }
+                )
+        return events[:200]
+
     def _run_analysis(self, task_id: str, request: AnalyzeRequest):
         try:
+            if task_id in self._cancelled_tasks:
+                self._update(
+                    task_id,
+                    status=TaskStatus.CANCELLED,
+                    current_step="已取消",
+                    finished_at=datetime.now(timezone.utc).isoformat(),
+                )
+                return
             now = datetime.now(timezone.utc).isoformat()
             self._update(task_id, status=TaskStatus.RUNNING, started_at=now)
 
@@ -265,6 +369,7 @@ class TaskManager:
             config["deep_think_llm"] = request.deep_think_llm
             config["quick_think_llm"] = request.quick_think_llm
             config["output_language"] = request.output_language
+            config["checkpoint_enabled"] = request.checkpoint_enabled
 
             depth = (
                 request.research_depth.value
@@ -309,6 +414,13 @@ class TaskManager:
                 config.setdefault(market_key, {})["simulation_only"] = True
 
             selected = [a.value for a in request.selected_analysts]
+            if request.clear_checkpoint_before_run:
+                from tradingagents.graph.checkpointer import clear_checkpoint
+
+                clear_checkpoint(
+                    DEFAULT_CONFIG["data_cache_dir"], request.ticker, request.trade_date
+                )
+                self._append_message(task_id, "info", "已清除旧 checkpoint")
 
             self._append_message(task_id, "info", f"研究深度: {depth} ({rounds}轮辩论)")
             self._append_message(
@@ -317,6 +429,8 @@ class TaskManager:
                 f"LLM: {config['llm_provider']} / {config['deep_think_llm']}",
             )
             self._append_message(task_id, "info", f"分析师: {', '.join(selected)}")
+            if request.checkpoint_enabled:
+                self._append_message(task_id, "info", "Checkpoint 恢复已启用")
             self._update(task_id, current_step="初始化 TradingAgentsGraph...")
 
             from tradingagents.graph.trading_graph import TradingAgentsGraph
@@ -339,6 +453,7 @@ class TaskManager:
             self._add_tokens(task_id, llm_calls=1)
 
             final_state, decision = ta.propagate(request.ticker, request.trade_date)
+            tool_events = self._extract_tool_events(final_state)
 
             # Mark all agents completed
             self._mark_all_completed(task_id)
@@ -353,6 +468,26 @@ class TaskManager:
                 "news_report": final_state.get("news_report", ""),
                 "fundamentals_report": final_state.get("fundamentals_report", ""),
                 "investment_plan": final_state.get("investment_plan", ""),
+                "trader_investment_plan": final_state.get("trader_investment_plan", ""),
+                "investment_debate_summary": self._debate_state_to_markdown(
+                    final_state.get("investment_debate_state"),
+                    {
+                        "bull_history": "多头研究员",
+                        "bear_history": "空头研究员",
+                        "judge_decision": "研究经理裁决",
+                    },
+                ),
+                "risk_debate_summary": self._debate_state_to_markdown(
+                    final_state.get("risk_debate_state"),
+                    {
+                        "aggressive_history": "激进风险分析师",
+                        "neutral_history": "中性风险分析师",
+                        "conservative_history": "保守风险分析师",
+                        "judge_decision": "风险团队裁决",
+                    },
+                ),
+                "quant_signal_context": final_state.get("quant_signal_context", ""),
+                "past_context": final_state.get("past_context", ""),
                 "final_trade_decision": final_state.get("final_trade_decision", ""),
                 "saved_path": "",
             }
@@ -366,6 +501,9 @@ class TaskManager:
 
             with self._lock:
                 self._reports[task_id] = report
+                task = self._tasks.get(task_id)
+                if task:
+                    task.tool_events = tool_events
 
             self._append_message(task_id, "success", f"分析完成！决策: {decision}")
             self._update(
@@ -414,7 +552,11 @@ class TaskManager:
             f"## 社交媒体情绪\n\n{report.get('sentiment_report', '')}\n\n---\n\n",
             f"## 新闻分析\n\n{report.get('news_report', '')}\n\n---\n\n",
             f"## 基本面分析\n\n{report.get('fundamentals_report', '')}\n\n---\n\n",
+            f"## 多空研究辩论\n\n{report.get('investment_debate_summary', '')}\n\n---\n\n",
             f"## 投资计划\n\n{report.get('investment_plan', '')}\n\n---\n\n",
+            f"## 交易计划\n\n{report.get('trader_investment_plan', '')}\n\n---\n\n",
+            f"## 风险团队辩论\n\n{report.get('risk_debate_summary', '')}\n\n---\n\n",
+            f"## 量化信号上下文\n\n{report.get('quant_signal_context', '')}\n\n---\n\n",
             f"## 最终决策\n\n{report.get('final_trade_decision', '')}\n\n",
         ]
         report_path = folder / f"report_{date_str}.md"

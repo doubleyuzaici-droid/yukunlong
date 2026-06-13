@@ -13,6 +13,39 @@ from tradingagents.markets import (
 )
 
 from .db import get_connection, init_db
+from .index_catalog import normalize_index_symbol
+
+
+CORE_RESEARCH_UNIVERSE = [
+    {
+        "symbol": "600519.SH",
+        "name": "贵州茅台",
+        "market": "CHINA",
+        "industry": "白酒",
+        "thesis": "A股高质量消费核心样本，用于检验日线、因子、资金流和策略闭环。",
+    },
+    {
+        "symbol": "601318.SH",
+        "name": "中国平安",
+        "market": "CHINA",
+        "industry": "保险",
+        "thesis": "A股金融权重核心样本，用于覆盖大金融、基本面和风控场景。",
+    },
+    {
+        "symbol": "00700.HK",
+        "name": "腾讯控股",
+        "market": "HONGKONG",
+        "industry": "互联网",
+        "thesis": "港股平台经济核心样本，用于验证港股行情、交易规则和基准链路。",
+    },
+    {
+        "symbol": "01024.HK",
+        "name": "快手-W",
+        "market": "HONGKONG",
+        "industry": "互联网",
+        "thesis": "港股成长互联网样本，用于检验高波动标的信号和回测闭环。",
+    },
+]
 
 
 def _now() -> str:
@@ -92,6 +125,31 @@ def upsert_watchlist_symbols(
         conn.commit()
 
 
+def ensure_core_watchlist_symbols(symbols: list[str] | None = None) -> list[dict]:
+    init_db()
+    requested = {_normalize_symbol(symbol) for symbol in symbols or []}
+    core_rows = [
+        row for row in CORE_RESEARCH_UNIVERSE
+        if not requested or row["symbol"] in requested
+    ]
+    known_core_symbols = {row["symbol"] for row in CORE_RESEARCH_UNIVERSE}
+    custom_symbols = sorted(requested - known_core_symbols)
+    for row in core_rows:
+        upsert_watchlist_symbols(
+            [row["symbol"]],
+            market=row["market"],
+            name=row["name"],
+            industry=row["industry"],
+            thesis=row["thesis"],
+        )
+    if custom_symbols:
+        upsert_watchlist_symbols(custom_symbols)
+
+    target_symbols = {row["symbol"] for row in core_rows} | set(custom_symbols)
+    rows = [row for row in list_watchlist() if row["symbol"] in target_symbols]
+    return sorted(rows, key=lambda item: item["symbol"])
+
+
 def list_watchlist(active_only: bool = True) -> list[dict]:
     init_db()
     query = "SELECT * FROM watchlist"
@@ -100,6 +158,34 @@ def list_watchlist(active_only: bool = True) -> list[dict]:
         query += " WHERE status = ?"
         params = ("active",)
     query += " ORDER BY symbol"
+    with get_connection() as conn:
+        return [_row_to_dict(row) for row in conn.execute(query, params).fetchall()]
+
+
+def get_watchlist_data_status(active_only: bool = True) -> list[dict]:
+    init_db()
+    status_filter = "WHERE w.status = ?" if active_only else ""
+    params: tuple[Any, ...] = ("active",) if active_only else ()
+    query = f"""
+        SELECT
+            w.symbol,
+            w.name,
+            w.market,
+            w.industry,
+            w.thesis,
+            w.status,
+            COUNT(DISTINCT b.date) AS bar_count,
+            MAX(b.date) AS latest_bar_date,
+            COUNT(DISTINCT s.signal_id) AS signal_count,
+            MAX(s.date) AS latest_signal_date
+        FROM watchlist w
+        LEFT JOIN daily_bars b ON b.symbol = w.symbol
+        LEFT JOIN signal_log s ON s.symbol = w.symbol
+        {status_filter}
+        GROUP BY
+            w.symbol, w.name, w.market, w.industry, w.thesis, w.status
+        ORDER BY w.symbol
+    """
     with get_connection() as conn:
         return [_row_to_dict(row) for row in conn.execute(query, params).fetchall()]
 
@@ -184,6 +270,68 @@ def load_daily_bars(symbol: str, start: str, end: str) -> pd.DataFrame:
             """
             SELECT * FROM daily_bars
             WHERE symbol = ? AND date >= ? AND date <= ?
+            ORDER BY date
+            """,
+            (normalized, start, end),
+        ).fetchall()
+    return pd.DataFrame([_row_to_dict(row) for row in rows])
+
+
+def upsert_index_bars(rows: list[dict]) -> None:
+    init_db()
+    timestamp = _now()
+    values = []
+    for row in rows:
+        index_symbol = normalize_index_symbol(row.get("index_symbol") or row.get("symbol"))
+        values.append(
+            (
+                row["date"],
+                index_symbol,
+                row.get("market") or "CHINA",
+                row.get("open"),
+                row.get("high"),
+                row.get("low"),
+                row.get("close"),
+                row.get("volume"),
+                row.get("amount"),
+                row.get("source"),
+                timestamp,
+            )
+        )
+
+    with get_connection() as conn:
+        conn.executemany(
+            """
+            INSERT INTO index_bars (
+                date, index_symbol, market, open, high, low, close,
+                volume, amount, source, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(date, index_symbol) DO UPDATE SET
+                market = excluded.market,
+                open = excluded.open,
+                high = excluded.high,
+                low = excluded.low,
+                close = excluded.close,
+                volume = excluded.volume,
+                amount = excluded.amount,
+                source = excluded.source,
+                updated_at = excluded.updated_at
+            """,
+            values,
+        )
+        conn.commit()
+
+
+def load_index_bars(index_symbol: str, start: str, end: str) -> pd.DataFrame:
+    init_db()
+    normalized = normalize_index_symbol(index_symbol)
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM index_bars
+            WHERE index_symbol = ? AND date >= ? AND date <= ?
             ORDER BY date
             """,
             (normalized, start, end),

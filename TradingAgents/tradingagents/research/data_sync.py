@@ -5,20 +5,32 @@ import os
 import pandas as pd
 
 from tradingagents.dataflows.akshare_china import (
+    get_china_index_data_frame_akshare,
     get_china_stock_data_frame_akshare,
+    get_hk_index_data_frame_akshare,
     get_hk_stock_data_frame_akshare,
 )
 from tradingagents.dataflows.tushare_china import (
     get_china_stock_data_frame as get_china_stock_data_frame_tushare,
     get_hk_stock_data_frame as get_hk_stock_data_frame_tushare,
 )
+from tradingagents.dataflows.futu_market import (
+    get_index_data_frame_futu,
+    get_stock_data_frame_futu,
+)
 from tradingagents.dataflows.fund_flow import fetch_fund_flow_daily
 from tradingagents.markets import Market, detect_market
 
+from .index_catalog import DEFAULT_CHINA_INDEX_SYMBOLS, normalize_index_symbol, resolve_index_profile
 from .quality import log_quality_issue
-from .repository import list_watchlist, upsert_daily_bars, upsert_fund_flows
+from .repository import (
+    list_watchlist,
+    upsert_daily_bars,
+    upsert_fund_flows,
+    upsert_index_bars,
+)
 
-DATA_SOURCES = ("akshare", "tushare", "auto")
+DATA_SOURCES = ("akshare", "tushare", "futu", "auto")
 DEFAULT_DATA_SOURCE = "akshare"
 
 
@@ -41,6 +53,8 @@ def _fetch_daily_bars_from_source(
     market: Market,
     source: str,
 ) -> pd.DataFrame:
+    if source == "futu":
+        return get_stock_data_frame_futu(symbol, start, end)
     if market == Market.CHINA and source == "akshare":
         return get_china_stock_data_frame_akshare(symbol, start, end)
     if market == Market.HONGKONG and source == "akshare":
@@ -79,6 +93,21 @@ def fetch_daily_bars(
     return pd.DataFrame()
 
 
+def fetch_index_bars(
+    index_symbol: str, start: str, end: str, *, source: str | None = None
+) -> pd.DataFrame:
+    data_source = _resolve_data_source(source)
+    canonical = normalize_index_symbol(index_symbol)
+    if data_source == "futu":
+        return get_index_data_frame_futu(canonical, start, end)
+    if data_source in {"akshare", "auto"}:
+        profile = resolve_index_profile(canonical)
+        if profile and profile.market == "HONGKONG":
+            return get_hk_index_data_frame_akshare(canonical, start, end)
+        return get_china_index_data_frame_akshare(canonical, start, end)
+    raise ValueError("Index data sync currently supports akshare or auto")
+
+
 def _sync_error_message(source: str, exc: Exception) -> str:
     message = f"{source} sync failed: {exc}"
     if len(message) > 500:
@@ -105,6 +134,35 @@ def sync_watchlist_bars(start: str, end: str, *, source: str | None = None) -> i
         if frame.empty:
             continue
         upsert_daily_bars(frame.to_dict("records"))
+        total += len(frame)
+    return total
+
+
+def sync_index_bars(
+    start: str,
+    end: str,
+    *,
+    index_symbols: list[str] | None = None,
+    source: str | None = None,
+) -> int:
+    data_source = _resolve_data_source(source)
+    symbols = index_symbols or list(DEFAULT_CHINA_INDEX_SYMBOLS)
+    total = 0
+    for symbol in symbols:
+        try:
+            frame = fetch_index_bars(symbol, start, end, source=data_source)
+        except Exception as exc:
+            log_quality_issue(
+                check_name="index_sync",
+                severity="error",
+                date=end,
+                symbol=str(symbol),
+                message=_sync_error_message(data_source, exc),
+            )
+            continue
+        if frame.empty:
+            continue
+        upsert_index_bars(frame.to_dict("records"))
         total += len(frame)
     return total
 

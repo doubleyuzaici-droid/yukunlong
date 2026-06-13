@@ -106,6 +106,22 @@ SCHEMA_STATEMENTS = [
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS holding_concentration (
+        date TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        northbound_float_pct REAL,
+        northbound_total_pct REAL,
+        fund_float_pct REAL,
+        fund_count INTEGER,
+        shareholder_count INTEGER,
+        shareholder_count_delta_pct REAL,
+        top10_holder_pct REAL,
+        source TEXT,
+        updated_at TEXT,
+        PRIMARY KEY(date, symbol)
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS signal_log (
         signal_id TEXT PRIMARY KEY,
         date TEXT NOT NULL,
@@ -150,7 +166,10 @@ SCHEMA_STATEMENTS = [
         severity TEXT,
         symbol TEXT,
         message TEXT,
-        created_at TEXT
+        created_at TEXT,
+        resolution_status TEXT,
+        resolution_note TEXT,
+        resolved_at TEXT
     )
     """,
     """
@@ -197,6 +216,125 @@ SCHEMA_STATEMENTS = [
         created_at TEXT
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS llm_provider_config (
+        provider TEXT PRIMARY KEY,
+        display_name TEXT,
+        default_quick_model TEXT,
+        default_deep_model TEXT,
+        base_url TEXT,
+        api_key_mask TEXT,
+        enabled INTEGER DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS fundamental_snapshot (
+        date TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        revenue REAL,
+        net_income REAL,
+        eps REAL,
+        roe REAL,
+        gross_margin REAL,
+        pe_ttm REAL,
+        pb REAL,
+        ps REAL,
+        ev_ebitda REAL,
+        dividend_yield REAL,
+        source TEXT,
+        updated_at TEXT,
+        PRIMARY KEY(date, symbol)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS financial_statement (
+        date TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        statement_type TEXT NOT NULL,
+        period TEXT,
+        metrics_json TEXT NOT NULL,
+        source TEXT,
+        raw_text TEXT,
+        updated_at TEXT,
+        PRIMARY KEY(date, symbol, statement_type)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS news_evidence (
+        news_id TEXT PRIMARY KEY,
+        date TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        headline TEXT NOT NULL,
+        source TEXT,
+        url TEXT,
+        sentiment TEXT,
+        credibility REAL,
+        summary TEXT,
+        created_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS corporate_events (
+        event_id TEXT PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        event_date TEXT NOT NULL,
+        event_type TEXT NOT NULL,  -- earnings_preview / unlock / dividend / meeting / industry
+        title TEXT NOT NULL,
+        tone TEXT,
+        note TEXT,
+        source TEXT,
+        url TEXT,
+        amount REAL,               -- 解禁/分红时填金额
+        created_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS lhb_desk (
+        desk_id TEXT PRIMARY KEY,
+        date TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        desk_name TEXT NOT NULL,    -- "中金公司·上海分公司" / "沪股通专用"
+        desk_tag TEXT,              -- "北向" | "机构" | "游资"
+        net_buy REAL,               -- 净买入金额，元
+        buy_amount REAL,
+        sell_amount REAL,
+        source TEXT,
+        created_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS research_report (
+        report_id TEXT PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        date TEXT NOT NULL,
+        org TEXT,
+        rating TEXT,
+        title TEXT,
+        eps_forecast REAL,
+        target_price REAL,
+        industry TEXT,
+        url TEXT,
+        synced_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sync_trace (
+        trace_id TEXT PRIMARY KEY,
+        symbol TEXT,
+        job_type TEXT NOT NULL,
+        start TEXT,
+        end TEXT,
+        primary_source TEXT,
+        fallback_source TEXT,
+        status TEXT,
+        rows_written INTEGER DEFAULT 0,
+        elapsed_ms INTEGER,
+        error TEXT,
+        created_at TEXT
+    )
+    """,
 ]
 
 
@@ -232,3 +370,52 @@ def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
 def _migrate_schema(conn: sqlite3.Connection) -> None:
     if not _column_exists(conn, "signal_log", "market_regime"):
         conn.execute("ALTER TABLE signal_log ADD COLUMN market_regime TEXT")
+    if not _column_exists(conn, "event_return", "market_regime"):
+        conn.execute("ALTER TABLE event_return ADD COLUMN market_regime TEXT")
+    factor_columns = {
+        "ma20": "REAL",
+        "ma60": "REAL",
+        "ma120": "REAL",
+        "rsi14": "REAL",
+        "atr14": "REAL",
+        "volume_ratio20": "REAL",
+        "amount_ratio20": "REAL",
+        "ret20": "REAL",
+        "ret60": "REAL",
+        "rel_strength_index20": "REAL",
+        "rel_strength_industry20": "REAL",
+        "weekly_state": "TEXT",
+        "monthly_state": "TEXT",
+        "main_net_inflow_ratio20": "REAL",
+        "northbound_inflow_5d": "REAL",
+        "updated_at": "TEXT",
+    }
+    for column, column_type in factor_columns.items():
+        if not _column_exists(conn, "factor_daily", column):
+            conn.execute(f"ALTER TABLE factor_daily ADD COLUMN {column} {column_type}")
+    quality_columns = {
+        "resolution_status": "TEXT",
+        "resolution_note": "TEXT",
+        "resolved_at": "TEXT",
+    }
+    for column, column_type in quality_columns.items():
+        if not _column_exists(conn, "data_quality_log", column):
+            conn.execute(f"ALTER TABLE data_quality_log ADD COLUMN {column} {column_type}")
+    agent_review_columns = {
+        "decision_status": "TEXT",
+        "decision_note": "TEXT",
+        "resolved_at": "TEXT",
+    }
+    for column, column_type in agent_review_columns.items():
+        if not _column_exists(conn, "agent_decision_log", column):
+            conn.execute(f"ALTER TABLE agent_decision_log ADD COLUMN {column} {column_type}")
+    # Symbol Workspace V2 C 级 BE-6: PS / EV-EBITDA
+    fundamental_extra = {
+        "ps": "REAL",
+        "ev_ebitda": "REAL",
+    }
+    for column, column_type in fundamental_extra.items():
+        if not _column_exists(conn, "fundamental_snapshot", column):
+            conn.execute(
+                f"ALTER TABLE fundamental_snapshot ADD COLUMN {column} {column_type}"
+            )

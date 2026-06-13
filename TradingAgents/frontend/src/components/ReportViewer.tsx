@@ -14,8 +14,25 @@ const TABS: { key: string; label: string }[] = [
   { key: "fundamentals_report", label: "基本面" },
   { key: "news_report", label: "新闻" },
   { key: "sentiment_report", label: "市场情绪" },
+  { key: "investment_debate_summary", label: "多空辩论" },
   { key: "investment_plan", label: "投资计划" },
+  { key: "trader_investment_plan", label: "交易计划" },
+  { key: "risk_debate_summary", label: "风险辩论" },
+  { key: "quant_signal_context", label: "量化信号" },
 ];
+
+const SECTION_OWNERS: Record<string, string> = {
+  final_trade_decision: "Portfolio Manager",
+  market_report: "Market Analyst",
+  fundamentals_report: "Fundamentals Analyst",
+  news_report: "News Analyst",
+  sentiment_report: "Social Analyst",
+  investment_debate_summary: "Bull/Bear Debate",
+  investment_plan: "Bull/Bear + Research Manager",
+  trader_investment_plan: "Trader",
+  risk_debate_summary: "Risk Analysts",
+  quant_signal_context: "Rule Signals",
+};
 
 export default function ReportViewer({ report, ticker, tradeDate, taskId }: Props) {
   const [activeTab, setActiveTab] = useState("final_trade_decision");
@@ -90,6 +107,22 @@ export default function ReportViewer({ report, ticker, tradeDate, taskId }: Prop
 
       {/* Content */}
       <div style={{ flex: 1, overflow: "auto", padding: "24px 32px", lineHeight: 1.8 }}>
+        <div className="report-structure-strip">
+          {TABS.map((tab) => {
+            const filled = Boolean(report[tab.key]);
+            return (
+              <button
+                key={tab.key}
+                className={activeTab === tab.key ? "active" : ""}
+                onClick={() => setActiveTab(tab.key)}
+              >
+                <strong>{tab.label}</strong>
+                <span>{SECTION_OWNERS[tab.key]}</span>
+                <small>{filled ? "已生成" : "待生成"}</small>
+              </button>
+            );
+          })}
+        </div>
         <ReactMarkdown
           components={{
             h1: ({ children }) => <h1 style={{ fontSize: 22, margin: "24px 0 12px", borderBottom: "1px solid var(--border-color)", paddingBottom: 8 }}>{children}</h1>,

@@ -6,6 +6,7 @@ import pandas as pd
 
 from tradingagents.backtest.metrics import summarize_events
 from tradingagents.research.db import get_connection, init_db
+from tradingagents.research.index_catalog import resolve_index_profile
 
 
 def _now() -> str:
@@ -30,7 +31,20 @@ def _load_signals(signal_names: list[str] | None, start: str, end: str) -> list[
 
 
 def _load_bars(symbol: str) -> pd.DataFrame:
+    index_profile = resolve_index_profile(symbol)
     with get_connection() as conn:
+        if index_profile:
+            rows = conn.execute(
+                """
+                SELECT date, index_symbol AS symbol, market, open, high, low, close,
+                       volume, amount, source, updated_at
+                FROM index_bars
+                WHERE index_symbol = ?
+                ORDER BY date
+                """,
+                (index_profile.canonical_symbol,),
+            ).fetchall()
+            return pd.DataFrame([dict(row) for row in rows])
         rows = conn.execute(
             """
             SELECT *

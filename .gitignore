@@ -9,9 +9,11 @@ build/
 
 # Node / Frontend
 node_modules/
+.tmp/
 
 # Local data
 local_data/
+TradingAgents/.runtime-home/
 .worktrees/
 
 # Environment

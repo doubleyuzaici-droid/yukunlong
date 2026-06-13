@@ -27,6 +27,14 @@ interface TokenData {
   tool_calls: number;
 }
 
+interface ToolEvent {
+  event_type: "tool_call" | "tool_result" | string;
+  tool_call_id?: string;
+  tool_name?: string;
+  args?: Record<string, unknown>;
+  content_preview?: string;
+}
+
 interface Props {
   taskId: string;
   ticker: string;
@@ -66,6 +74,7 @@ export default function ProgressPanel({ taskId, ticker, tradeDate, onComplete }:
   const [stages, setStages] = useState<StageData[]>([]);
   const [currentStageKey, setCurrentStageKey] = useState("");
   const [tokens, setTokens] = useState<TokenData | null>(null);
+  const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
   const [reportHtml, setReportHtml] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [expandedStages, setExpandedStages] = useState<Set<string>>(new Set(["analysts"]));
@@ -97,6 +106,7 @@ export default function ProgressPanel({ taskId, ticker, tradeDate, onComplete }:
           setExpandedStages((prev) => { const next = new Set(prev); next.add(data.current_stage_key); return next; });
         }
         if (data.token_stats) setTokens(data.token_stats);
+        if (Array.isArray(data.tool_events)) setToolEvents(data.tool_events);
         if (data.current_report_html) setReportHtml(data.current_report_html);
         if (data.status === "completed" || data.status === "failed") es.close();
       } catch {}
@@ -186,6 +196,35 @@ export default function ProgressPanel({ taskId, ticker, tradeDate, onComplete }:
               <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>Token 输出</div>
               <div style={{ fontSize: 14, fontWeight: 600, color: "var(--accent-purple)" }}>{fmtTokens(tokens.output_tokens)}</div>
             </div>
+          </div>
+        )}
+
+        {toolEvents.length > 0 && (
+          <div style={{
+            marginBottom: 14, padding: 10, background: "var(--bg-primary)",
+            borderRadius: 6, border: "1px solid var(--border-color)",
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
+              工具调用轨迹
+            </div>
+            {toolEvents.slice(-5).map((event, index) => (
+              <div
+                key={`${event.tool_call_id || event.tool_name || "tool"}-${index}`}
+                style={{ borderTop: index === 0 ? 0 : "1px solid rgba(51,64,77,0.7)", padding: "7px 0" }}
+              >
+                <div style={{ fontSize: 12, color: "var(--text-primary)", fontWeight: 600 }}>
+                  {event.event_type === "tool_result" ? `${event.tool_name || "tool"} 返回` : event.tool_name || "tool"}
+                </div>
+                <div style={{
+                  marginTop: 3, color: "var(--text-secondary)", fontSize: 11,
+                  lineHeight: 1.45, wordBreak: "break-all",
+                }}>
+                  {event.event_type === "tool_result"
+                    ? event.content_preview || "-"
+                    : JSON.stringify(event.args || {})}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
