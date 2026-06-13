@@ -1,0 +1,7 @@
+interface:
+  display_name: "PRD Generation"
+  short_description: "把零散需求素材生成中文 PRD"
+  default_prompt: "Use $prd-generation to turn this rough product idea into a Chinese PRD; clarify key gaps first."
+
+policy:
+  allow_implicit_invocation: true
