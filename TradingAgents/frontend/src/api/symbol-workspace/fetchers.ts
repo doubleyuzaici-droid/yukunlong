@@ -64,6 +64,23 @@ const q = (params: Record<string, string | number | undefined>) => {
   return u.toString();
 };
 
+export const SYMBOL_KLINE_HISTORY_YEARS = 3;
+export const SYMBOL_KLINE_HISTORY_LIMIT = 900;
+
+export function defaultKlineStart(
+  end: string,
+  years = SYMBOL_KLINE_HISTORY_YEARS
+): string {
+  const dt = new Date(`${end}T00:00:00Z`);
+  if (Number.isNaN(dt.getTime())) {
+    return new Date(Date.now() - years * 365 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+  }
+  dt.setUTCFullYear(dt.getUTCFullYear() - years);
+  return dt.toISOString().slice(0, 10);
+}
+
 // ============================================================
 // 基础接口（V1 已有的复用）
 // ============================================================
@@ -325,7 +342,7 @@ export interface BacktestSummaryPayloadShape {
 
 export const fetchHistory = (symbol: string, start: string, end: string, signal: AbortSignal) =>
   fetchJson<MarketHistoryPayload>(
-    `/api/market/history?${q({ symbol, start, end, limit: 900 })}`,
+    `/api/market/history?${q({ symbol, start, end, limit: SYMBOL_KLINE_HISTORY_LIMIT })}`,
     signal,
     "行情服务未连接"
   );

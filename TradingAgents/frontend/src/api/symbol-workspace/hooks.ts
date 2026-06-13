@@ -27,7 +27,7 @@ function defaultStart(end: string, years = 1): string {
 // useSymbolCritical — 关键路径
 // ============================================================
 export function useSymbolCritical(symbol: string, date: string) {
-  const start = defaultStart(date, 1);
+  const start = F.defaultKlineStart(date);
   return useAsync<SymbolCriticalPayload & { bars: import("../../types/market").MarketHistoryBar[] }>(
     async (signal) => {
       const [history, context, readiness, realtime, signals, watchlist] =
@@ -167,7 +167,7 @@ export function useSymbolChart(
   date: string,
   mode: StrategyMode = "conservative"
 ) {
-  const start = defaultStart(date, 1);
+  const start = F.defaultKlineStart(date);
   return useAsync<SymbolChartPayload>(
     async (signal) => {
       const [history, context, signals, news, catalystsResp, analysis, readiness] = await Promise.all([

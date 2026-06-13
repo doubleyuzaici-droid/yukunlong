@@ -490,6 +490,69 @@ export function buildStrategyTradeMarkerLabel(input?: StrategyTradeMarkerLike | 
   return "察";
 }
 
+export interface TradingViewTradeMarkerReadoutInput {
+  date?: string | null;
+  fallbackPrice?: number | null;
+  label?: string | null;
+  prefix?: string | null;
+  price?: number | null;
+  side?: string | null;
+}
+
+export interface TradingViewTradeMarkerReadout {
+  date: string;
+  price: number | null;
+  subtitle: string;
+  title: string;
+  tone: "good" | "risk";
+}
+
+function isTradingViewSellTradeMarker(side?: string | null) {
+  const token = String(side || "").toLowerCase();
+  return (
+    token.includes("sell") ||
+    token.includes("risk") ||
+    token.includes("reduce") ||
+    token.includes("exit") ||
+    token.includes("卖") ||
+    token.includes("减") ||
+    token.includes("风险")
+  );
+}
+
+function tradingViewTradeMarkerSideLabel(side?: string | null) {
+  const token = String(side || "").toLowerCase();
+  if (token.includes("reduce") || token.includes("减")) return "减仓点";
+  if (isTradingViewSellTradeMarker(side)) return "卖点";
+  if (token.includes("add") || token.includes("加")) return "加仓点";
+  return "买点";
+}
+
+export function tradingViewTradeMarkerColor(side?: string | null) {
+  return isTradingViewSellTradeMarker(side) ? "#ef4444" : "#22c55e";
+}
+
+export function buildTradingViewTradeMarkerReadout(
+  input: TradingViewTradeMarkerReadoutInput,
+): TradingViewTradeMarkerReadout | null {
+  const date = readableToken(input.date, "");
+  if (!date) return null;
+  const prefix = readableToken(input.prefix, "");
+  const sideLabel = tradingViewTradeMarkerSideLabel(input.side);
+  const price = isFiniteNumber(input.price)
+    ? Number(input.price)
+    : isFiniteNumber(input.fallbackPrice)
+      ? Number(input.fallbackPrice)
+      : null;
+  return {
+    date,
+    price,
+    subtitle: readableToken(input.label, "交易信号"),
+    title: [prefix, sideLabel].filter(Boolean).join(" "),
+    tone: isTradingViewSellTradeMarker(input.side) ? "risk" : "good",
+  };
+}
+
 export function isActionableStrategyTradeMarker(input?: StrategyTradeMarkerLike | null) {
   const kind = resolveStrategyTradeMarkerKind(input);
   return kind === "buy" || kind === "add" || kind === "sell" || kind === "reduce";
@@ -812,6 +875,2059 @@ export function buildIntradayMinuteBars(
   return result;
 }
 
+export type LightweightChartTime = string | number;
+
+export interface LightweightChartBarLike extends VolumeProfileBarLike {
+  date?: string | null;
+  symbol?: string | null;
+  market?: string | null;
+  period_label?: string | null;
+}
+
+export interface LightweightChartLinePoint {
+  time: LightweightChartTime;
+  value: number;
+}
+
+export interface LightweightChartCandlePoint extends LightweightChartLinePoint {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
+export interface LightweightChartVolumePoint {
+  time: LightweightChartTime;
+  value: number;
+  color: string;
+}
+
+export interface LightweightChartMaSeries {
+  period: number;
+  data: LightweightChartLinePoint[];
+}
+
+export interface LightweightChartBollSeries {
+  upper: LightweightChartLinePoint[];
+  mid: LightweightChartLinePoint[];
+  lower: LightweightChartLinePoint[];
+}
+
+export type LightweightSuperTrendSignalSide = "buy" | "sell";
+
+export interface LightweightSuperTrendSignal {
+  time: LightweightChartTime;
+  price: number;
+  side: LightweightSuperTrendSignalSide;
+  label: "Buy" | "Sell";
+  trend: 1 | -1;
+}
+
+export interface LightweightSuperTrendSeries {
+  up: LightweightChartLinePoint[];
+  down: LightweightChartLinePoint[];
+  signals: LightweightSuperTrendSignal[];
+}
+
+export type SuperTrendBacktestEntryFilter = "none" | "trendBreakout";
+
+export interface SuperTrendBacktestOptions extends LightweightSuperTrendOptions {
+  entryFilter?: SuperTrendBacktestEntryFilter;
+}
+
+export type SuperTrendBacktestItemTone = "good" | "risk" | "neutral";
+
+export interface SuperTrendBacktestItem {
+  key: string;
+  label: string;
+  value: string;
+  detail: string;
+  tone: SuperTrendBacktestItemTone;
+}
+
+export interface SuperTrendBacktestTrade {
+  entryDate: string;
+  entryIndex: number;
+  entryPrice: number;
+  exitDate: string;
+  exitIndex: number;
+  exitPrice: number;
+  exitReason: "signal" | "latest";
+  holdBars: number;
+  returnPct: number;
+}
+
+export interface SuperTrendBacktestHorizon {
+  averageDirectionalReturnPct: number;
+  count: number;
+  days: number;
+  hitRate: number;
+}
+
+export interface SuperTrendBacktestSummary {
+  atrPeriod: number;
+  averageHoldBars: number;
+  averageReturnPct: number;
+  buyHoldReturnPct: number;
+  buySignalCount: number;
+  cumulativeReturnPct: number;
+  entryFilter: SuperTrendBacktestEntryFilter;
+  horizons: SuperTrendBacktestHorizon[];
+  items: SuperTrendBacktestItem[];
+  latestSignal: LightweightSuperTrendSignal | null;
+  maxDrawdownPct: number;
+  multiplier: number;
+  openTradeCount: number;
+  sellSignalCount: number;
+  signalCount: number;
+  tradeCount: number;
+  trades: SuperTrendBacktestTrade[];
+  winCount: number;
+  winRate: number;
+}
+
+export type AlphaTrendSource = "mfi" | "rsi";
+export type AlphaTrendDirection = "up" | "down";
+export type AlphaTrendSignalSide = "buy" | "sell";
+
+export interface AlphaTrendPoint {
+  time: LightweightChartTime;
+  date: string;
+  alphaTrend: number | null;
+  lagAlphaTrend: number | null;
+  trend: AlphaTrendDirection | null;
+  source: AlphaTrendSource;
+}
+
+export interface AlphaTrendSignal {
+  time: LightweightChartTime;
+  date: string;
+  price: number;
+  side: AlphaTrendSignalSide;
+  label: "BUY" | "SELL";
+}
+
+export interface AlphaTrendSeries {
+  source: AlphaTrendSource;
+  points: AlphaTrendPoint[];
+  signals: AlphaTrendSignal[];
+}
+
+export interface LightweightAlphaTrendFillPoint extends LightweightChartLinePoint {
+  baseValue: number;
+  trend: AlphaTrendDirection;
+}
+
+export interface LightweightAlphaTrendSignal extends AlphaTrendSignal {
+  id: string;
+}
+
+export interface LightweightAlphaTrendSeries {
+  source: AlphaTrendSource;
+  current: LightweightChartLinePoint[];
+  lag: LightweightChartLinePoint[];
+  fill: LightweightAlphaTrendFillPoint[];
+  signals: LightweightAlphaTrendSignal[];
+}
+
+export type TensionFlowTrendDirection = "up" | "down";
+export type TensionFlowTrendStatus = "strong" | "overextended";
+export type TensionFlowTrendSignalSide = "buy" | "sell";
+
+export interface TensionFlowTrendPoint {
+  time: LightweightChartTime;
+  date: string;
+  hma: number | null;
+  lowerRibbon: number | null;
+  upperRibbon: number | null;
+  zScore: number | null;
+  trend: TensionFlowTrendDirection | null;
+  status: TensionFlowTrendStatus | null;
+}
+
+export interface TensionFlowTrendSignal {
+  time: LightweightChartTime;
+  date: string;
+  price: number;
+  side: TensionFlowTrendSignalSide;
+  label: "START";
+  zScore: number | null;
+}
+
+export interface TensionFlowTrendSeries {
+  points: TensionFlowTrendPoint[];
+  signals: TensionFlowTrendSignal[];
+  latest: TensionFlowTrendPoint | null;
+}
+
+export interface LightweightTensionFlowTrendSignal extends TensionFlowTrendSignal {
+  id: string;
+}
+
+export interface LightweightTensionFlowTrendSeries {
+  baselineUp: LightweightChartLinePoint[];
+  baselineDown: LightweightChartLinePoint[];
+  upperRibbon: LightweightChartLinePoint[];
+  lowerRibbon: LightweightChartLinePoint[];
+  signals: LightweightTensionFlowTrendSignal[];
+  latest: TensionFlowTrendPoint | null;
+}
+
+export interface LightweightChartSeries {
+  candles: LightweightChartCandlePoint[];
+  sourceBars: LightweightChartBarLike[];
+  volume: LightweightChartVolumePoint[];
+  maLines: LightweightChartMaSeries[];
+  boll: LightweightChartBollSeries;
+}
+
+export interface LightweightChartSeriesOptions {
+  maPeriods?: number[];
+  bollPeriod?: number;
+  bollMultiplier?: number;
+}
+
+export interface LightweightSuperTrendOptions {
+  atrPeriod?: number;
+  multiplier?: number;
+}
+
+export interface AlphaTrendOptions {
+  period?: number;
+  multiplier?: number;
+  noVolumeData?: boolean;
+}
+
+export interface TensionFlowTrendOptions {
+  hmaLength?: number;
+  zScoreLength?: number;
+  ribbonWidth?: number;
+  signalGap?: number;
+}
+
+export interface TensionFlowTrendBacktestOptions extends TensionFlowTrendOptions {
+  atrStopMultiplier?: number;
+  riskRewardRatio?: number;
+  maxTrades?: number;
+  stopAtrLength?: number;
+}
+
+export type TensionFlowTrendBacktestItemTone = "good" | "risk" | "warn" | "neutral";
+
+export interface TensionFlowTrendBacktestItem {
+  key: string;
+  label: string;
+  value: string;
+  detail: string;
+  tone: TensionFlowTrendBacktestItemTone;
+}
+
+export interface TensionFlowTrendBacktestTrade {
+  direction: 1 | -1;
+  entryDate: string;
+  entryIndex: number;
+  entryPrice: number;
+  exitDate: string;
+  exitIndex: number;
+  exitPrice: number;
+  exitReason: "tp" | "sl";
+  holdBars: number;
+  stopLoss: number;
+  takeProfit: number;
+  win: boolean;
+}
+
+export interface TensionFlowTrendBacktestSummary {
+  averageHoldBars: number;
+  buySignalCount: number;
+  hmaLength: number;
+  items: TensionFlowTrendBacktestItem[];
+  latest: TensionFlowTrendPoint | null;
+  latestSignal: TensionFlowTrendSignal | null;
+  lossCount: number;
+  maxTrades: number;
+  riskRewardRatio: number;
+  sellSignalCount: number;
+  signalCount: number;
+  totalClosed: number;
+  trades: TensionFlowTrendBacktestTrade[];
+  winCount: number;
+  winRate: number;
+  zScoreLength: number;
+}
+
+export type AlphaTrendBacktestItemTone = "good" | "risk" | "neutral";
+
+export interface AlphaTrendBacktestItem {
+  key: string;
+  label: string;
+  value: string;
+  detail: string;
+  tone: AlphaTrendBacktestItemTone;
+}
+
+export interface AlphaTrendBacktestTrade {
+  entryDate: string;
+  entryIndex: number;
+  entryPrice: number;
+  exitDate: string;
+  exitIndex: number;
+  exitPrice: number;
+  exitReason: "signal" | "latest";
+  holdBars: number;
+  returnPct: number;
+}
+
+export interface AlphaTrendBacktestSummary {
+  averageHoldBars: number;
+  averageReturnPct: number;
+  buySignalCount: number;
+  cumulativeReturnPct: number;
+  items: AlphaTrendBacktestItem[];
+  latestSignal: AlphaTrendSignal | null;
+  maxDrawdownPct: number;
+  openTradeCount: number;
+  sellSignalCount: number;
+  signalCount: number;
+  source: AlphaTrendSource;
+  tradeCount: number;
+  trades: AlphaTrendBacktestTrade[];
+  winCount: number;
+  winRate: number;
+}
+
+export interface AlphaTrendOptimizationOptions extends AlphaTrendOptions {
+  currentMultiplier?: number | null;
+  currentPeriod?: number | null;
+  minTrades?: number;
+  multiplierCandidates?: number[];
+  periodCandidates?: number[];
+  topN?: number;
+}
+
+export interface AlphaTrendOptimizationCandidate {
+  averageReturnPct: number;
+  cumulativeReturnPct: number;
+  maxDrawdownPct: number;
+  multiplier: number;
+  openTradeCount: number;
+  period: number;
+  score: number;
+  tradeCount: number;
+  winRate: number;
+}
+
+export interface AlphaTrendOptimizationSummary {
+  best: AlphaTrendOptimizationCandidate | null;
+  candidateCount: number;
+  current: AlphaTrendOptimizationCandidate | null;
+  eligibleCount: number;
+  items: AlphaTrendBacktestItem[];
+  minTrades: number;
+  topCandidates: AlphaTrendOptimizationCandidate[];
+}
+
+export interface LightweightVisibleLogicalRangeInput {
+  total: number;
+  visibleCount: number | "all";
+  rightOffset?: number | null;
+}
+
+export interface LightweightVisibleLogicalRange {
+  from: number;
+  to: number;
+}
+
+export type LightweightPriceLineTone = "good" | "risk" | "warn" | "neutral";
+export type LightweightPriceLineStyle = "solid" | "dashed" | "dotted";
+
+export interface LightweightPriceLineInput {
+  id: string;
+  label: string;
+  price?: number | null;
+  tone?: LightweightPriceLineTone;
+  style?: LightweightPriceLineStyle;
+  axisLabelVisible?: boolean;
+}
+
+export interface LightweightPriceLineDefinition {
+  id: string;
+  title: string;
+  price: number;
+  color: string;
+  lineStyle: LightweightPriceLineStyle;
+  axisLabelVisible: boolean;
+}
+
+export type LightweightTrendHoverReadoutTone = "good" | "risk" | "neutral";
+
+export interface LightweightTrendHoverReadout {
+  key: string;
+  label: string;
+  tone: LightweightTrendHoverReadoutTone;
+  value: number;
+}
+
+export interface LightweightTrendHoverReadoutInput {
+  alphaTrend?: LightweightAlphaTrendSeries | null;
+  showAlphaTrend?: boolean;
+  showSuperTrend?: boolean;
+  showTensionFlowTrend?: boolean;
+  superTrend?: LightweightSuperTrendSeries | null;
+  tensionFlowTrend?: LightweightTensionFlowTrendSeries | null;
+  time: LightweightChartTime;
+}
+
+const LIGHTWEIGHT_VOLUME_UP_COLOR = "rgba(16, 185, 129, 0.42)";
+const LIGHTWEIGHT_VOLUME_DOWN_COLOR = "rgba(239, 68, 68, 0.42)";
+
+export function buildLightweightChartSeries(
+  bars: LightweightChartBarLike[],
+  options: LightweightChartSeriesOptions = {},
+): LightweightChartSeries {
+  const candleSources = (Array.isArray(bars) ? bars : [])
+    .map((bar) => {
+      const time = toLightweightChartTime(bar.date);
+      if (
+        time == null ||
+        !isFiniteNumber(bar.open) ||
+        !isFiniteNumber(bar.high) ||
+        !isFiniteNumber(bar.low) ||
+        !isFiniteNumber(bar.close)
+      ) {
+        return null;
+      }
+      return {
+        candle: {
+          time,
+          open: bar.open,
+          high: bar.high,
+          low: bar.low,
+          close: bar.close,
+          value: bar.close,
+        },
+        source: bar,
+      };
+    })
+    .filter((item): item is { candle: LightweightChartCandlePoint; source: LightweightChartBarLike } => Boolean(item));
+
+  const candles = candleSources.map((item) => item.candle);
+  const sourceBars = candleSources.map((item) => item.source);
+
+  const volume = candleSources.map(({ candle, source }) => {
+    return {
+      time: candle.time,
+      value: isFiniteNumber(source.volume) ? source.volume : 0,
+      color: candle.close >= candle.open ? LIGHTWEIGHT_VOLUME_UP_COLOR : LIGHTWEIGHT_VOLUME_DOWN_COLOR,
+    };
+  });
+
+  const closes = candles.map((candle) => candle.close);
+  const maPeriods = (options.maPeriods || [5, 20, 60])
+    .filter((period) => Number.isInteger(period) && period > 0);
+  const maLines = maPeriods.map((period) => ({
+    period,
+    data: buildLightweightMovingAverage(candles, closes, period),
+  }));
+  const boll = buildLightweightBollSeries(
+    candles,
+    closes,
+    options.bollPeriod || 20,
+    options.bollMultiplier || 2,
+  );
+
+  return {
+    candles,
+    sourceBars,
+    volume,
+    maLines,
+    boll,
+  };
+}
+
+export function buildLightweightMaPeriodKey(periods: number[] = [5, 20, 60]) {
+  const seen = new Set<number>();
+  return periods
+    .filter((period) => Number.isInteger(period) && period > 0)
+    .filter((period) => {
+      if (seen.has(period)) return false;
+      seen.add(period);
+      return true;
+    })
+    .join(",");
+}
+
+export function buildLightweightVisibleLogicalRange(
+  input: LightweightVisibleLogicalRangeInput,
+): LightweightVisibleLogicalRange | null {
+  const total = Math.max(0, Math.floor(input.total));
+  if (total <= 0) return null;
+  if (input.visibleCount === "all") {
+    return { from: 0, to: total - 1 };
+  }
+  const visibleCount = Math.max(1, Math.min(total, Math.floor(input.visibleCount)));
+  if (visibleCount >= total) {
+    return { from: 0, to: total - 1 };
+  }
+  const maxOffset = total - visibleCount;
+  const offset = clampNumber(Math.floor(input.rightOffset || 0), 0, maxOffset);
+  const to = total - 1 - offset;
+  return {
+    from: Math.max(0, to - visibleCount + 1),
+    to,
+  };
+}
+
+export function buildLightweightPriceLines(
+  inputs: LightweightPriceLineInput[],
+): LightweightPriceLineDefinition[] {
+  return (Array.isArray(inputs) ? inputs : [])
+    .filter((input) => isFiniteNumber(input.price))
+    .map((input) => ({
+      id: input.id,
+      title: input.label,
+      price: Number(input.price),
+      color: lightweightPriceLineColor(input.tone),
+      lineStyle: input.style || "dashed",
+      axisLabelVisible: input.axisLabelVisible ?? false,
+    }));
+}
+
+export function buildLightweightTrendHoverReadouts(
+  input: LightweightTrendHoverReadoutInput,
+): LightweightTrendHoverReadout[] {
+  const key = lightweightChartTimeKey(input.time);
+  const readouts: LightweightTrendHoverReadout[] = [];
+
+  if (input.showSuperTrend && input.superTrend) {
+    const bullish = input.superTrend.up.find((point) => lightweightChartTimeKey(point.time) === key);
+    const bearish = input.superTrend.down.find((point) => lightweightChartTimeKey(point.time) === key);
+    if (bullish) {
+      readouts.push({
+        key: "supertrend",
+        label: "ST 多头",
+        tone: "good",
+        value: bullish.value,
+      });
+    } else if (bearish) {
+      readouts.push({
+        key: "supertrend",
+        label: "ST 空头",
+        tone: "risk",
+        value: bearish.value,
+      });
+    }
+  }
+
+  if (input.showAlphaTrend && input.alphaTrend) {
+    const current = input.alphaTrend.current.find((point) => lightweightChartTimeKey(point.time) === key);
+    const fill = input.alphaTrend.fill.find((point) => lightweightChartTimeKey(point.time) === key);
+    if (current && fill) {
+      readouts.push({
+        key: "alphatrend",
+        label: fill.trend === "up" ? "AT 多头" : "AT 空头",
+        tone: fill.trend === "up" ? "good" : "risk",
+        value: current.value,
+      });
+    } else if (current) {
+      readouts.push({
+        key: "alphatrend",
+        label: "AT",
+        tone: "neutral",
+        value: current.value,
+      });
+    }
+  }
+
+  if (input.showTensionFlowTrend && input.tensionFlowTrend) {
+    const bullish = input.tensionFlowTrend.baselineUp.find((point) => lightweightChartTimeKey(point.time) === key);
+    const bearish = input.tensionFlowTrend.baselineDown.find((point) => lightweightChartTimeKey(point.time) === key);
+    if (bullish || bearish) {
+      readouts.push({
+        key: "tension-flow-trend",
+        label: bearish ? "TFT 空头" : "TFT 多头",
+        tone: bearish ? "risk" : "good",
+        value: (bullish || bearish)?.value ?? 0,
+      });
+    }
+  }
+
+  return readouts;
+}
+
+export function buildLightweightSuperTrendSeries(
+  bars: LightweightChartBarLike[],
+  options: LightweightSuperTrendOptions = {},
+): LightweightSuperTrendSeries {
+  const atrPeriod = clampInteger(options.atrPeriod ?? 10, 1, 200);
+  const multiplier = clampNumber(Number(options.multiplier ?? 3), 0.1, 20);
+  const normalized = (Array.isArray(bars) ? bars : [])
+    .map((bar) => {
+      const time = toLightweightChartTime(bar.date);
+      if (
+        time == null ||
+        !isFiniteNumber(bar.open) ||
+        !isFiniteNumber(bar.high) ||
+        !isFiniteNumber(bar.low) ||
+        !isFiniteNumber(bar.close)
+      ) {
+        return null;
+      }
+      return {
+        time,
+        open: Number(bar.open),
+        high: Number(bar.high),
+        low: Number(bar.low),
+        close: Number(bar.close),
+      };
+    })
+    .filter((item): item is LightweightChartCandlePoint => Boolean(item));
+
+  const up: LightweightChartLinePoint[] = [];
+  const down: LightweightChartLinePoint[] = [];
+  const signals: LightweightSuperTrendSignal[] = [];
+  if (normalized.length === 0) return { up, down, signals };
+
+  const trueRanges = normalized.map((bar, index) => {
+    const previousClose = normalized[index - 1]?.close;
+    if (!isFiniteNumber(previousClose)) return bar.high - bar.low;
+    return Math.max(
+      bar.high - bar.low,
+      Math.abs(bar.high - previousClose),
+      Math.abs(bar.low - previousClose),
+    );
+  });
+  const atrValues = buildWilderAverageValues(trueRanges, atrPeriod);
+
+  let finalUp: number | null = null;
+  let finalDown: number | null = null;
+  let trend: 1 | -1 = 1;
+
+  normalized.forEach((bar, index) => {
+    const atr = atrValues[index];
+    if (!isFiniteNumber(atr)) return;
+
+    const middle = (bar.high + bar.low) / 2;
+    const basicUp = middle - multiplier * atr;
+    const basicDown = middle + multiplier * atr;
+    const previousUp = finalUp ?? basicUp;
+    const previousDown = finalDown ?? basicDown;
+    const previousClose = normalized[index - 1]?.close;
+    const previousTrend = trend;
+
+    finalUp = isFiniteNumber(previousClose) && previousClose > previousUp
+      ? Math.max(basicUp, previousUp)
+      : basicUp;
+    finalDown = isFiniteNumber(previousClose) && previousClose < previousDown
+      ? Math.min(basicDown, previousDown)
+      : basicDown;
+
+    if (previousTrend === -1 && bar.close > previousDown) {
+      trend = 1;
+    } else if (previousTrend === 1 && bar.close < previousUp) {
+      trend = -1;
+    }
+
+    if (trend === 1) {
+      up.push({ time: bar.time, value: finalUp });
+    } else {
+      down.push({ time: bar.time, value: finalDown });
+    }
+
+    if (trend !== previousTrend) {
+      signals.push({
+        time: bar.time,
+        price: trend === 1 ? finalUp : finalDown,
+        side: trend === 1 ? "buy" : "sell",
+        label: trend === 1 ? "Buy" : "Sell",
+        trend,
+      });
+    }
+  });
+
+  return { up, down, signals };
+}
+
+export function buildSuperTrendBacktestSummary(
+  bars: LightweightChartBarLike[],
+  options: SuperTrendBacktestOptions = {},
+): SuperTrendBacktestSummary {
+  const atrPeriod = clampInteger(options.atrPeriod ?? 10, 1, 200);
+  const multiplier = clampNumber(Number(options.multiplier ?? 3), 0.1, 20);
+  const entryFilter = normalizeSuperTrendBacktestEntryFilter(options.entryFilter);
+  const series = buildLightweightSuperTrendSeries(bars, { atrPeriod, multiplier });
+  const normalizedBars = normalizeSuperTrendBacktestBars(bars);
+  const indexByTime = new Map(normalizedBars.map((bar) => [lightweightChartTimeKey(bar.time), bar.index]));
+  const buySignalCount = series.signals.filter((signal) => signal.side === "buy").length;
+  const sellSignalCount = series.signals.filter((signal) => signal.side === "sell").length;
+  const trades: SuperTrendBacktestTrade[] = [];
+  let entry: LightweightSuperTrendSignal | null = null;
+
+  series.signals.forEach((signal) => {
+    if (signal.side === "buy") {
+      if (!entry) {
+        entry = resolveSuperTrendBacktestEntrySignal(signal, series.signals, normalizedBars, indexByTime, entryFilter);
+      }
+      return;
+    }
+    if (!entry) return;
+    const trade = buildSuperTrendBacktestTrade(entry, signal, normalizedBars, indexByTime, "signal");
+    if (trade) trades.push(trade);
+    entry = null;
+  });
+
+  if (entry && normalizedBars.length > 0) {
+    const latest = normalizedBars[normalizedBars.length - 1];
+    const trade = buildSuperTrendBacktestTrade(
+      entry,
+      {
+        label: "Sell",
+        price: latest.close,
+        side: "sell",
+        time: latest.time,
+        trend: -1,
+      },
+      normalizedBars,
+      indexByTime,
+      "latest",
+    );
+    if (trade) trades.push(trade);
+  }
+
+  const tradeCount = trades.length;
+  const winCount = trades.filter((trade) => trade.returnPct > 0).length;
+  const openTradeCount = trades.filter((trade) => trade.exitReason === "latest").length;
+  const winRate = tradeCount > 0 ? winCount / tradeCount : 0;
+  const averageReturnPct = averageNumbers(trades.map((trade) => trade.returnPct)) ?? 0;
+  const averageHoldBars = averageNumbers(trades.map((trade) => trade.holdBars)) ?? 0;
+  const cumulativeReturnPct = buildCompoundedReturnPct(trades.map((trade) => trade.returnPct));
+  const maxDrawdownPct = buildTradeSequenceMaxDrawdownPct(trades.map((trade) => trade.returnPct));
+  const latestSignal = series.signals[series.signals.length - 1] ?? null;
+  const firstBar = normalizedBars[0];
+  const latestBar = normalizedBars[normalizedBars.length - 1];
+  const buyHoldReturnPct = firstBar && latestBar && firstBar.close !== 0
+    ? ((latestBar.close - firstBar.close) / firstBar.close) * 100
+    : 0;
+  const horizons = [1, 5, 10, 20].map((days) =>
+    buildSuperTrendBacktestHorizon(series.signals, normalizedBars, indexByTime, days)
+  );
+
+  return {
+    atrPeriod,
+    averageHoldBars,
+    averageReturnPct,
+    buyHoldReturnPct,
+    buySignalCount,
+    cumulativeReturnPct,
+    entryFilter,
+    horizons,
+    items: buildSuperTrendBacktestItems({
+      atrPeriod,
+      averageHoldBars,
+      averageReturnPct,
+      buyHoldReturnPct,
+      buySignalCount,
+      cumulativeReturnPct,
+      entryFilter,
+      latestSignal,
+      maxDrawdownPct,
+      multiplier,
+      openTradeCount,
+      sellSignalCount,
+      tradeCount,
+      winCount,
+      winRate,
+    }),
+    latestSignal,
+    maxDrawdownPct,
+    multiplier,
+    openTradeCount,
+    sellSignalCount,
+    signalCount: series.signals.length,
+    tradeCount,
+    trades,
+    winCount,
+    winRate,
+  };
+}
+
+export function buildTensionFlowTrendSeries(
+  bars: LightweightChartBarLike[],
+  options: TensionFlowTrendOptions = {},
+): TensionFlowTrendSeries {
+  const hmaLength = clampInteger(options.hmaLength ?? 50, 1, 300);
+  const zScoreLength = clampInteger(options.zScoreLength ?? 50, 1, 300);
+  const ribbonWidth = clampNumber(Number(options.ribbonWidth ?? 0.5), 0.05, 20);
+  const signalGap = clampInteger(options.signalGap ?? 30, 1, 500);
+  const normalized = normalizeTensionFlowTrendBars(bars);
+  const points: TensionFlowTrendPoint[] = [];
+  const signals: TensionFlowTrendSignal[] = [];
+  if (normalized.length === 0) return { points, signals, latest: null };
+
+  const closes = normalized.map((bar) => bar.close);
+  const hmaValues = buildHullMovingAverageValues(closes, hmaLength);
+  const atrValues = buildWilderAverageValues(
+    normalized.map((bar, index) => trueRangeAt(normalized, index)),
+    14,
+  );
+  let lastSignalIndex = -signalGap - 1;
+
+  normalized.forEach((bar, index) => {
+    const hma = hmaValues[index];
+    const previousHma = hmaValues[index - 1];
+    const atr = atrValues[index];
+    const priceDistance = isFiniteNumber(hma) ? bar.close - hma : null;
+    const zScore = buildTensionFlowZScore(closes, hmaValues, zScoreLength, index);
+    const trend: TensionFlowTrendDirection | null =
+      isFiniteNumber(hma) && isFiniteNumber(previousHma)
+        ? hma > previousHma ? "up" : "down"
+        : null;
+    const upperRibbon = isFiniteNumber(hma) && isFiniteNumber(atr) ? hma + atr * ribbonWidth : null;
+    const lowerRibbon = isFiniteNumber(hma) && isFiniteNumber(atr) ? hma - atr * ribbonWidth : null;
+    const status = isFiniteNumber(zScore)
+      ? Math.abs(zScore) > 2 ? "overextended" : "strong"
+      : null;
+
+    points.push({
+      time: bar.time,
+      date: bar.date,
+      hma: isFiniteNumber(hma) ? hma : null,
+      lowerRibbon,
+      upperRibbon,
+      zScore,
+      trend,
+      status,
+    });
+
+    const previousBar = normalized[index - 1];
+    if (
+      !previousBar ||
+      !isFiniteNumber(hma) ||
+      !isFiniteNumber(previousHma) ||
+      !trend ||
+      index - lastSignalIndex < signalGap
+    ) {
+      return;
+    }
+
+    const crossedUp = previousBar.close <= previousHma && bar.close > hma;
+    const crossedDown = previousBar.close >= previousHma && bar.close < hma;
+    if (trend === "up" && crossedUp) {
+      signals.push({
+        time: bar.time,
+        date: bar.date,
+        price: bar.close,
+        side: "buy",
+        label: "START",
+        zScore,
+      });
+      lastSignalIndex = index;
+    } else if (trend === "down" && crossedDown) {
+      signals.push({
+        time: bar.time,
+        date: bar.date,
+        price: bar.close,
+        side: "sell",
+        label: "START",
+        zScore,
+      });
+      lastSignalIndex = index;
+    }
+  });
+
+  return {
+    points,
+    signals,
+    latest: [...points].reverse().find((point) => isFiniteNumber(point.hma)) ?? null,
+  };
+}
+
+export function buildLightweightTensionFlowTrendSeries(
+  bars: LightweightChartBarLike[],
+  options: TensionFlowTrendOptions = {},
+): LightweightTensionFlowTrendSeries {
+  const series = buildTensionFlowTrendSeries(bars, options);
+  const baselineUp: LightweightChartLinePoint[] = [];
+  const baselineDown: LightweightChartLinePoint[] = [];
+  const upperRibbon: LightweightChartLinePoint[] = [];
+  const lowerRibbon: LightweightChartLinePoint[] = [];
+
+  series.points.forEach((point) => {
+    if (isFiniteNumber(point.hma)) {
+      const target = point.trend === "down" ? baselineDown : baselineUp;
+      target.push({ time: point.time, value: point.hma });
+    }
+    if (isFiniteNumber(point.upperRibbon)) {
+      upperRibbon.push({ time: point.time, value: point.upperRibbon });
+    }
+    if (isFiniteNumber(point.lowerRibbon)) {
+      lowerRibbon.push({ time: point.time, value: point.lowerRibbon });
+    }
+  });
+
+  return {
+    baselineUp,
+    baselineDown,
+    upperRibbon,
+    lowerRibbon,
+    latest: series.latest,
+    signals: series.signals.map((signal) => ({
+      ...signal,
+      id: `tension-flow-trend:${signal.side}:${signal.date}`,
+    })),
+  };
+}
+
+export function buildTensionFlowTrendBacktestSummary(
+  bars: LightweightChartBarLike[],
+  options: TensionFlowTrendBacktestOptions = {},
+): TensionFlowTrendBacktestSummary {
+  const hmaLength = clampInteger(options.hmaLength ?? 50, 1, 300);
+  const zScoreLength = clampInteger(options.zScoreLength ?? 50, 1, 300);
+  const atrStopMultiplier = clampNumber(Number(options.atrStopMultiplier ?? 2), 0.1, 20);
+  const riskRewardRatio = clampNumber(Number(options.riskRewardRatio ?? 1), 0.1, 20);
+  const maxTrades = clampInteger(options.maxTrades ?? 100, 1, 500);
+  const stopAtrLength = clampInteger(options.stopAtrLength ?? 200, 1, 500);
+  const series = buildTensionFlowTrendSeries(bars, {
+    hmaLength,
+    ribbonWidth: options.ribbonWidth,
+    signalGap: options.signalGap,
+    zScoreLength,
+  });
+  const normalized = normalizeTensionFlowTrendBars(bars);
+  const barByDate = new Map(normalized.map((bar, index) => [bar.date, { ...bar, index }]));
+  const signalByDate = new Map(series.signals.map((signal) => [signal.date, signal]));
+  const atrValues = buildWilderAverageValues(
+    normalized.map((_, index) => trueRangeAt(normalized, index)),
+    stopAtrLength,
+  );
+  const activeTrades: Array<Omit<TensionFlowTrendBacktestTrade, "exitDate" | "exitIndex" | "exitPrice" | "exitReason" | "holdBars" | "win">> = [];
+  const trades: TensionFlowTrendBacktestTrade[] = [];
+  const hmaDirectionByDate = new Map(series.points.map((point, index) => {
+    const previous = series.points[index - 1];
+    return [
+      point.date,
+      {
+        changed: Boolean(previous?.trend && point.trend && previous.trend !== point.trend),
+        previousChanged: false,
+      },
+    ];
+  }));
+  series.points.forEach((point, index) => {
+    const previous = series.points[index - 1];
+    const current = hmaDirectionByDate.get(point.date);
+    if (current) {
+      current.previousChanged = Boolean(previous && hmaDirectionByDate.get(previous.date)?.changed);
+    }
+  });
+
+  normalized.forEach((bar, index) => {
+    const signal = signalByDate.get(bar.date);
+    const atr = atrValues[index];
+    const directionState = hmaDirectionByDate.get(bar.date);
+    if (
+      signal &&
+      isFiniteNumber(atr) &&
+      !directionState?.changed &&
+      !directionState?.previousChanged
+    ) {
+      const direction = signal.side === "buy" ? 1 : -1;
+      const entryPrice = bar.close;
+      const stopLoss = direction === 1
+        ? entryPrice - atr * atrStopMultiplier
+        : entryPrice + atr * atrStopMultiplier;
+      const risk = Math.abs(entryPrice - stopLoss);
+      if (risk > 0) {
+        activeTrades.push({
+          direction,
+          entryDate: bar.date,
+          entryIndex: index,
+          entryPrice,
+          stopLoss,
+          takeProfit: direction === 1
+            ? entryPrice + risk * riskRewardRatio
+            : entryPrice - risk * riskRewardRatio,
+        });
+      }
+    }
+
+    for (let cursor = activeTrades.length - 1; cursor >= 0; cursor -= 1) {
+      const trade = activeTrades[cursor];
+      const hitStop = trade.direction === 1 ? bar.low <= trade.stopLoss : bar.high >= trade.stopLoss;
+      const hitTarget = trade.direction === 1 ? bar.high >= trade.takeProfit : bar.low <= trade.takeProfit;
+      if (!hitStop && !hitTarget) continue;
+      const win = hitTarget;
+      trades.push({
+        ...trade,
+        exitDate: bar.date,
+        exitIndex: index,
+        exitPrice: win ? trade.takeProfit : trade.stopLoss,
+        exitReason: win ? "tp" : "sl",
+        holdBars: Math.max(0, index - trade.entryIndex),
+        win,
+      });
+      activeTrades.splice(cursor, 1);
+      if (trades.length > maxTrades) trades.shift();
+    }
+  });
+
+  const winCount = trades.filter((trade) => trade.win).length;
+  const totalClosed = trades.length;
+  const lossCount = totalClosed - winCount;
+  const winRate = totalClosed > 0 ? winCount / totalClosed : 0;
+  const buySignalCount = series.signals.filter((signal) => signal.side === "buy").length;
+  const sellSignalCount = series.signals.filter((signal) => signal.side === "sell").length;
+  const averageHoldBars = averageNumbers(trades.map((trade) => trade.holdBars)) ?? 0;
+  const latestSignal = series.signals[series.signals.length - 1] ?? null;
+
+  return {
+    averageHoldBars,
+    buySignalCount,
+    hmaLength,
+    items: buildTensionFlowTrendBacktestItems({
+      averageHoldBars,
+      buySignalCount,
+      latest: series.latest,
+      latestSignal,
+      lossCount,
+      maxTrades,
+      riskRewardRatio,
+      sellSignalCount,
+      totalClosed,
+      winCount,
+      winRate,
+    }),
+    latest: series.latest,
+    latestSignal,
+    lossCount,
+    maxTrades,
+    riskRewardRatio,
+    sellSignalCount,
+    signalCount: series.signals.length,
+    totalClosed,
+    trades,
+    winCount,
+    winRate,
+    zScoreLength,
+  };
+}
+
+export function buildAlphaTrendSeries(
+  bars: LightweightChartBarLike[],
+  options: AlphaTrendOptions = {},
+): AlphaTrendSeries {
+  const period = clampInteger(options.period ?? 14, 1, 200);
+  const multiplier = clampNumber(Number(options.multiplier ?? 1), 0.1, 20);
+  const normalized = (Array.isArray(bars) ? bars : [])
+    .map((bar) => {
+      const time = toLightweightChartTime(bar.date);
+      if (
+        time == null ||
+        !bar.date ||
+        !isFiniteNumber(bar.open) ||
+        !isFiniteNumber(bar.high) ||
+        !isFiniteNumber(bar.low) ||
+        !isFiniteNumber(bar.close)
+      ) {
+        return null;
+      }
+      return {
+        time,
+        date: bar.date,
+        open: Number(bar.open),
+        high: Number(bar.high),
+        low: Number(bar.low),
+        close: Number(bar.close),
+        volume: isFiniteNumber(bar.volume) ? Number(bar.volume) : null,
+      };
+    })
+    .filter((item): item is LightweightChartCandlePoint & { date: string; volume: number | null } => Boolean(item));
+
+  const source: AlphaTrendSource = options.noVolumeData || !normalized.some((bar) => isFiniteNumber(bar.volume) && bar.volume > 0)
+    ? "rsi"
+    : "mfi";
+  const points: AlphaTrendPoint[] = [];
+  const signals: AlphaTrendSignal[] = [];
+  if (normalized.length === 0) return { source, points, signals };
+
+  const trueRanges = normalized.map((bar, index) => {
+    const previousClose = normalized[index - 1]?.close;
+    if (!isFiniteNumber(previousClose)) return bar.high - bar.low;
+    return Math.max(
+      bar.high - bar.low,
+      Math.abs(bar.high - previousClose),
+      Math.abs(bar.low - previousClose),
+    );
+  });
+  const atrValues = trueRanges.map((_, index) => movingAverageAt(trueRanges, period, index));
+  const rsiValues = buildAlphaTrendRsiValues(normalized, period);
+  const mfiValues = buildAlphaTrendMfiValues(normalized, period);
+
+  let previousAlpha: number | null = null;
+  normalized.forEach((bar, index) => {
+    const atr = atrValues[index];
+    const momentum = source === "rsi" ? rsiValues[index] : mfiValues[index];
+    let alphaTrend: number | null = null;
+
+    if (isFiniteNumber(atr) && isFiniteNumber(momentum)) {
+      const previous = previousAlpha ?? 0;
+      const upT = bar.low - atr * multiplier;
+      const downT = bar.high + atr * multiplier;
+      alphaTrend = momentum >= 50
+        ? upT < previous ? previous : upT
+        : downT > previous ? previous : downT;
+      previousAlpha = alphaTrend;
+    }
+
+    const lagAlphaTrend = points[index - 2]?.alphaTrend ?? null;
+    const previousPoint = points[index - 1];
+    const previousLag = points[index - 3]?.alphaTrend ?? null;
+    const trend = alphaTrend != null && lagAlphaTrend != null
+      ? alphaTrend >= lagAlphaTrend ? "up" : "down"
+      : null;
+
+    if (
+      isFiniteNumber(alphaTrend) &&
+      isFiniteNumber(lagAlphaTrend) &&
+      isFiniteNumber(previousPoint?.alphaTrend) &&
+      isFiniteNumber(previousLag)
+    ) {
+      if (previousPoint.alphaTrend <= previousLag && alphaTrend > lagAlphaTrend) {
+        signals.push({
+          time: bar.time,
+          date: bar.date,
+          price: lagAlphaTrend * 0.9999,
+          side: "buy",
+          label: "BUY",
+        });
+      } else if (previousPoint.alphaTrend >= previousLag && alphaTrend < lagAlphaTrend) {
+        signals.push({
+          time: bar.time,
+          date: bar.date,
+          price: lagAlphaTrend * 1.0001,
+          side: "sell",
+          label: "SELL",
+        });
+      }
+    }
+
+    points.push({
+      time: bar.time,
+      date: bar.date,
+      alphaTrend,
+      lagAlphaTrend,
+      trend,
+      source,
+    });
+  });
+
+  return { source, points, signals };
+}
+
+export function buildLightweightAlphaTrendSeries(
+  bars: LightweightChartBarLike[],
+  options: AlphaTrendOptions = {},
+): LightweightAlphaTrendSeries {
+  const series = buildAlphaTrendSeries(bars, options);
+  const current: LightweightChartLinePoint[] = [];
+  const lag: LightweightChartLinePoint[] = [];
+  const fill: LightweightAlphaTrendFillPoint[] = [];
+
+  series.points.forEach((point) => {
+    if (isFiniteNumber(point.alphaTrend)) {
+      current.push({ time: point.time, value: point.alphaTrend });
+    }
+    if (isFiniteNumber(point.lagAlphaTrend)) {
+      lag.push({ time: point.time, value: point.lagAlphaTrend });
+    }
+    if (isFiniteNumber(point.alphaTrend) && isFiniteNumber(point.lagAlphaTrend) && point.trend) {
+      fill.push({
+        time: point.time,
+        value: point.alphaTrend,
+        baseValue: point.lagAlphaTrend,
+        trend: point.trend,
+      });
+    }
+  });
+
+  return {
+    source: series.source,
+    current,
+    lag,
+    fill,
+    signals: series.signals.map((signal) => ({
+      ...signal,
+      id: `alphatrend:${signal.side}:${signal.date}`,
+    })),
+  };
+}
+
+export function buildAlphaTrendBacktestSummary(
+  bars: LightweightChartBarLike[],
+  options: AlphaTrendOptions = {},
+): AlphaTrendBacktestSummary {
+  const series = buildAlphaTrendSeries(bars, options);
+  const normalizedBars = normalizeAlphaTrendBacktestBars(bars);
+  const barByDate = new Map(normalizedBars.map((bar) => [bar.date, bar]));
+  const buySignalCount = series.signals.filter((signal) => signal.side === "buy").length;
+  const sellSignalCount = series.signals.filter((signal) => signal.side === "sell").length;
+  const trades: AlphaTrendBacktestTrade[] = [];
+  let entry: AlphaTrendSignal | null = null;
+
+  series.signals.forEach((signal) => {
+    if (signal.side === "buy") {
+      if (!entry && barByDate.has(signal.date)) entry = signal;
+      return;
+    }
+    if (!entry) return;
+    const trade = buildAlphaTrendBacktestTrade(entry, signal, barByDate, "signal");
+    if (trade) trades.push(trade);
+    entry = null;
+  });
+
+  const latestBar = normalizedBars[normalizedBars.length - 1];
+  if (entry && latestBar) {
+    const trade = buildAlphaTrendBacktestTrade(
+      entry,
+      {
+        date: latestBar.date,
+        label: "SELL",
+        price: latestBar.close,
+        side: "sell",
+        time: latestBar.time,
+      },
+      barByDate,
+      "latest",
+    );
+    if (trade) trades.push(trade);
+  }
+
+  const tradeCount = trades.length;
+  const winCount = trades.filter((trade) => trade.returnPct > 0).length;
+  const openTradeCount = trades.filter((trade) => trade.exitReason === "latest").length;
+  const winRate = tradeCount > 0 ? winCount / tradeCount : 0;
+  const averageReturnPct = averageNumbers(trades.map((trade) => trade.returnPct)) ?? 0;
+  const averageHoldBars = averageNumbers(trades.map((trade) => trade.holdBars)) ?? 0;
+  const cumulativeReturnPct = buildCompoundedReturnPct(trades.map((trade) => trade.returnPct));
+  const maxDrawdownPct = buildTradeSequenceMaxDrawdownPct(trades.map((trade) => trade.returnPct));
+  const latestSignal = series.signals[series.signals.length - 1] ?? null;
+
+  return {
+    averageHoldBars,
+    averageReturnPct,
+    buySignalCount,
+    cumulativeReturnPct,
+    items: buildAlphaTrendBacktestItems({
+      averageHoldBars,
+      averageReturnPct,
+      buySignalCount,
+      cumulativeReturnPct,
+      latestSignal,
+      maxDrawdownPct,
+      openTradeCount,
+      sellSignalCount,
+      tradeCount,
+      winCount,
+      winRate,
+    }),
+    latestSignal,
+    maxDrawdownPct,
+    openTradeCount,
+    sellSignalCount,
+    signalCount: series.signals.length,
+    source: series.source,
+    tradeCount,
+    trades,
+    winCount,
+    winRate,
+  };
+}
+
+export function buildAlphaTrendOptimizationSummary(
+  bars: LightweightChartBarLike[],
+  options: AlphaTrendOptimizationOptions = {},
+): AlphaTrendOptimizationSummary {
+  const periodCandidates = normalizeAlphaTrendPeriodCandidates(options.periodCandidates);
+  const multiplierCandidates = normalizeAlphaTrendMultiplierCandidates(options.multiplierCandidates);
+  const minTrades = clampInteger(options.minTrades ?? 3, 1, 50);
+  const topN = clampInteger(options.topN ?? 5, 1, 12);
+  const candidates: AlphaTrendOptimizationCandidate[] = [];
+
+  periodCandidates.forEach((period) => {
+    multiplierCandidates.forEach((multiplier) => {
+      const summary = buildAlphaTrendBacktestSummary(bars, {
+        multiplier,
+        noVolumeData: options.noVolumeData,
+        period,
+      });
+      candidates.push({
+        averageReturnPct: summary.averageReturnPct,
+        cumulativeReturnPct: summary.cumulativeReturnPct,
+        maxDrawdownPct: summary.maxDrawdownPct,
+        multiplier,
+        openTradeCount: summary.openTradeCount,
+        period,
+        score: alphaTrendOptimizationScore(summary),
+        tradeCount: summary.tradeCount,
+        winRate: summary.winRate,
+      });
+    });
+  });
+
+  const sorted = [...candidates]
+    .filter((candidate) => candidate.tradeCount >= minTrades)
+    .sort(compareAlphaTrendOptimizationCandidates);
+  const currentPeriod = clampInteger(options.currentPeriod ?? options.period ?? 14, 1, 200);
+  const currentMultiplier = clampNumber(Number(options.currentMultiplier ?? options.multiplier ?? 1), 0.1, 20);
+  const current =
+    candidates.find((candidate) =>
+      candidate.period === currentPeriod &&
+      Math.abs(candidate.multiplier - currentMultiplier) < 0.000001,
+    ) ?? null;
+  const best = sorted[0] ?? null;
+
+  return {
+    best,
+    candidateCount: candidates.length,
+    current,
+    eligibleCount: sorted.length,
+    items: buildAlphaTrendOptimizationItems(best, current, sorted.length, minTrades),
+    minTrades,
+    topCandidates: sorted.slice(0, topN),
+  };
+}
+
+interface AlphaTrendBacktestBar {
+  date: string;
+  index: number;
+  time: LightweightChartTime;
+  close: number;
+}
+
+interface SuperTrendBacktestBar extends AlphaTrendBacktestBar {
+  high: number;
+  low: number;
+  open: number;
+}
+
+function normalizeSuperTrendBacktestBars(bars: LightweightChartBarLike[]): SuperTrendBacktestBar[] {
+  return (Array.isArray(bars) ? bars : [])
+    .map((bar, index) => {
+      const date = readableToken(bar.date, "");
+      const time = toLightweightChartTime(date);
+      if (
+        !date ||
+        time == null ||
+        !isFiniteNumber(bar.open) ||
+        !isFiniteNumber(bar.high) ||
+        !isFiniteNumber(bar.low) ||
+        !isFiniteNumber(bar.close)
+      ) return null;
+      return {
+        close: Number(bar.close),
+        date,
+        high: Number(bar.high),
+        index,
+        low: Number(bar.low),
+        open: Number(bar.open),
+        time,
+      };
+    })
+    .filter((bar): bar is SuperTrendBacktestBar => Boolean(bar));
+}
+
+function normalizeSuperTrendBacktestEntryFilter(value?: SuperTrendBacktestEntryFilter | null): SuperTrendBacktestEntryFilter {
+  return value === "trendBreakout" ? "trendBreakout" : "none";
+}
+
+function resolveSuperTrendBacktestEntrySignal(
+  signal: LightweightSuperTrendSignal,
+  signals: LightweightSuperTrendSignal[],
+  bars: SuperTrendBacktestBar[],
+  indexByTime: Map<string, number>,
+  entryFilter: SuperTrendBacktestEntryFilter,
+): LightweightSuperTrendSignal | null {
+  if (entryFilter === "none") return signal;
+  const signalIndex = indexByTime.get(lightweightChartTimeKey(signal.time));
+  if (signalIndex == null) return null;
+  const exitSignal = signals.find((item) => {
+    const index = indexByTime.get(lightweightChartTimeKey(item.time));
+    return item.side === "sell" && index != null && index > signalIndex;
+  });
+  const endIndex = exitSignal
+    ? indexByTime.get(lightweightChartTimeKey(exitSignal.time)) ?? bars.length - 1
+    : bars.length - 1;
+
+  for (let index = signalIndex; index <= endIndex; index += 1) {
+    const bar = bars[index];
+    if (!bar || !superTrendTrendBreakoutEntryConfirmed(bars, index)) continue;
+    return {
+      ...signal,
+      price: bar.close,
+      time: bar.time,
+    };
+  }
+  return null;
+}
+
+function superTrendTrendBreakoutEntryConfirmed(bars: SuperTrendBacktestBar[], index: number) {
+  const bar = bars[index];
+  if (!bar || index < 139) return false;
+  const ma120 = averageNumbers(bars.slice(index - 119, index + 1).map((item) => item.close));
+  const previousMa120 = averageNumbers(bars.slice(index - 139, index - 19).map((item) => item.close));
+  const previousHigh20 = Math.max(...bars.slice(index - 20, index).map((item) => item.high));
+  return (
+    isFiniteNumber(ma120) &&
+    isFiniteNumber(previousMa120) &&
+    isFiniteNumber(previousHigh20) &&
+    bar.close > ma120 &&
+    ma120 >= previousMa120 &&
+    bar.close >= previousHigh20
+  );
+}
+
+function normalizeTensionFlowTrendBars(bars: LightweightChartBarLike[]) {
+  return (Array.isArray(bars) ? bars : [])
+    .map((bar) => {
+      const date = readableToken(bar.date, "");
+      const time = toLightweightChartTime(date);
+      if (
+        !date ||
+        time == null ||
+        !isFiniteNumber(bar.open) ||
+        !isFiniteNumber(bar.high) ||
+        !isFiniteNumber(bar.low) ||
+        !isFiniteNumber(bar.close)
+      ) {
+        return null;
+      }
+      return {
+        time,
+        date,
+        open: Number(bar.open),
+        high: Number(bar.high),
+        low: Number(bar.low),
+        close: Number(bar.close),
+      };
+    })
+    .filter((bar): bar is LightweightChartCandlePoint & { date: string } => Boolean(bar));
+}
+
+function trueRangeAt(
+  bars: Array<{ high: number; low: number; close: number }>,
+  index: number,
+) {
+  const bar = bars[index];
+  const previousClose = bars[index - 1]?.close;
+  if (!bar) return 0;
+  if (!isFiniteNumber(previousClose)) return bar.high - bar.low;
+  return Math.max(
+    bar.high - bar.low,
+    Math.abs(bar.high - previousClose),
+    Math.abs(bar.low - previousClose),
+  );
+}
+
+function buildSuperTrendBacktestTrade(
+  entrySignal: LightweightSuperTrendSignal,
+  exitSignal: LightweightSuperTrendSignal,
+  bars: SuperTrendBacktestBar[],
+  indexByTime: Map<string, number>,
+  exitReason: SuperTrendBacktestTrade["exitReason"],
+): SuperTrendBacktestTrade | null {
+  const entrySignalIndex = indexByTime.get(lightweightChartTimeKey(entrySignal.time));
+  const exitSignalIndex = indexByTime.get(lightweightChartTimeKey(exitSignal.time));
+  if (entrySignalIndex == null || exitSignalIndex == null || entrySignalIndex >= bars.length - 1) return null;
+  const entryBar = bars[entrySignalIndex + 1];
+  const exitBar = exitReason === "latest"
+    ? bars[bars.length - 1]
+    : bars[Math.min(exitSignalIndex + 1, bars.length - 1)];
+  if (!entryBar || !exitBar || entryBar.index > exitBar.index || entryBar.open === 0) return null;
+  const exitPrice = exitReason === "latest" ? exitBar.close : exitBar.open;
+  const returnPct = ((exitPrice - entryBar.open) / entryBar.open) * 100;
+  return {
+    entryDate: entryBar.date,
+    entryIndex: entryBar.index,
+    entryPrice: entryBar.open,
+    exitDate: exitBar.date,
+    exitIndex: exitBar.index,
+    exitPrice,
+    exitReason,
+    holdBars: Math.max(0, exitBar.index - entryBar.index),
+    returnPct,
+  };
+}
+
+function buildSuperTrendBacktestHorizon(
+  signals: LightweightSuperTrendSignal[],
+  bars: SuperTrendBacktestBar[],
+  indexByTime: Map<string, number>,
+  days: number,
+): SuperTrendBacktestHorizon {
+  const directionalReturns = signals
+    .map((signal) => {
+      const index = indexByTime.get(lightweightChartTimeKey(signal.time));
+      if (index == null) return null;
+      const start = bars[index];
+      const end = bars[index + days];
+      if (!start || !end || start.close === 0) return null;
+      const rawReturnPct = ((end.close - start.close) / start.close) * 100;
+      return signal.side === "buy" ? rawReturnPct : -rawReturnPct;
+    })
+    .filter((value): value is number => isFiniteNumber(value));
+  const hitCount = directionalReturns.filter((value) => value > 0).length;
+  return {
+    averageDirectionalReturnPct: averageNumbers(directionalReturns) ?? 0,
+    count: directionalReturns.length,
+    days,
+    hitRate: directionalReturns.length > 0 ? hitCount / directionalReturns.length : 0,
+  };
+}
+
+function normalizeAlphaTrendBacktestBars(bars: LightweightChartBarLike[]): AlphaTrendBacktestBar[] {
+  return (Array.isArray(bars) ? bars : [])
+    .map((bar, index) => {
+      const date = readableToken(bar.date, "");
+      const time = toLightweightChartTime(date);
+      if (!date || time == null || !isFiniteNumber(bar.close)) return null;
+      return {
+        close: Number(bar.close),
+        date,
+        index,
+        time,
+      };
+    })
+    .filter((bar): bar is AlphaTrendBacktestBar => Boolean(bar));
+}
+
+function buildAlphaTrendBacktestTrade(
+  entrySignal: AlphaTrendSignal,
+  exitSignal: AlphaTrendSignal,
+  barByDate: Map<string, AlphaTrendBacktestBar>,
+  exitReason: AlphaTrendBacktestTrade["exitReason"],
+): AlphaTrendBacktestTrade | null {
+  const entryBar = barByDate.get(entrySignal.date);
+  const exitBar = barByDate.get(exitSignal.date);
+  if (!entryBar || !exitBar || entryBar.index > exitBar.index || entryBar.close === 0) return null;
+  const returnPct = ((exitBar.close - entryBar.close) / entryBar.close) * 100;
+  return {
+    entryDate: entryBar.date,
+    entryIndex: entryBar.index,
+    entryPrice: entryBar.close,
+    exitDate: exitBar.date,
+    exitIndex: exitBar.index,
+    exitPrice: exitBar.close,
+    exitReason,
+    holdBars: Math.max(0, exitBar.index - entryBar.index),
+    returnPct,
+  };
+}
+
+function buildCompoundedReturnPct(returnsPct: number[]) {
+  if (returnsPct.length === 0) return 0;
+  const equity = returnsPct.reduce((value, returnPct) => value * (1 + returnPct / 100), 1);
+  return (equity - 1) * 100;
+}
+
+function buildTradeSequenceMaxDrawdownPct(returnsPct: number[]) {
+  let equity = 1;
+  let peak = 1;
+  let maxDrawdown = 0;
+  returnsPct.forEach((returnPct) => {
+    equity *= 1 + returnPct / 100;
+    peak = Math.max(peak, equity);
+    if (peak > 0) {
+      maxDrawdown = Math.max(maxDrawdown, ((peak - equity) / peak) * 100);
+    }
+  });
+  return maxDrawdown;
+}
+
+function buildAlphaTrendBacktestItems(input: {
+  averageHoldBars: number;
+  averageReturnPct: number;
+  buySignalCount: number;
+  cumulativeReturnPct: number;
+  latestSignal: AlphaTrendSignal | null;
+  maxDrawdownPct: number;
+  openTradeCount: number;
+  sellSignalCount: number;
+  tradeCount: number;
+  winCount: number;
+  winRate: number;
+}): AlphaTrendBacktestItem[] {
+  if (input.tradeCount <= 0) {
+    return [{
+      key: "alphatrend-signals",
+      label: "AT信号",
+      value: `买${input.buySignalCount}/卖${input.sellSignalCount}`,
+      detail: "当前窗口暂无可配对的 AlphaTrend 买卖交易。",
+      tone: "neutral",
+    }];
+  }
+
+  const openNote = input.openTradeCount > 0 ? ` · 含${input.openTradeCount}笔未平仓估值` : "";
+  const latestSignalText = input.latestSignal
+    ? `最近${input.latestSignal.side === "buy" ? "买点" : "卖点"} ${input.latestSignal.date}`
+    : "暂无最新信号";
+  return [
+    {
+      key: "alphatrend-win-rate",
+      label: "AT胜率",
+      value: formatBacktestRate(input.winRate),
+      detail: `盈利 ${input.winCount}/${input.tradeCount} · 信号 买${input.buySignalCount}/卖${input.sellSignalCount}${openNote}`,
+      tone: input.winRate >= 0.5 ? "good" : "risk",
+    },
+    {
+      key: "alphatrend-return",
+      label: "AT累计",
+      value: formatBacktestSignedPercent(input.cumulativeReturnPct),
+      detail: `单笔均幅 ${formatBacktestSignedPercent(input.averageReturnPct)} · ${latestSignalText}`,
+      tone: backtestTone(input.cumulativeReturnPct),
+    },
+    {
+      key: "alphatrend-drawdown",
+      label: "AT回撤",
+      value: input.maxDrawdownPct > 0 ? `-${input.maxDrawdownPct.toFixed(2)}%` : "0.00%",
+      detail: "按信号交易序列估算的最大回撤。",
+      tone: input.maxDrawdownPct >= 8 ? "risk" : "neutral",
+    },
+    {
+      key: "alphatrend-hold",
+      label: "AT持仓",
+      value: `${input.averageHoldBars.toFixed(1)}根`,
+      detail: `${latestSignalText} · 买点按信号日收盘价成交`,
+      tone: "neutral",
+    },
+  ];
+}
+
+function buildSuperTrendBacktestItems(input: {
+  atrPeriod: number;
+  averageHoldBars: number;
+  averageReturnPct: number;
+  buyHoldReturnPct: number;
+  buySignalCount: number;
+  cumulativeReturnPct: number;
+  entryFilter: SuperTrendBacktestEntryFilter;
+  latestSignal: LightweightSuperTrendSignal | null;
+  maxDrawdownPct: number;
+  multiplier: number;
+  openTradeCount: number;
+  sellSignalCount: number;
+  tradeCount: number;
+  winCount: number;
+  winRate: number;
+}): SuperTrendBacktestItem[] {
+  const parameterText = `ATR${input.atrPeriod} / ${input.multiplier.toFixed(1)}x`;
+  const enhanced = input.entryFilter === "trendBreakout";
+  const labelPrefix = enhanced ? "ST增强" : "ST";
+  const filterText = enhanced ? "MA120上行 + 20日突破确认" : parameterText;
+  if (input.tradeCount <= 0) {
+    return [{
+      key: "supertrend-signals",
+      label: enhanced ? "ST增强" : "ST信号",
+      value: `买${input.buySignalCount}/卖${input.sellSignalCount}`,
+      detail: `${filterText} 当前窗口暂无可配对的 SuperTrend 买卖交易。`,
+      tone: "neutral",
+    }];
+  }
+
+  const latestSignalText = input.latestSignal
+    ? `最近${input.latestSignal.side === "buy" ? "买点" : "卖点"} ${lightweightChartTimeKey(input.latestSignal.time)}`
+    : "暂无最新信号";
+  const openNote = input.openTradeCount > 0 ? ` · 含${input.openTradeCount}笔未平仓估值` : "";
+  return [
+    {
+      key: "supertrend-win-rate",
+      label: enhanced ? "ST增强" : "ST胜率",
+      value: formatBacktestRate(input.winRate),
+      detail: `${filterText} · 盈利 ${input.winCount}/${input.tradeCount} · 信号 买${input.buySignalCount}/卖${input.sellSignalCount}${openNote}`,
+      tone: input.winRate >= 0.5 ? "good" : "risk",
+    },
+    {
+      key: "supertrend-return",
+      label: `${labelPrefix}累计`,
+      value: formatBacktestSignedPercent(input.cumulativeReturnPct),
+      detail: `${parameterText} · 买持 ${formatBacktestSignedPercent(input.buyHoldReturnPct)} · ${latestSignalText}`,
+      tone: backtestTone(input.cumulativeReturnPct),
+    },
+    {
+      key: "supertrend-drawdown",
+      label: `${labelPrefix}回撤`,
+      value: input.maxDrawdownPct > 0 ? `-${input.maxDrawdownPct.toFixed(2)}%` : "0.00%",
+      detail: "按 SuperTrend 信号交易序列估算的最大回撤，成交使用信号后下一交易日开盘价。",
+      tone: input.maxDrawdownPct >= 12 ? "risk" : "neutral",
+    },
+    {
+      key: "supertrend-hold",
+      label: `${labelPrefix}持仓`,
+      value: `${input.averageHoldBars.toFixed(1)}根`,
+      detail: `${latestSignalText} · 买卖点按下一根开盘价成交`,
+      tone: "neutral",
+    },
+  ];
+}
+
+function buildTensionFlowTrendBacktestItems(input: {
+  averageHoldBars: number;
+  buySignalCount: number;
+  latest: TensionFlowTrendPoint | null;
+  latestSignal: TensionFlowTrendSignal | null;
+  lossCount: number;
+  maxTrades: number;
+  riskRewardRatio: number;
+  sellSignalCount: number;
+  totalClosed: number;
+  winCount: number;
+  winRate: number;
+}): TensionFlowTrendBacktestItem[] {
+  const latestSignalText = input.latestSignal
+    ? `最近${input.latestSignal.side === "buy" ? "多头" : "空头"} START ${input.latestSignal.date}`
+    : "当前窗口暂无 START 信号";
+  const zScoreText = isFiniteNumber(input.latest?.zScore)
+    ? input.latest.zScore.toFixed(2)
+    : "-";
+  const statusText = input.latest?.status === "overextended" ? "过度拉伸" : input.latest?.status === "strong" ? "趋势有效" : "样本不足";
+  const trendText = input.latest?.trend === "down" ? "空头" : input.latest?.trend === "up" ? "多头" : "未确认";
+
+  if (input.totalClosed <= 0) {
+    return [
+      {
+        key: "energy",
+        label: "TFT张力",
+        value: zScoreText,
+        detail: `${trendText} · ${statusText} · ${latestSignalText}`,
+        tone: input.latest?.status === "overextended" ? "warn" : input.latest?.trend === "down" ? "risk" : input.latest?.trend === "up" ? "good" : "neutral",
+      },
+      {
+        key: "signals",
+        label: "TFT信号",
+        value: `多${input.buySignalCount}/空${input.sellSignalCount}`,
+        detail: `RR ${input.riskRewardRatio.toFixed(1)}:1 当前窗口暂无已完成模拟交易。`,
+        tone: "neutral",
+      },
+    ];
+  }
+
+  return [
+    {
+      key: "energy",
+      label: "TFT张力",
+      value: zScoreText,
+      detail: `${trendText} · ${statusText} · ${latestSignalText}`,
+      tone: input.latest?.status === "overextended" ? "warn" : input.latest?.trend === "down" ? "risk" : "good",
+    },
+    {
+      key: "winRate",
+      label: "TFT胜率",
+      value: formatBacktestRate(input.winRate),
+      detail: `近 ${input.totalClosed}/${input.maxTrades} 笔 · 赢 ${input.winCount} / 输 ${input.lossCount}`,
+      tone: input.winRate >= 0.55 ? "good" : input.winRate >= 0.4 ? "warn" : "risk",
+    },
+    {
+      key: "rr",
+      label: "TFT RR",
+      value: `${input.riskRewardRatio.toFixed(1)}:1`,
+      detail: `信号 多${input.buySignalCount}/空${input.sellSignalCount} · 固定止盈止损模拟`,
+      tone: "neutral",
+    },
+    {
+      key: "hold",
+      label: "TFT持仓",
+      value: `${input.averageHoldBars.toFixed(1)}根`,
+      detail: "按 START 当根收盘入场，TP/SL 使用 ATR 风险距离估算。",
+      tone: "neutral",
+    },
+  ];
+}
+
+function normalizeAlphaTrendPeriodCandidates(periods?: number[]) {
+  const source = Array.isArray(periods) && periods.length > 0
+    ? periods
+    : [7, 10, 14, 18, 21, 28];
+  return uniqueSortedNumbers(
+    source
+      .filter((period) => Number.isInteger(period) && period > 0)
+      .map((period) => clampInteger(period, 1, 200)),
+  );
+}
+
+function normalizeAlphaTrendMultiplierCandidates(multipliers?: number[]) {
+  const source = Array.isArray(multipliers) && multipliers.length > 0
+    ? multipliers
+    : [0.8, 1, 1.2, 1.5, 2, 2.5];
+  return uniqueSortedNumbers(
+    source
+      .filter((multiplier) => Number.isFinite(multiplier) && multiplier > 0)
+      .map((multiplier) => Number(clampNumber(multiplier, 0.1, 20).toFixed(2))),
+  );
+}
+
+function uniqueSortedNumbers(values: number[]) {
+  return Array.from(new Set(values)).sort((left, right) => left - right);
+}
+
+function alphaTrendOptimizationScore(summary: AlphaTrendBacktestSummary) {
+  return (
+    summary.cumulativeReturnPct -
+    summary.maxDrawdownPct * 0.8 +
+    summary.winRate * 12 +
+    Math.min(summary.tradeCount, 12) * 0.4 -
+    summary.openTradeCount * 2
+  );
+}
+
+function compareAlphaTrendOptimizationCandidates(
+  left: AlphaTrendOptimizationCandidate,
+  right: AlphaTrendOptimizationCandidate,
+) {
+  const scoreDiff = right.score - left.score;
+  if (Math.abs(scoreDiff) > 0.000001) return scoreDiff;
+  const returnDiff = right.cumulativeReturnPct - left.cumulativeReturnPct;
+  if (Math.abs(returnDiff) > 0.000001) return returnDiff;
+  const drawdownDiff = left.maxDrawdownPct - right.maxDrawdownPct;
+  if (Math.abs(drawdownDiff) > 0.000001) return drawdownDiff;
+  const tradeDiff = right.tradeCount - left.tradeCount;
+  if (tradeDiff !== 0) return tradeDiff;
+  const periodDiff = left.period - right.period;
+  if (periodDiff !== 0) return periodDiff;
+  return left.multiplier - right.multiplier;
+}
+
+function buildAlphaTrendOptimizationItems(
+  best: AlphaTrendOptimizationCandidate | null,
+  current: AlphaTrendOptimizationCandidate | null,
+  eligibleCount: number,
+  minTrades: number,
+): AlphaTrendBacktestItem[] {
+  if (!best) {
+    return [{
+      key: "alphatrend-optimization-empty",
+      label: "AT参数优化",
+      value: "样本不足",
+      detail: `没有达到至少 ${minTrades} 笔交易的参数组合。`,
+      tone: "neutral",
+    }];
+  }
+  const currentDelta = current
+    ? best.cumulativeReturnPct - current.cumulativeReturnPct
+    : null;
+  return [
+    {
+      key: "alphatrend-optimization-best",
+      label: "AT最优参数",
+      value: `${best.period}/${formatAlphaTrendMultiplier(best.multiplier)}`,
+      detail: `候选 ${eligibleCount} 组 · 分数 ${best.score.toFixed(1)} · 交易 ${best.tradeCount}`,
+      tone: best.cumulativeReturnPct > 0 ? "good" : best.cumulativeReturnPct < 0 ? "risk" : "neutral",
+    },
+    {
+      key: "alphatrend-optimization-return",
+      label: "最优收益",
+      value: formatBacktestSignedPercent(best.cumulativeReturnPct),
+      detail: `胜率 ${formatBacktestRate(best.winRate)} · 回撤 ${best.maxDrawdownPct.toFixed(2)}%`,
+      tone: backtestTone(best.cumulativeReturnPct),
+    },
+    {
+      key: "alphatrend-optimization-current",
+      label: "较当前",
+      value: currentDelta == null ? "无当前" : formatBacktestSignedPercent(currentDelta),
+      detail: current
+        ? `当前 ${current.period}/${formatAlphaTrendMultiplier(current.multiplier)} · 累计 ${formatBacktestSignedPercent(current.cumulativeReturnPct)}`
+        : "当前参数不在扫描网格内。",
+      tone: currentDelta == null ? "neutral" : backtestTone(currentDelta),
+    },
+  ];
+}
+
+function formatAlphaTrendMultiplier(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function buildHullMovingAverageValues(values: number[], length: number): Array<number | null> {
+  const period = clampInteger(length, 1, 300);
+  const halfPeriod = Math.max(1, Math.round(period / 2));
+  const sqrtPeriod = Math.max(1, Math.round(Math.sqrt(period)));
+  const halfWma = buildWeightedMovingAverageValues(values, halfPeriod);
+  const fullWma = buildWeightedMovingAverageValues(values, period);
+  const raw = values.map((_, index) =>
+    isFiniteNumber(halfWma[index]) && isFiniteNumber(fullWma[index])
+      ? 2 * halfWma[index] - fullWma[index]
+      : null
+  );
+  return buildWeightedMovingAverageValues(raw, sqrtPeriod);
+}
+
+function buildWeightedMovingAverageValues(values: Array<number | null>, length: number): Array<number | null> {
+  const period = clampInteger(length, 1, 300);
+  const denominator = (period * (period + 1)) / 2;
+  return values.map((_, index) => {
+    if (index < period - 1) return null;
+    let weightedSum = 0;
+    for (let offset = 0; offset < period; offset += 1) {
+      const value = values[index - period + 1 + offset];
+      if (!isFiniteNumber(value)) return null;
+      weightedSum += value * (offset + 1);
+    }
+    return weightedSum / denominator;
+  });
+}
+
+function buildTensionFlowZScore(
+  closes: number[],
+  hmaValues: Array<number | null>,
+  period: number,
+  index: number,
+) {
+  if (index < period - 1) return null;
+  const distances: number[] = [];
+  for (let cursor = index - period + 1; cursor <= index; cursor += 1) {
+    const hma = hmaValues[cursor];
+    const close = closes[cursor];
+    if (!isFiniteNumber(hma) || !isFiniteNumber(close)) return null;
+    distances.push(close - hma);
+  }
+  const currentDistance = distances[distances.length - 1];
+  const mean = distances.reduce((sum, value) => sum + value, 0) / distances.length;
+  const variance = distances.reduce((sum, value) => sum + (value - mean) ** 2, 0) / distances.length;
+  const deviation = Math.sqrt(variance);
+  return deviation > 0 ? currentDistance / deviation : null;
+}
+
+function buildAlphaTrendRsiValues(
+  bars: Array<LightweightChartCandlePoint & { volume: number | null }>,
+  period: number,
+): Array<number | null> {
+  return bars.map((_, index) => {
+    if (index < period) return null;
+    let gain = 0;
+    let loss = 0;
+    for (let cursor = index - period + 1; cursor <= index; cursor += 1) {
+      const previous = bars[cursor - 1]?.close;
+      const current = bars[cursor]?.close;
+      if (!isFiniteNumber(previous) || !isFiniteNumber(current)) return null;
+      const change = current - previous;
+      if (change > 0) gain += change;
+      if (change < 0) loss += Math.abs(change);
+    }
+    if (gain === 0 && loss === 0) return 50;
+    if (loss === 0) return 100;
+    if (gain === 0) return 0;
+    const relativeStrength = gain / loss;
+    return 100 - (100 / (1 + relativeStrength));
+  });
+}
+
+function buildAlphaTrendMfiValues(
+  bars: Array<LightweightChartCandlePoint & { volume: number | null }>,
+  period: number,
+): Array<number | null> {
+  const typicalPrices = bars.map((bar) => (bar.high + bar.low + bar.close) / 3);
+  return bars.map((_, index) => {
+    if (index < period) return null;
+    let positiveFlow = 0;
+    let negativeFlow = 0;
+    for (let cursor = index - period + 1; cursor <= index; cursor += 1) {
+      const typical = typicalPrices[cursor];
+      const previousTypical = typicalPrices[cursor - 1];
+      const volume = bars[cursor]?.volume;
+      if (!isFiniteNumber(typical) || !isFiniteNumber(previousTypical) || !isFiniteNumber(volume)) return null;
+      const moneyFlow = typical * volume;
+      if (typical > previousTypical) positiveFlow += moneyFlow;
+      if (typical < previousTypical) negativeFlow += moneyFlow;
+    }
+    if (positiveFlow === 0 && negativeFlow === 0) return 50;
+    if (negativeFlow === 0) return 100;
+    if (positiveFlow === 0) return 0;
+    const moneyRatio = positiveFlow / negativeFlow;
+    return 100 - (100 / (1 + moneyRatio));
+  });
+}
+
+function lightweightPriceLineColor(tone: LightweightPriceLineTone = "neutral") {
+  if (tone === "good") return "rgba(34, 197, 94, 0.84)";
+  if (tone === "risk") return "rgba(239, 68, 68, 0.86)";
+  if (tone === "warn") return "rgba(245, 158, 11, 0.84)";
+  return "rgba(148, 163, 184, 0.74)";
+}
+
+function lightweightChartTimeKey(value: LightweightChartTime) {
+  return String(value);
+}
+
+export function toLightweightChartTime(value?: string | null): LightweightChartTime | null {
+  const normalized = String(value || "").trim();
+  if (!normalized) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
+  const parsed = Date.parse(`${normalized.replace(" ", "T")}+08:00`);
+  if (!Number.isFinite(parsed)) return normalized;
+  return Math.floor(parsed / 1000);
+}
+
+function buildLightweightMovingAverage(
+  candles: LightweightChartCandlePoint[],
+  closes: number[],
+  period: number,
+): LightweightChartLinePoint[] {
+  const result: LightweightChartLinePoint[] = [];
+  for (let index = period - 1; index < closes.length; index += 1) {
+    const slice = closes.slice(index - period + 1, index + 1);
+    result.push({
+      time: candles[index].time,
+      value: slice.reduce((sum, value) => sum + value, 0) / period,
+    });
+  }
+  return result;
+}
+
+function buildLightweightBollSeries(
+  candles: LightweightChartCandlePoint[],
+  closes: number[],
+  period: number,
+  multiplier: number,
+): LightweightChartBollSeries {
+  const upper: LightweightChartLinePoint[] = [];
+  const mid: LightweightChartLinePoint[] = [];
+  const lower: LightweightChartLinePoint[] = [];
+  if (!Number.isInteger(period) || period <= 0) {
+    return { upper, mid, lower };
+  }
+  for (let index = period - 1; index < closes.length; index += 1) {
+    const slice = closes.slice(index - period + 1, index + 1);
+    const average = slice.reduce((sum, value) => sum + value, 0) / period;
+    const variance = slice.reduce((sum, value) => sum + ((value - average) ** 2), 0) / period;
+    const distance = Math.sqrt(variance) * multiplier;
+    const time = candles[index].time;
+    upper.push({ time, value: average + distance });
+    mid.push({ time, value: average });
+    lower.push({ time, value: average - distance });
+  }
+  return { upper, mid, lower };
+}
+
+function buildWilderAverageValues(values: number[], period: number): (number | null)[] {
+  const result: (number | null)[] = Array.from({ length: values.length }, () => null);
+  if (!Number.isInteger(period) || period <= 0) return result;
+  let running: number | null = null;
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index];
+    if (!isFiniteNumber(value)) continue;
+    if (index === period - 1) {
+      const slice = values.slice(0, period);
+      if (slice.every(isFiniteNumber)) {
+        running = slice.reduce((sum, item) => sum + item, 0) / period;
+        result[index] = running;
+      }
+      continue;
+    }
+    if (index >= period && running != null) {
+      running = ((running * (period - 1)) + value) / period;
+      result[index] = running;
+    }
+  }
+  return result;
+}
+
 export type KlineEventDensityTone = KlineEventSummaryTone | "mixed";
 
 export interface KlineEventDensityInput extends KlineEventSummaryInput {
@@ -1015,6 +3131,9 @@ export type ChartPreferenceName =
   | "ma"
   | "ema"
   | "boll"
+  | "supertrend"
+  | "alphaTrend"
+  | "tensionFlowTrend"
   | "ene"
   | "mike"
   | "vwap"
@@ -1076,6 +3195,17 @@ export type ChartParameterName =
   | "emaSlow"
   | "bollPeriod"
   | "bollMultiplier"
+  | "superTrendAtrPeriod"
+  | "superTrendMultiplier"
+  | "alphaTrendPeriod"
+  | "alphaTrendMultiplier"
+  | "tensionFlowHmaLength"
+  | "tensionFlowZScoreLength"
+  | "tensionFlowRibbonWidth"
+  | "tensionFlowSignalGap"
+  | "tensionFlowAtrStopMultiplier"
+  | "tensionFlowRiskReward"
+  | "tensionFlowMaxTrades"
   | "enePeriod"
   | "enePercent"
   | "mikePeriod"
@@ -1112,6 +3242,9 @@ const BASE_CHART_PRESET_VALUES: Record<ChartPreferenceName, boolean> = {
   ma: true,
   ema: false,
   boll: true,
+  supertrend: false,
+  alphaTrend: false,
+  tensionFlowTrend: false,
   ene: false,
   mike: false,
   vwap: false,
@@ -1188,6 +3321,9 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
     values: {
       ...BASE_CHART_PRESET_VALUES,
       ema: true,
+      supertrend: true,
+      alphaTrend: true,
+      tensionFlowTrend: true,
       ene: true,
       mike: true,
       ichimoku: true,
@@ -1300,6 +3436,9 @@ export const CHART_PREFERENCE_PRESETS: ChartPreferencePreset[] = [
     values: {
       ...BASE_CHART_PRESET_VALUES,
       ema: true,
+      supertrend: true,
+      alphaTrend: true,
+      tensionFlowTrend: true,
       ene: true,
       ichimoku: true,
       mike: true,
@@ -1317,6 +3456,9 @@ const CHART_LAYER_MAIN_OVERLAYS: ChartLayerSummaryOption[] = [
   ["ma", "MA"],
   ["ema", "EMA"],
   ["boll", "BOLL"],
+  ["supertrend", "ST"],
+  ["alphaTrend", "AT"],
+  ["tensionFlowTrend", "TFT"],
   ["ene", "ENE"],
   ["mike", "MIKE"],
   ["vwap", "VWAP"],
@@ -1365,6 +3507,17 @@ const STANDARD_CHART_PARAMETER_VALUES: Record<ChartParameterName, number> = {
   emaSlow: 26,
   bollPeriod: 20,
   bollMultiplier: 2,
+  superTrendAtrPeriod: 10,
+  superTrendMultiplier: 3,
+  alphaTrendPeriod: 14,
+  alphaTrendMultiplier: 1,
+  tensionFlowHmaLength: 50,
+  tensionFlowZScoreLength: 50,
+  tensionFlowRibbonWidth: 0.5,
+  tensionFlowSignalGap: 30,
+  tensionFlowAtrStopMultiplier: 2,
+  tensionFlowRiskReward: 1,
+  tensionFlowMaxTrades: 100,
   enePeriod: 25,
   enePercent: 6,
   mikePeriod: 12,
@@ -1412,6 +3565,11 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       emaFast: 6,
       emaSlow: 13,
       bollPeriod: 14,
+      superTrendAtrPeriod: 7,
+      alphaTrendPeriod: 7,
+      tensionFlowHmaLength: 34,
+      tensionFlowZScoreLength: 34,
+      tensionFlowSignalGap: 18,
       enePeriod: 10,
       enePercent: 5,
       mikePeriod: 10,
@@ -1449,6 +3607,14 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       emaFast: 20,
       emaSlow: 60,
       bollMultiplier: 2.2,
+      superTrendAtrPeriod: 14,
+      superTrendMultiplier: 3.2,
+      alphaTrendPeriod: 14,
+      alphaTrendMultiplier: 1.1,
+      tensionFlowHmaLength: 55,
+      tensionFlowZScoreLength: 55,
+      tensionFlowRibbonWidth: 0.6,
+      tensionFlowSignalGap: 30,
       enePeriod: 30,
       enePercent: 8,
       mikePeriod: 20,
@@ -1471,6 +3637,14 @@ export const CHART_PARAMETER_PRESETS: ChartParameterPreset[] = [
       emaFast: 30,
       emaSlow: 120,
       bollPeriod: 30,
+      superTrendAtrPeriod: 20,
+      superTrendMultiplier: 3.5,
+      alphaTrendPeriod: 21,
+      alphaTrendMultiplier: 1.2,
+      tensionFlowHmaLength: 89,
+      tensionFlowZScoreLength: 89,
+      tensionFlowRibbonWidth: 0.8,
+      tensionFlowSignalGap: 45,
       enePeriod: 55,
       enePercent: 10,
       mikePeriod: 30,
@@ -2769,7 +4943,7 @@ function enabledChartLayerLabels(
 function formatChartLayerSummaryDetail(labels: string[]): string {
   if (!labels.length) return "未启用";
   if (labels.length <= 6) return labels.join(" / ");
-  return `${labels.slice(0, 4).join(" / ")} / ${labels[labels.length - 1]} 等${labels.length}项`;
+  return `${labels.slice(0, 6).join(" / ")} / ${labels[labels.length - 1]} 等${labels.length}项`;
 }
 
 function buildChartLayerGroupSummary(

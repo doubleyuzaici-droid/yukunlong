@@ -6,6 +6,7 @@ import { AsyncBoundary } from "../_shared/AsyncBoundary";
 import { CatalystTimeline } from "./CatalystTimeline";
 import { SectorSnapshotStrip } from "./SectorSnapshotStrip";
 import type { StrategyMode, SymbolChartPayload } from "../../../types/symbol-workspace";
+import { defaultKlineStart } from "../../../api/symbol-workspace/fetchers";
 import { useSymbolChart } from "../../../api/symbol-workspace/hooks";
 import {
   RealtimeMarketPanel,
@@ -33,13 +34,6 @@ function ChartSkeleton() {
     </>
   );
 }
-
-const startOneYearBefore = (end: string): string => {
-  const dt = new Date(`${end}T00:00:00Z`);
-  if (Number.isNaN(dt.getTime())) return end;
-  dt.setUTCFullYear(dt.getUTCFullYear() - 1);
-  return dt.toISOString().slice(0, 10);
-};
 
 function toChartSignals(data: SymbolChartPayload): ChartSignalMarker[] {
   return data.raw_signals.map((signal) => ({
@@ -84,7 +78,7 @@ export function ChartTab({ symbol, date, mode, onModeChange }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           symbol,
-          start: startOneYearBefore(date),
+          start: defaultKlineStart(date),
           end: date,
           mode,
           capital: 1_000_000,
@@ -121,7 +115,7 @@ export function ChartTab({ symbol, date, mode, onModeChange }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           symbol,
-          start: startOneYearBefore(date),
+          start: defaultKlineStart(date),
           end: date,
           mode,
           initial_cash: 1_000_000,

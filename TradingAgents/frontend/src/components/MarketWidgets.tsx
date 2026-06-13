@@ -14,6 +14,10 @@ import {
   CHART_PREFERENCE_PRESETS,
   applyChartParameterPreset,
   applyChartPreferencePreset,
+  buildAlphaTrendBacktestSummary,
+  buildAlphaTrendOptimizationSummary,
+  buildSuperTrendBacktestSummary,
+  buildTensionFlowTrendBacktestSummary,
   buildManualDrawingStorageKey,
   buildAdvancedIndicators,
   buildCandlestickPatternAnnotations,
@@ -117,6 +121,7 @@ import {
   mergeRealtimeTickerQuotes,
   type TickerQuote,
 } from "./MarketTicker.helpers";
+import { TradingViewKlineChart } from "./TradingViewKlineChart";
 import {
   formatCompactNumber,
   formatMoney,
@@ -285,6 +290,10 @@ interface TradingChartPreferences {
   ma: boolean;
   ema: boolean;
   boll: boolean;
+  supertrend: boolean;
+  supertrendEnhanced: boolean;
+  alphaTrend: boolean;
+  tensionFlowTrend: boolean;
   ene: boolean;
   mike: boolean;
   vwap: boolean;
@@ -329,6 +338,17 @@ interface TradingChartParameters {
   emaSlow: number;
   bollPeriod: number;
   bollMultiplier: number;
+  superTrendAtrPeriod: number;
+  superTrendMultiplier: number;
+  alphaTrendPeriod: number;
+  alphaTrendMultiplier: number;
+  tensionFlowHmaLength: number;
+  tensionFlowZScoreLength: number;
+  tensionFlowRibbonWidth: number;
+  tensionFlowSignalGap: number;
+  tensionFlowAtrStopMultiplier: number;
+  tensionFlowRiskReward: number;
+  tensionFlowMaxTrades: number;
   enePeriod: number;
   enePercent: number;
   mikePeriod: number;
@@ -513,6 +533,10 @@ const DEFAULT_TRADING_CHART_PREFS: TradingChartPreferences = {
   ma: true,
   ema: false,
   boll: true,
+  supertrend: false,
+  supertrendEnhanced: false,
+  alphaTrend: false,
+  tensionFlowTrend: false,
   ene: false,
   mike: false,
   vwap: false,
@@ -557,6 +581,17 @@ const DEFAULT_TRADING_CHART_PARAMS: TradingChartParameters = {
   emaSlow: 26,
   bollPeriod: 20,
   bollMultiplier: 2,
+  superTrendAtrPeriod: 10,
+  superTrendMultiplier: 3,
+  alphaTrendPeriod: 14,
+  alphaTrendMultiplier: 1,
+  tensionFlowHmaLength: 50,
+  tensionFlowZScoreLength: 50,
+  tensionFlowRibbonWidth: 0.5,
+  tensionFlowSignalGap: 30,
+  tensionFlowAtrStopMultiplier: 2,
+  tensionFlowRiskReward: 1,
+  tensionFlowMaxTrades: 100,
   enePeriod: 25,
   enePercent: 6,
   mikePeriod: 12,
@@ -635,6 +670,10 @@ function normalizeTradingChartPrefs(value: unknown): TradingChartPreferences {
     ma: typeof next.ma === "boolean" ? next.ma : DEFAULT_TRADING_CHART_PREFS.ma,
     ema: typeof next.ema === "boolean" ? next.ema : DEFAULT_TRADING_CHART_PREFS.ema,
     boll: typeof next.boll === "boolean" ? next.boll : DEFAULT_TRADING_CHART_PREFS.boll,
+    supertrend: typeof next.supertrend === "boolean" ? next.supertrend : DEFAULT_TRADING_CHART_PREFS.supertrend,
+    supertrendEnhanced: typeof next.supertrendEnhanced === "boolean" ? next.supertrendEnhanced : DEFAULT_TRADING_CHART_PREFS.supertrendEnhanced,
+    alphaTrend: typeof next.alphaTrend === "boolean" ? next.alphaTrend : DEFAULT_TRADING_CHART_PREFS.alphaTrend,
+    tensionFlowTrend: typeof next.tensionFlowTrend === "boolean" ? next.tensionFlowTrend : DEFAULT_TRADING_CHART_PREFS.tensionFlowTrend,
     ene: typeof next.ene === "boolean" ? next.ene : DEFAULT_TRADING_CHART_PREFS.ene,
     mike: typeof next.mike === "boolean" ? next.mike : DEFAULT_TRADING_CHART_PREFS.mike,
     vwap: typeof next.vwap === "boolean" ? next.vwap : DEFAULT_TRADING_CHART_PREFS.vwap,
@@ -683,6 +722,17 @@ function normalizeTradingChartParams(value: unknown): TradingChartParameters {
     emaSlow: boundedInteger(next.emaSlow, 5, 250, DEFAULT_TRADING_CHART_PARAMS.emaSlow),
     bollPeriod: boundedInteger(next.bollPeriod, 10, 80, DEFAULT_TRADING_CHART_PARAMS.bollPeriod),
     bollMultiplier: boundedNumber(next.bollMultiplier, 1, 4, DEFAULT_TRADING_CHART_PARAMS.bollMultiplier),
+    superTrendAtrPeriod: boundedInteger(next.superTrendAtrPeriod, 2, 80, DEFAULT_TRADING_CHART_PARAMS.superTrendAtrPeriod),
+    superTrendMultiplier: boundedNumber(next.superTrendMultiplier, 0.5, 8, DEFAULT_TRADING_CHART_PARAMS.superTrendMultiplier),
+    alphaTrendPeriod: boundedInteger(next.alphaTrendPeriod, 2, 80, DEFAULT_TRADING_CHART_PARAMS.alphaTrendPeriod),
+    alphaTrendMultiplier: boundedNumber(next.alphaTrendMultiplier, 0.1, 8, DEFAULT_TRADING_CHART_PARAMS.alphaTrendMultiplier),
+    tensionFlowHmaLength: boundedInteger(next.tensionFlowHmaLength, 2, 200, DEFAULT_TRADING_CHART_PARAMS.tensionFlowHmaLength),
+    tensionFlowZScoreLength: boundedInteger(next.tensionFlowZScoreLength, 2, 200, DEFAULT_TRADING_CHART_PARAMS.tensionFlowZScoreLength),
+    tensionFlowRibbonWidth: boundedNumber(next.tensionFlowRibbonWidth, 0.1, 5, DEFAULT_TRADING_CHART_PARAMS.tensionFlowRibbonWidth),
+    tensionFlowSignalGap: boundedInteger(next.tensionFlowSignalGap, 1, 200, DEFAULT_TRADING_CHART_PARAMS.tensionFlowSignalGap),
+    tensionFlowAtrStopMultiplier: boundedNumber(next.tensionFlowAtrStopMultiplier, 0.1, 10, DEFAULT_TRADING_CHART_PARAMS.tensionFlowAtrStopMultiplier),
+    tensionFlowRiskReward: boundedNumber(next.tensionFlowRiskReward, 0.1, 10, DEFAULT_TRADING_CHART_PARAMS.tensionFlowRiskReward),
+    tensionFlowMaxTrades: boundedInteger(next.tensionFlowMaxTrades, 1, 300, DEFAULT_TRADING_CHART_PARAMS.tensionFlowMaxTrades),
     enePeriod: boundedInteger(next.enePeriod, 5, 160, DEFAULT_TRADING_CHART_PARAMS.enePeriod),
     enePercent: boundedNumber(next.enePercent, 0.5, 30, DEFAULT_TRADING_CHART_PARAMS.enePercent),
     mikePeriod: boundedInteger(next.mikePeriod, 3, 120, DEFAULT_TRADING_CHART_PARAMS.mikePeriod),
@@ -1857,6 +1907,91 @@ export function TradingSignalKlinePanel({
     technicalEvents: chart.technicalIndicatorEvents,
     volumeEvents: chart.volumeSignalEvents,
   });
+  const superTrendBacktest = useMemo(
+    () =>
+      chartPrefs.supertrend
+        ? buildSuperTrendBacktestSummary(periodData.bars, {
+            atrPeriod: chartParams.superTrendAtrPeriod,
+            multiplier: chartParams.superTrendMultiplier,
+          })
+        : null,
+    [chartParams.superTrendAtrPeriod, chartParams.superTrendMultiplier, chartPrefs.supertrend, periodData.bars],
+  );
+  const robustSuperTrendBacktest = useMemo(
+    () =>
+      chartPrefs.supertrend
+        ? buildSuperTrendBacktestSummary(periodData.bars, {
+            atrPeriod: 30,
+            multiplier: 3.5,
+          })
+        : null,
+    [chartPrefs.supertrend, periodData.bars],
+  );
+  const enhancedSuperTrendBacktest = useMemo(
+    () =>
+      chartPrefs.supertrend && chartPrefs.supertrendEnhanced
+        ? buildSuperTrendBacktestSummary(periodData.bars, {
+            atrPeriod: chartParams.superTrendAtrPeriod,
+            entryFilter: "trendBreakout",
+            multiplier: chartParams.superTrendMultiplier,
+          })
+        : null,
+    [
+      chartParams.superTrendAtrPeriod,
+      chartParams.superTrendMultiplier,
+      chartPrefs.supertrend,
+      chartPrefs.supertrendEnhanced,
+      periodData.bars,
+    ],
+  );
+  const showRobustSuperTrendBacktest =
+    Boolean(robustSuperTrendBacktest && robustSuperTrendBacktest.tradeCount > 0) &&
+    (chartParams.superTrendAtrPeriod !== 30 || Math.abs(chartParams.superTrendMultiplier - 3.5) > 0.001);
+  const alphaTrendBacktest = useMemo(
+    () =>
+      chartPrefs.alphaTrend
+        ? buildAlphaTrendBacktestSummary(periodData.bars, {
+            multiplier: chartParams.alphaTrendMultiplier,
+            period: chartParams.alphaTrendPeriod,
+          })
+        : null,
+    [chartParams.alphaTrendMultiplier, chartParams.alphaTrendPeriod, chartPrefs.alphaTrend, periodData.bars],
+  );
+  const alphaTrendOptimization = useMemo(
+    () =>
+      chartPrefs.alphaTrend
+        ? buildAlphaTrendOptimizationSummary(periodData.bars, {
+            currentMultiplier: chartParams.alphaTrendMultiplier,
+            currentPeriod: chartParams.alphaTrendPeriod,
+          })
+        : null,
+    [chartParams.alphaTrendMultiplier, chartParams.alphaTrendPeriod, chartPrefs.alphaTrend, periodData.bars],
+  );
+  const tensionFlowTrendBacktest = useMemo(
+    () =>
+      chartPrefs.tensionFlowTrend
+        ? buildTensionFlowTrendBacktestSummary(periodData.bars, {
+            atrStopMultiplier: chartParams.tensionFlowAtrStopMultiplier,
+            hmaLength: chartParams.tensionFlowHmaLength,
+            maxTrades: chartParams.tensionFlowMaxTrades,
+            ribbonWidth: chartParams.tensionFlowRibbonWidth,
+            riskRewardRatio: chartParams.tensionFlowRiskReward,
+            signalGap: chartParams.tensionFlowSignalGap,
+            zScoreLength: chartParams.tensionFlowZScoreLength,
+          })
+        : null,
+    [
+      chartParams.tensionFlowAtrStopMultiplier,
+      chartParams.tensionFlowHmaLength,
+      chartParams.tensionFlowMaxTrades,
+      chartParams.tensionFlowRibbonWidth,
+      chartParams.tensionFlowRiskReward,
+      chartParams.tensionFlowSignalGap,
+      chartParams.tensionFlowZScoreLength,
+      chartPrefs.tensionFlowTrend,
+      periodData.bars,
+    ],
+  );
   const visibleIndicatorThresholdGuides = chart.indicatorThresholdGuides.filter((guide) => {
     if (!showDenseSecondaryIndicators) return false;
     if (!effectiveSplitSubCharts && guide.section !== "oscillator") return false;
@@ -1957,6 +2092,45 @@ export function TradingSignalKlinePanel({
   const crosshairSignalCount = crosshair?.candle
     ? periodData.signals.filter((signal) => signal.date === crosshair.candle.date).length
     : 0;
+  const tradingViewSignals = useMemo(
+    () =>
+      periodData.signals.filter((signal) =>
+        isStrategyTradeMarker(signal) ? chartPrefs.tradeMarkers : chartPrefs.signals,
+      ),
+    [chartPrefs.signals, chartPrefs.tradeMarkers, periodData.signals],
+  );
+  const tradingViewEvents = useMemo(
+    () => (chartPrefs.events ? periodData.events : []),
+    [chartPrefs.events, periodData.events],
+  );
+  const tradingViewVisibleCount = range === "all" ? ("all" as const) : rangeSizeFor(periodData.bars.length, range);
+  const tradingViewPriceLines = useMemo(
+    () => [
+      ...(chartPrefs.levels
+        ? tradePlanLevels
+            .filter((level) => level.key !== "latest")
+            .map((level) => ({
+              axisLabelVisible: Boolean(level.emphasis),
+              id: `trade-plan:${level.key}`,
+              label: level.label,
+              price: level.price,
+              style: level.emphasis ? ("solid" as const) : ("dashed" as const),
+              tone: tradingViewLineTone(level.tone),
+            }))
+        : []),
+      ...(chartPrefs.supportResistance && showDenseAutoLevels
+        ? chart.supportResistanceLevels.map((level: { key: string; label: string; price: number; type: "support" | "resistance" }) => ({
+          axisLabelVisible: false,
+          id: `support-resistance:${level.key}`,
+          label: level.label || (level.type === "support" ? "支撑" : "压力"),
+          price: level.price,
+          style: "dashed" as const,
+          tone: level.type === "support" ? ("good" as const) : ("warn" as const),
+        }))
+        : []),
+    ],
+    [chart.supportResistanceLevels, chartPrefs.levels, chartPrefs.supportResistance, showDenseAutoLevels, tradePlanLevels],
+  );
 
   useEffect(() => {
     setRightOffset((value) => Math.min(value, maxRightOffsetForRange(periodData.bars.length, range)));
@@ -2052,8 +2226,20 @@ export function TradingSignalKlinePanel({
   const toggleChartPref = (key: keyof TradingChartPreferences) => {
     setChartPrefs((value) => ({
       ...value,
+      ...(key === "supertrend" && value.supertrend ? { supertrendEnhanced: false } : {}),
       [key]: !value[key],
     }));
+  };
+
+  const toggleSuperTrendEnhanced = () => {
+    setChartPrefs((value) => {
+      const enabled = !value.supertrendEnhanced;
+      return {
+        ...value,
+        supertrend: enabled ? true : value.supertrend,
+        supertrendEnhanced: enabled,
+      };
+    });
   };
 
   const applyChartPreset = (key: string) => {
@@ -2189,6 +2375,29 @@ export function TradingSignalKlinePanel({
       ),
       price: chartPriceFromY(chart, point.y),
       candle: point.candle,
+    });
+  };
+
+  const handleTradingViewHoverDate = (date: string | null) => {
+    if (!date) {
+      setCrosshair(null);
+      return;
+    }
+    const candle = chart.candles.find((item) => item.date === date);
+    if (!candle) {
+      setCrosshair(null);
+      return;
+    }
+    setCrosshair({
+      x: candle.x,
+      y: candle.closeY,
+      labelX: clampNumber(
+        candle.x + (candle.x > chart.plotRight - 330 ? -316 : 14),
+        chart.plotLeft + 6,
+        chart.plotRight - 314,
+      ),
+      price: candle.close,
+      candle,
     });
   };
 
@@ -2491,6 +2700,93 @@ export function TradingSignalKlinePanel({
           ))}
         </div>
       )}
+      {superTrendBacktest && superTrendBacktest.items.length > 0 && (
+        <div className="kline-event-backtest supertrend-backtest" aria-label="SuperTrend回测统计">
+          <span className="kline-event-backtest-title">ST回测</span>
+          {superTrendBacktest.items.map((item) => (
+            <div className={`kline-backtest-card ${item.tone}`} key={item.key} title={item.detail}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              <em>{item.detail}</em>
+            </div>
+          ))}
+          {enhancedSuperTrendBacktest && (
+            <div
+              className={`kline-backtest-card ${enhancedSuperTrendBacktest.tradeCount <= 0 ? "neutral" : enhancedSuperTrendBacktest.cumulativeReturnPct > 0 ? "good" : "risk"}`}
+              title={`MA120上行 + 20日突破确认 · 胜率 ${formatPercent(enhancedSuperTrendBacktest.winRate)} · 回撤 ${formatNumber(enhancedSuperTrendBacktest.maxDrawdownPct, 2)}% · 买持 ${formatSignedPercent(enhancedSuperTrendBacktest.buyHoldReturnPct / 100)}`}
+            >
+              <span>增强ST</span>
+              <strong>
+                {enhancedSuperTrendBacktest.tradeCount > 0
+                  ? formatSignedPercent(enhancedSuperTrendBacktest.cumulativeReturnPct / 100)
+                  : "无交易"}
+              </strong>
+              <em>
+                {enhancedSuperTrendBacktest.tradeCount > 0
+                  ? `胜率 ${formatPercent(enhancedSuperTrendBacktest.winRate)} · ${enhancedSuperTrendBacktest.tradeCount} 笔`
+                  : "等待 MA120 与突破确认"}
+              </em>
+            </div>
+          )}
+          {showRobustSuperTrendBacktest && robustSuperTrendBacktest && (
+            <div
+              className={`kline-backtest-card ${robustSuperTrendBacktest.cumulativeReturnPct > 0 ? "good" : robustSuperTrendBacktest.cumulativeReturnPct < 0 ? "risk" : "neutral"}`}
+              title={`ATR30 / 3.5x · 胜率 ${formatPercent(robustSuperTrendBacktest.winRate)} · 回撤 ${formatNumber(robustSuperTrendBacktest.maxDrawdownPct, 2)}% · 买持 ${formatSignedPercent(robustSuperTrendBacktest.buyHoldReturnPct / 100)}`}
+            >
+              <span>稳健ST</span>
+              <strong>{formatSignedPercent(robustSuperTrendBacktest.cumulativeReturnPct / 100)}</strong>
+              <em>ATR30 / 3.5x · {robustSuperTrendBacktest.tradeCount} 笔</em>
+            </div>
+          )}
+        </div>
+      )}
+      {alphaTrendBacktest && alphaTrendBacktest.items.length > 0 && (
+        <div className="kline-event-backtest alphatrend-backtest" aria-label="AlphaTrend回测统计">
+          <span className="kline-event-backtest-title">AT回测</span>
+          {alphaTrendBacktest.items.map((item) => (
+            <div className={`kline-backtest-card ${item.tone}`} key={item.key} title={item.detail}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              <em>{item.detail}</em>
+            </div>
+          ))}
+        </div>
+      )}
+      {tensionFlowTrendBacktest && tensionFlowTrendBacktest.items.length > 0 && (
+        <div className="kline-event-backtest tension-flow-backtest" aria-label="Tension Flow Trend模拟统计">
+          <span className="kline-event-backtest-title">TFT模拟</span>
+          {tensionFlowTrendBacktest.items.map((item) => (
+            <div className={`kline-backtest-card ${item.tone}`} key={item.key} title={item.detail}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              <em>{item.detail}</em>
+            </div>
+          ))}
+        </div>
+      )}
+      {alphaTrendOptimization && alphaTrendOptimization.items.length > 0 && (
+        <div className="kline-event-backtest alphatrend-optimization" aria-label="AlphaTrend参数优化">
+          <span className="kline-event-backtest-title">AT参数</span>
+          {alphaTrendOptimization.items.map((item) => (
+            <div className={`kline-backtest-card ${item.tone}`} key={item.key} title={item.detail}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              <em>{item.detail}</em>
+            </div>
+          ))}
+          {alphaTrendOptimization.topCandidates.slice(0, 3).map((candidate) => (
+            <div
+              className={`kline-backtest-card ${candidate.cumulativeReturnPct > 0 ? "good" : candidate.cumulativeReturnPct < 0 ? "risk" : "neutral"}`}
+              key={`${candidate.period}-${candidate.multiplier}`}
+              title={`分数 ${candidate.score.toFixed(1)} · 交易 ${candidate.tradeCount} · 胜率 ${formatPercent(candidate.winRate)} · 回撤 ${formatNumber(candidate.maxDrawdownPct, 2)}%`}
+            >
+              <span>候选 {candidate.period}/{formatNumber(candidate.multiplier, 1)}</span>
+              <strong>{formatSignedPercent(candidate.cumulativeReturnPct / 100)}</strong>
+              <em>胜率 {formatPercent(candidate.winRate)} · {candidate.tradeCount} 笔</em>
+            </div>
+          ))}
+        </div>
+      )}
       {chartDiagnostics.length > 0 && <ChartDiagnosticsStrip diagnostics={chartDiagnostics} />}
       {strategyAnalysis && strategyControls && (
         <StrategyWorkbenchControls analysis={strategyAnalysis} controls={strategyControls} />
@@ -2532,6 +2828,17 @@ export function TradingSignalKlinePanel({
               <button className={chartPrefs.ma ? "active" : ""} onClick={() => toggleChartPref("ma")} type="button">MA</button>
               <button className={chartPrefs.ema ? "active" : ""} onClick={() => toggleChartPref("ema")} type="button">EMA</button>
               <button className={chartPrefs.boll ? "active" : ""} onClick={() => toggleChartPref("boll")} type="button">BOLL</button>
+              <button className={chartPrefs.supertrend ? "active" : ""} onClick={() => toggleChartPref("supertrend")} type="button">ST</button>
+              <button
+                className={chartPrefs.supertrendEnhanced ? "active" : ""}
+                onClick={toggleSuperTrendEnhanced}
+                title="ST买点后等待 MA120 上行与20日突破确认，仅影响回测统计"
+                type="button"
+              >
+                ST增强
+              </button>
+              <button className={chartPrefs.alphaTrend ? "active" : ""} onClick={() => toggleChartPref("alphaTrend")} type="button">AT</button>
+              <button className={chartPrefs.tensionFlowTrend ? "active" : ""} onClick={() => toggleChartPref("tensionFlowTrend")} type="button">TFT</button>
               <button className={chartPrefs.vwap ? "active" : ""} onClick={() => toggleChartPref("vwap")} type="button">VWAP</button>
               <button className={chartPrefs.levels ? "active" : ""} onClick={() => toggleChartPref("levels")} type="button">价位线</button>
               <button
@@ -2666,6 +2973,17 @@ export function TradingSignalKlinePanel({
                 <ChartParamInput label="EMA慢" value={chartParams.emaSlow} onChange={updateChartParam("emaSlow")} />
                 <ChartParamInput label="BOLL周期" value={chartParams.bollPeriod} onChange={updateChartParam("bollPeriod")} />
                 <ChartParamInput label="BOLL倍数" value={chartParams.bollMultiplier} step="0.1" onChange={updateChartParam("bollMultiplier")} />
+                <ChartParamInput label="ST ATR" value={chartParams.superTrendAtrPeriod} onChange={updateChartParam("superTrendAtrPeriod")} />
+                <ChartParamInput label="ST倍数" value={chartParams.superTrendMultiplier} step="0.1" onChange={updateChartParam("superTrendMultiplier")} />
+                <ChartParamInput label="AT周期" value={chartParams.alphaTrendPeriod} onChange={updateChartParam("alphaTrendPeriod")} />
+                <ChartParamInput label="AT倍数" value={chartParams.alphaTrendMultiplier} step="0.1" onChange={updateChartParam("alphaTrendMultiplier")} />
+                <ChartParamInput label="TFT HMA" value={chartParams.tensionFlowHmaLength} onChange={updateChartParam("tensionFlowHmaLength")} />
+                <ChartParamInput label="TFT Z" value={chartParams.tensionFlowZScoreLength} onChange={updateChartParam("tensionFlowZScoreLength")} />
+                <ChartParamInput label="TFT带宽" value={chartParams.tensionFlowRibbonWidth} step="0.1" onChange={updateChartParam("tensionFlowRibbonWidth")} />
+                <ChartParamInput label="TFT冷却" value={chartParams.tensionFlowSignalGap} onChange={updateChartParam("tensionFlowSignalGap")} />
+                <ChartParamInput label="TFT止损ATR" value={chartParams.tensionFlowAtrStopMultiplier} step="0.1" onChange={updateChartParam("tensionFlowAtrStopMultiplier")} />
+                <ChartParamInput label="TFT RR" value={chartParams.tensionFlowRiskReward} step="0.1" onChange={updateChartParam("tensionFlowRiskReward")} />
+                <ChartParamInput label="TFT样本" value={chartParams.tensionFlowMaxTrades} onChange={updateChartParam("tensionFlowMaxTrades")} />
                 <ChartParamInput label="ENE周期" value={chartParams.enePeriod} onChange={updateChartParam("enePeriod")} />
                 <ChartParamInput label="ENE幅度" value={chartParams.enePercent} step="0.1" onChange={updateChartParam("enePercent")} />
                 <ChartParamInput label="MIKE周期" value={chartParams.mikePeriod} onChange={updateChartParam("mikePeriod")} />
@@ -2693,6 +3011,37 @@ export function TradingSignalKlinePanel({
               </div>
             )}
           </div>
+
+          <TradingViewKlineChart
+            alphaTrendMultiplier={chartParams.alphaTrendMultiplier}
+            alphaTrendPeriod={chartParams.alphaTrendPeriod}
+            bars={periodData.bars as MarketHistoryBar[]}
+            bollMultiplier={chartParams.bollMultiplier}
+            bollPeriod={chartParams.bollPeriod}
+            events={tradingViewEvents}
+            latestPrice={chart.latestIndicators?.close ?? null}
+            maPeriods={[chartParams.maFast, chartParams.maMid, chartParams.maSlow, 120]}
+            onHoverDate={handleTradingViewHoverDate}
+            onSelectSignal={chooseSignal}
+            priceLines={tradingViewPriceLines}
+            rightOffset={rightOffset}
+            showBoll={chartPrefs.boll}
+            showEvents={chartPrefs.events}
+            showAlphaTrend={chartPrefs.alphaTrend}
+            showMa={chartPrefs.ma}
+            showSignals={chartPrefs.signals || chartPrefs.tradeMarkers}
+            showSuperTrend={chartPrefs.supertrend}
+            showTensionFlowTrend={chartPrefs.tensionFlowTrend}
+            showVolume={chartPrefs.volume}
+            signals={tradingViewSignals}
+            superTrendAtrPeriod={chartParams.superTrendAtrPeriod}
+            superTrendMultiplier={chartParams.superTrendMultiplier}
+            tensionFlowHmaLength={chartParams.tensionFlowHmaLength}
+            tensionFlowRibbonWidth={chartParams.tensionFlowRibbonWidth}
+            tensionFlowSignalGap={chartParams.tensionFlowSignalGap}
+            tensionFlowZScoreLength={chartParams.tensionFlowZScoreLength}
+            visibleCount={tradingViewVisibleCount}
+          />
 
         <svg
             className={`price-history-chart trade-signal-chart ${effectiveSplitSubCharts ? "split-indicators" : "compact-indicators"} ${annotationLabelMode === "compact" ? "compact-annotations" : "full-annotations"} ${dragStart.current ? "dragging" : ""} ${chartPrefs.measure ? "measuring" : ""} ${drawingTool !== "none" ? "drawing" : ""}`}
@@ -6692,6 +7041,13 @@ function buildTradePlanLevels(analysis: StrategyKlineAnalysis | null | undefined
       labelWidth: row.emphasis ? 112 : 96,
     }];
   });
+}
+
+function tradingViewLineTone(tone: string): "good" | "risk" | "warn" | "neutral" {
+  if (tone === "risk") return "risk";
+  if (tone === "opportunity" || tone === "target") return "good";
+  if (tone === "current") return "neutral";
+  return "warn";
 }
 
 function buildSignalHoverTooltip(marker: Record<string, any>, period: CandlePeriod, chart: Record<string, any>) {

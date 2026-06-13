@@ -14,6 +14,10 @@ import {
   mapDataStatus,
   mapRiskBudgetContext,
 } from "./mappers.js";
+import {
+  SYMBOL_KLINE_HISTORY_LIMIT,
+  defaultKlineStart,
+} from "./fetchers.js";
 
 function assertEqual<T>(actual: T, expected: T, msg: string) {
   if (actual !== expected) {
@@ -30,6 +34,11 @@ function assertNotIncludes(arr: string[], item: string, msg: string) {
     throw new Error(`${msg}: did not expect ${item}`);
   }
 }
+
+(function testKlineHistoryUsesThreeYearWindow() {
+  assertEqual(defaultKlineStart("2026-06-13"), "2023-06-13", "kline start defaults to 3 years");
+  assertEqual(SYMBOL_KLINE_HISTORY_LIMIT, 900, "kline limit covers about 3 trading years");
+})();
 
 // ============================================================
 // 1) mapHeader
@@ -424,4 +433,4 @@ function assertNotIncludes(arr: string[], item: string, msg: string) {
 })();
 
 // eslint-disable-next-line no-console
-console.log("mappers tests: PASS (22 cases)");
+console.log("mappers tests: PASS");

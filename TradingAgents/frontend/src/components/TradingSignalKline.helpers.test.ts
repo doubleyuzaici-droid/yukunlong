@@ -3,6 +3,19 @@ import {
   applyChartPreferencePreset,
   buildManualDrawingStorageKey,
   buildIntradayMinuteBars,
+  buildLightweightChartSeries,
+  buildLightweightPriceLines,
+  buildAlphaTrendSeries,
+  buildAlphaTrendBacktestSummary,
+  buildAlphaTrendOptimizationSummary,
+  buildLightweightAlphaTrendSeries,
+  buildLightweightSuperTrendSeries,
+  buildLightweightTensionFlowTrendSeries,
+  buildSuperTrendBacktestSummary,
+  buildTensionFlowTrendBacktestSummary,
+  buildLightweightTrendHoverReadouts,
+  buildLightweightVisibleLogicalRange,
+  buildLightweightMaPeriodKey,
   buildAdvancedIndicators,
   buildCandlestickPatternAnnotations,
   buildFibonacciRetracementLevels,
@@ -30,6 +43,8 @@ import {
   buildRiskBudgetTooltip,
   buildStrategyTradeMarkerLabel,
   buildStrategyBacktestTradeMarkers,
+  buildTradingViewTradeMarkerReadout,
+  tradingViewTradeMarkerColor,
   isActionableStrategyTradeMarker,
   resolveStrategyTradeMarkerKind,
   isStrategyTradeMarker,
@@ -137,6 +152,478 @@ function testBuildsIntradayMinuteBarsFromRealtimePoints() {
   assertEqual(minuteBars[1].open, 52.1, "next minute opens from previous tick price");
   assertEqual(minuteBars[1].close, 52.6, "minute close uses tick price");
   assertEqual(minuteBars[1].source, "futu_rt_data", "minute bars preserve intraday source");
+}
+
+function testBuildsLightweightChartSeriesFromMarketBars() {
+  const series = buildLightweightChartSeries([
+    {
+      date: "2026-05-18",
+      symbol: "600519.SH",
+      market: "CHINA",
+      open: 100,
+      high: 106,
+      low: 99,
+      close: 104,
+      volume: 1200,
+    },
+    {
+      date: "2026-05-19",
+      symbol: "600519.SH",
+      market: "CHINA",
+      open: 104,
+      high: 105,
+      low: 96,
+      close: 98,
+      volume: 1500,
+    },
+    {
+      date: "2026-05-20",
+      symbol: "600519.SH",
+      market: "CHINA",
+      open: null,
+      high: 105,
+      low: 96,
+      close: 101,
+      volume: 1600,
+    },
+  ]);
+
+  assertEqual(series.candles.length, 2, "lightweight chart series filters bars without valid OHLC");
+  assertEqual(series.candles[0]?.time, "2026-05-18", "daily bars keep ISO date time");
+  assertEqual(series.candles[1]?.close, 98, "candles keep close price");
+  assertEqual(series.volume[0]?.color, "rgba(16, 185, 129, 0.42)", "rising volume bar uses positive color");
+  assertEqual(series.volume[1]?.color, "rgba(239, 68, 68, 0.42)", "falling volume bar uses risk color");
+}
+
+function testBuildsLightweightChartOverlays() {
+  const series = buildLightweightChartSeries([
+    { date: "2026-05-18", symbol: "600519.SH", market: "CHINA", open: 10, high: 11, low: 9, close: 10, volume: 100 },
+    { date: "2026-05-19", symbol: "600519.SH", market: "CHINA", open: 10, high: 12, low: 9, close: 11, volume: 100 },
+    { date: "2026-05-20", symbol: "600519.SH", market: "CHINA", open: 11, high: 13, low: 10, close: 12, volume: 100 },
+  ], {
+    bollPeriod: 3,
+    maPeriods: [2, 3],
+  });
+
+  assertEqual(series.maLines.length, 2, "requested MA lines are returned");
+  assertEqual(series.maLines[0]?.period, 2, "MA line keeps period metadata");
+  assertEqual(series.maLines[0]?.data.length, 2, "MA2 starts once enough closes exist");
+  assertApprox(series.maLines[0]?.data[0]?.value, 10.5, 0.001, "MA2 calculates average close");
+  assertEqual(series.boll.upper.length, 1, "BOLL upper starts once enough closes exist");
+  assertEqual(series.boll.mid[0]?.time, "2026-05-20", "BOLL keeps source candle time");
+}
+
+function testBuildsLightweightSuperTrendSeriesAndSignals() {
+  const series = buildLightweightSuperTrendSeries([
+    { date: "2026-05-18", symbol: "600519.SH", market: "CHINA", open: 10, high: 11, low: 9, close: 10, volume: 100 },
+    { date: "2026-05-19", symbol: "600519.SH", market: "CHINA", open: 10.5, high: 12, low: 10, close: 11.5, volume: 110 },
+    { date: "2026-05-20", symbol: "600519.SH", market: "CHINA", open: 11.5, high: 13, low: 11, close: 12.5, volume: 120 },
+    { date: "2026-05-21", symbol: "600519.SH", market: "CHINA", open: 12.5, high: 13, low: 11.5, close: 12.8, volume: 130 },
+    { date: "2026-05-22", symbol: "600519.SH", market: "CHINA", open: 12.7, high: 13, low: 8.2, close: 8.6, volume: 180 },
+    { date: "2026-05-25", symbol: "600519.SH", market: "CHINA", open: 8.7, high: 9.2, low: 7.8, close: 8.1, volume: 160 },
+    { date: "2026-05-26", symbol: "600519.SH", market: "CHINA", open: 8.2, high: 11.8, low: 8.1, close: 11.6, volume: 190 },
+    { date: "2026-05-27", symbol: "600519.SH", market: "CHINA", open: null, high: 12.2, low: 10.7, close: 11.9, volume: 140 },
+    { date: "2026-05-28", symbol: "600519.SH", market: "CHINA", open: 11.7, high: 12.9, low: 11.2, close: 12.6, volume: 150 },
+  ], {
+    atrPeriod: 3,
+    multiplier: 1,
+  });
+
+  assertOk(series.up.length > 0, "supertrend creates bullish line points");
+  assertOk(series.down.length > 0, "supertrend creates bearish line points");
+  assertEqual(series.signals.map((signal) => signal.side).join(","), "sell,buy", "supertrend emits sell then buy reversals");
+  assertEqual(series.signals[0]?.time, "2026-05-22", "sell signal uses reversal candle time");
+  assertEqual(series.signals[1]?.time, "2026-05-26", "buy signal uses reversal candle time");
+  assertEqual(
+    series.up.some((point) => point.time === "2026-05-27"),
+    false,
+    "supertrend ignores bars without valid OHLC",
+  );
+}
+
+function testBuildsLightweightTrendHoverReadouts() {
+  const superTrend = buildLightweightSuperTrendSeries([
+    { date: "2026-05-18", symbol: "600519.SH", market: "CHINA", open: 10, high: 11, low: 9, close: 10, volume: 100 },
+    { date: "2026-05-19", symbol: "600519.SH", market: "CHINA", open: 10.5, high: 12, low: 10, close: 11.5, volume: 110 },
+    { date: "2026-05-20", symbol: "600519.SH", market: "CHINA", open: 11.5, high: 13, low: 11, close: 12.5, volume: 120 },
+    { date: "2026-05-21", symbol: "600519.SH", market: "CHINA", open: 12.5, high: 13, low: 11.5, close: 12.8, volume: 130 },
+    { date: "2026-05-22", symbol: "600519.SH", market: "CHINA", open: 12.7, high: 13, low: 8.2, close: 8.6, volume: 180 },
+    { date: "2026-05-25", symbol: "600519.SH", market: "CHINA", open: 8.7, high: 9.2, low: 7.8, close: 8.1, volume: 160 },
+    { date: "2026-05-26", symbol: "600519.SH", market: "CHINA", open: 8.2, high: 11.8, low: 8.1, close: 11.6, volume: 190 },
+  ], {
+    atrPeriod: 3,
+    multiplier: 1,
+  });
+
+  const bearishReadouts = buildLightweightTrendHoverReadouts({
+    showSuperTrend: true,
+    superTrend,
+    time: "2026-05-25",
+  });
+  assertEqual(bearishReadouts[0]?.label, "ST 空头", "hover readout labels bearish SuperTrend state");
+  assertEqual(bearishReadouts[0]?.tone, "risk", "bearish SuperTrend readout uses risk tone");
+
+  const bullishReadouts = buildLightweightTrendHoverReadouts({
+    showSuperTrend: true,
+    superTrend,
+    time: "2026-05-26",
+  });
+  assertEqual(bullishReadouts[0]?.label, "ST 多头", "hover readout labels bullish SuperTrend state");
+  assertEqual(bullishReadouts[0]?.tone, "good", "bullish SuperTrend readout uses good tone");
+  assertEqual(
+    buildLightweightTrendHoverReadouts({ showSuperTrend: false, superTrend, time: "2026-05-26" }).length,
+    0,
+    "hover readout respects the optional SuperTrend toggle",
+  );
+}
+
+function testBuildsSuperTrendBacktestSummary() {
+  const summary = buildSuperTrendBacktestSummary([
+    { date: "2026-05-18", symbol: "600519.SH", market: "CHINA", open: 10, high: 11, low: 9, close: 10, volume: 100 },
+    { date: "2026-05-19", symbol: "600519.SH", market: "CHINA", open: 10.5, high: 12, low: 10, close: 11.5, volume: 110 },
+    { date: "2026-05-20", symbol: "600519.SH", market: "CHINA", open: 11.5, high: 13, low: 11, close: 12.5, volume: 120 },
+    { date: "2026-05-21", symbol: "600519.SH", market: "CHINA", open: 12.5, high: 13, low: 11.5, close: 12.8, volume: 130 },
+    { date: "2026-05-22", symbol: "600519.SH", market: "CHINA", open: 12.7, high: 13, low: 8.2, close: 8.6, volume: 180 },
+    { date: "2026-05-25", symbol: "600519.SH", market: "CHINA", open: 8.7, high: 9.2, low: 7.8, close: 8.1, volume: 160 },
+    { date: "2026-05-26", symbol: "600519.SH", market: "CHINA", open: 8.2, high: 11.8, low: 8.1, close: 11.6, volume: 190 },
+    { date: "2026-05-27", symbol: "600519.SH", market: "CHINA", open: 11.7, high: 12.2, low: 11.2, close: 12, volume: 140 },
+    { date: "2026-05-28", symbol: "600519.SH", market: "CHINA", open: 11.9, high: 12.5, low: 11.5, close: 12.3, volume: 150 },
+    { date: "2026-05-29", symbol: "600519.SH", market: "CHINA", open: 12.1, high: 12.4, low: 7.2, close: 7.6, volume: 210 },
+    { date: "2026-06-01", symbol: "600519.SH", market: "CHINA", open: 7.5, high: 8, low: 7.1, close: 7.4, volume: 200 },
+  ], {
+    atrPeriod: 3,
+    multiplier: 1,
+  });
+
+  assertEqual(summary.atrPeriod, 3, "supertrend backtest keeps ATR period");
+  assertEqual(summary.multiplier, 1, "supertrend backtest keeps multiplier");
+  assertEqual(summary.signalCount, 3, "supertrend backtest counts all trend flips");
+  assertEqual(summary.buySignalCount, 1, "supertrend backtest counts buy flips");
+  assertEqual(summary.sellSignalCount, 2, "supertrend backtest counts sell flips");
+  assertEqual(summary.tradeCount, 1, "supertrend backtest pairs buy and next sell as one trade");
+  assertEqual(summary.openTradeCount, 0, "closed supertrend backtest has no open positions");
+  assertEqual(summary.winRate, 0, "losing supertrend trade has zero win rate");
+  assertApprox(summary.cumulativeReturnPct, -35.897, 0.01, "supertrend backtest uses next-open execution");
+  assertApprox(summary.maxDrawdownPct, 35.897, 0.01, "supertrend backtest reports drawdown magnitude");
+  assertEqual(summary.latestSignal?.side, "sell", "supertrend backtest exposes latest signal");
+  assertEqual(summary.items[0]?.label, "ST胜率", "supertrend backtest exposes display cards");
+}
+
+function superTrendEnhancedFilterBars() {
+  const bars: Array<{
+    date: string;
+    symbol: string;
+    market: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+  }> = [];
+  let currentDate = Date.UTC(2026, 0, 1);
+  const pushBar = (close: number, span = 1) => {
+    const previousClose = bars[bars.length - 1]?.close ?? close;
+    const open = (previousClose + close) / 2;
+    bars.push({
+      date: new Date(currentDate).toISOString().slice(0, 10),
+      symbol: "HSTECH",
+      market: "HONGKONG",
+      open,
+      high: Math.max(open, close) + span,
+      low: Math.min(open, close) - span,
+      close,
+      volume: 1000,
+    });
+    currentDate += 24 * 60 * 60 * 1000;
+  };
+
+  for (let index = 0; index < 125; index += 1) pushBar(100 + index * 0.45, 0.8);
+  [150, 142, 136, 130, 126, 124].forEach((close) => pushBar(close, 1.2));
+  [126, 129, 132, 134, 136, 138, 137, 136, 134, 132, 130, 128].forEach((close) => pushBar(close, 1));
+  [124, 120, 118, 116, 114].forEach((close) => pushBar(close, 1.2));
+  [118, 122, 126, 130, 136, 142, 148, 154, 162, 170, 178, 186].forEach((close) => pushBar(close, 1.2));
+  [180, 170, 160, 150, 140].forEach((close) => pushBar(close, 1.4));
+  return bars;
+}
+
+function testBuildsSuperTrendBacktestSummaryWithTrendBreakoutFilter() {
+  const bars = superTrendEnhancedFilterBars();
+  const base = buildSuperTrendBacktestSummary(bars, { atrPeriod: 3, multiplier: 1 });
+  const filtered = buildSuperTrendBacktestSummary(bars, {
+    atrPeriod: 3,
+    entryFilter: "trendBreakout",
+    multiplier: 1,
+  });
+
+  assertEqual(base.tradeCount, 2, "base supertrend backtest keeps weak and confirmed trades");
+  assertEqual(filtered.entryFilter, "trendBreakout", "enhanced supertrend summary exposes the filter mode");
+  assertEqual(filtered.tradeCount, 1, "enhanced filter waits for trend and breakout confirmation");
+  assertEqual(filtered.trades[0]?.entryDate, "2026-06-04", "enhanced filter enters after confirmation bar");
+  assertOk(filtered.winRate > base.winRate, "enhanced filter improves hit rate on weak breakout sample");
+  assertEqual(filtered.items[0]?.label, "ST增强", "enhanced filter exposes display cards");
+}
+
+function alphaTrendSignalBars() {
+  return [
+    { date: "2026-05-18", symbol: "600519.SH", market: "CHINA", open: 10, high: 10.4, low: 9.5, close: 9.8, volume: 100 },
+    { date: "2026-05-19", symbol: "600519.SH", market: "CHINA", open: 9.8, high: 10, low: 8.8, close: 9.1, volume: 130 },
+    { date: "2026-05-20", symbol: "600519.SH", market: "CHINA", open: 9.1, high: 9.4, low: 8.1, close: 8.5, volume: 150 },
+    { date: "2026-05-21", symbol: "600519.SH", market: "CHINA", open: 8.5, high: 8.8, low: 7.7, close: 8.1, volume: 160 },
+    { date: "2026-05-22", symbol: "600519.SH", market: "CHINA", open: 8.1, high: 9.2, low: 7.9, close: 8.9, volume: 190 },
+    { date: "2026-05-25", symbol: "600519.SH", market: "CHINA", open: 8.9, high: 10.5, low: 8.7, close: 10.2, volume: 220 },
+    { date: "2026-05-26", symbol: "600519.SH", market: "CHINA", open: 10.2, high: 11.8, low: 10, close: 11.3, volume: 260 },
+    { date: "2026-05-27", symbol: "600519.SH", market: "CHINA", open: 11.3, high: 11.5, low: 10.1, close: 10.4, volume: 240 },
+    { date: "2026-05-28", symbol: "600519.SH", market: "CHINA", open: 10.4, high: 10.8, low: 9.1, close: 9.4, volume: 280 },
+    { date: "2026-05-29", symbol: "600519.SH", market: "CHINA", open: 9.4, high: 9.6, low: 8, close: 8.5, volume: 300 },
+    { date: "2026-06-01", symbol: "600519.SH", market: "CHINA", open: 8.5, high: 8.6, low: 5.2, close: 5.5, volume: 360 },
+    { date: "2026-06-02", symbol: "600519.SH", market: "CHINA", open: 5.5, high: 6.1, low: 4.8, close: 5.1, volume: 330 },
+    { date: "2026-06-03", symbol: "600519.SH", market: "CHINA", open: 5.1, high: 5.6, low: 4.5, close: 4.8, volume: 340 },
+    { date: "2026-06-04", symbol: "600519.SH", market: "CHINA", open: 4.8, high: 7.2, low: 4.7, close: 6.9, volume: 380 },
+    { date: "2026-06-05", symbol: "600519.SH", market: "CHINA", open: 6.9, high: 9.4, low: 6.8, close: 9.1, volume: 420 },
+    { date: "2026-06-08", symbol: "600519.SH", market: "CHINA", open: 9.1, high: 10.2, low: 8.8, close: 9.8, volume: 430 },
+    { date: "2026-06-09", symbol: "600519.SH", market: "CHINA", open: 9.8, high: 13.2, low: 9.7, close: 12.8, volume: 470 },
+    { date: "2026-06-10", symbol: "600519.SH", market: "CHINA", open: 12.8, high: 15.5, low: 12.4, close: 15.1, volume: 500 },
+    { date: "2026-06-11", symbol: "600519.SH", market: "CHINA", open: 15.1, high: 16.8, low: 14.9, close: 16.2, volume: 520 },
+  ];
+}
+
+function testBuildsAlphaTrendSeriesAndSignals() {
+  const series = buildAlphaTrendSeries(alphaTrendSignalBars(), {
+    multiplier: 1,
+    period: 3,
+  });
+
+  assertEqual(series.points.length, 19, "alphatrend preserves valid source bar count");
+  assertEqual(series.points[0]?.alphaTrend, null, "alphatrend waits for enough ATR and MFI samples");
+  assertOk(series.points.some((point) => typeof point.alphaTrend === "number" && typeof point.lagAlphaTrend === "number"), "alphatrend emits current and lagged values");
+  assertOk(series.points.some((point) => point.trend === "up"), "alphatrend emits bullish trend states");
+  assertOk(series.points.some((point) => point.trend === "down"), "alphatrend emits bearish trend states");
+  assertEqual(series.signals.map((signal) => signal.side).join(","), "sell,buy", "alphatrend emits SELL then BUY crossovers");
+  assertEqual(series.signals[0]?.date, "2026-06-02", "alphatrend sell uses crossunder candle date");
+  assertEqual(series.signals[1]?.date, "2026-06-10", "alphatrend buy uses crossover candle date");
+}
+
+function alphaTrendBacktestBars() {
+  return [
+    ...alphaTrendSignalBars(),
+    { date: "2026-06-12", symbol: "600519.SH", market: "CHINA", open: 16.2, high: 16.5, low: 12, close: 12.5, volume: 600 },
+    { date: "2026-06-15", symbol: "600519.SH", market: "CHINA", open: 12.5, high: 12.7, low: 9, close: 9.3, volume: 620 },
+    { date: "2026-06-16", symbol: "600519.SH", market: "CHINA", open: 9.3, high: 9.5, low: 7, close: 7.2, volume: 640 },
+    { date: "2026-06-17", symbol: "600519.SH", market: "CHINA", open: 7.2, high: 7.4, low: 5.8, close: 6, volume: 660 },
+  ];
+}
+
+function testBuildsAlphaTrendBacktestSummary() {
+  const closedSummary = buildAlphaTrendBacktestSummary(alphaTrendBacktestBars(), {
+    multiplier: 1,
+    period: 3,
+  });
+
+  assertEqual(closedSummary.signalCount, 3, "alphatrend backtest counts all AT signals");
+  assertEqual(closedSummary.buySignalCount, 1, "alphatrend backtest counts buy signals");
+  assertEqual(closedSummary.sellSignalCount, 2, "alphatrend backtest counts sell signals");
+  assertEqual(closedSummary.tradeCount, 1, "alphatrend backtest pairs buy with next sell");
+  assertEqual(closedSummary.openTradeCount, 0, "closed alphatrend backtest has no open positions");
+  assertEqual(closedSummary.winRate, 0, "losing alphatrend trade has zero win rate");
+  assertApprox(closedSummary.cumulativeReturnPct, -60.265, 0.01, "alphatrend backtest compounds trade returns");
+  assertApprox(closedSummary.maxDrawdownPct, 60.265, 0.01, "alphatrend backtest reports positive drawdown magnitude");
+  assertApprox(closedSummary.averageHoldBars, 5, 0.001, "alphatrend backtest measures hold bars from entry to exit");
+  assertEqual(closedSummary.items[0]?.label, "AT胜率", "alphatrend backtest exposes display cards");
+  assertEqual(closedSummary.items[0]?.value, "0.0%", "alphatrend backtest formats win rate");
+
+  const openSummary = buildAlphaTrendBacktestSummary(alphaTrendSignalBars(), {
+    multiplier: 1,
+    period: 3,
+  });
+  assertEqual(openSummary.tradeCount, 1, "open alphatrend position is included as latest-price mark-to-market");
+  assertEqual(openSummary.openTradeCount, 1, "open alphatrend backtest reports open position count");
+  assertApprox(openSummary.winRate, 1, 0.001, "profitable open alphatrend trade contributes to current hit rate");
+  assertApprox(openSummary.cumulativeReturnPct, 7.285, 0.01, "open alphatrend trade uses latest close for mark-to-market");
+  assertEqual(openSummary.latestSignal?.side, "buy", "alphatrend backtest exposes latest signal");
+}
+
+function testBuildsAlphaTrendOptimizationSummary() {
+  const summary = buildAlphaTrendOptimizationSummary(alphaTrendBacktestBars(), {
+    currentMultiplier: 1,
+    currentPeriod: 3,
+    minTrades: 1,
+    multiplierCandidates: [0.8, 1, 1.2],
+    periodCandidates: [3, 4, 5],
+    topN: 3,
+  });
+
+  assertEqual(summary.candidateCount, 9, "optimization scans every period/multiplier combination");
+  assertEqual(summary.topCandidates.length, 3, "optimization returns requested top candidates");
+  assertEqual(summary.best?.period, 4, "optimization favors lower drawdown when scores tie");
+  assertEqual(summary.best?.multiplier, 0.8, "optimization keeps best multiplier");
+  assertEqual(summary.current?.period, 3, "optimization exposes current period candidate");
+  assertEqual(summary.current?.multiplier, 1, "optimization exposes current multiplier candidate");
+  assertOk((summary.best?.score ?? 0) > (summary.current?.score ?? 0), "optimization ranks best above current");
+  assertEqual(summary.items[0]?.label, "AT最优参数", "optimization exposes display cards");
+  assertOk(summary.items[0]?.value.includes("4/0.8"), "optimization display names best parameter pair");
+}
+
+function tensionFlowTrendBars() {
+  return [
+    { date: "2026-05-18", symbol: "600519.SH", market: "CHINA", open: 10, high: 10.2, low: 9.4, close: 9.7, volume: 100 },
+    { date: "2026-05-19", symbol: "600519.SH", market: "CHINA", open: 9.7, high: 9.9, low: 8.8, close: 9.1, volume: 120 },
+    { date: "2026-05-20", symbol: "600519.SH", market: "CHINA", open: 9.1, high: 9.2, low: 8.2, close: 8.5, volume: 130 },
+    { date: "2026-05-21", symbol: "600519.SH", market: "CHINA", open: 8.5, high: 8.8, low: 8.1, close: 8.3, volume: 140 },
+    { date: "2026-05-22", symbol: "600519.SH", market: "CHINA", open: 8.3, high: 9.7, low: 8.2, close: 9.4, volume: 170 },
+    { date: "2026-05-25", symbol: "600519.SH", market: "CHINA", open: 9.4, high: 10.8, low: 9.3, close: 10.5, volume: 190 },
+    { date: "2026-05-26", symbol: "600519.SH", market: "CHINA", open: 10.5, high: 12.6, low: 10.4, close: 12.1, volume: 230 },
+    { date: "2026-05-27", symbol: "600519.SH", market: "CHINA", open: 12.1, high: 13.8, low: 12, close: 13.4, volume: 250 },
+    { date: "2026-05-28", symbol: "600519.SH", market: "CHINA", open: 13.4, high: 13.5, low: 11.8, close: 12.1, volume: 260 },
+    { date: "2026-05-29", symbol: "600519.SH", market: "CHINA", open: 12.1, high: 12.2, low: 10.4, close: 10.8, volume: 270 },
+    { date: "2026-06-01", symbol: "600519.SH", market: "CHINA", open: 10.8, high: 10.9, low: 8.1, close: 8.5, volume: 300 },
+    { date: "2026-06-02", symbol: "600519.SH", market: "CHINA", open: 8.5, high: 8.8, low: 7.2, close: 7.6, volume: 310 },
+    { date: "2026-06-03", symbol: "600519.SH", market: "CHINA", open: null, high: 8.9, low: 7.6, close: 8.4, volume: 320 },
+    { date: "2026-06-04", symbol: "600519.SH", market: "CHINA", open: 7.6, high: 9.6, low: 7.5, close: 9.3, volume: 340 },
+    { date: "2026-06-05", symbol: "600519.SH", market: "CHINA", open: 9.3, high: 11.4, low: 9.2, close: 11, volume: 360 },
+    { date: "2026-06-08", symbol: "600519.SH", market: "CHINA", open: 11, high: 12.8, low: 10.9, close: 12.5, volume: 380 },
+    { date: "2026-06-09", symbol: "600519.SH", market: "CHINA", open: 12.5, high: 14.8, low: 12.4, close: 14.4, volume: 420 },
+    { date: "2026-06-10", symbol: "600519.SH", market: "CHINA", open: 14.4, high: 17.6, low: 14.2, close: 17.1, volume: 460 },
+  ];
+}
+
+function testBuildsLightweightTensionFlowTrendSeriesAndSignals() {
+  const series = buildLightweightTensionFlowTrendSeries(tensionFlowTrendBars(), {
+    hmaLength: 3,
+    ribbonWidth: 0.4,
+    signalGap: 2,
+    zScoreLength: 4,
+  });
+
+  assertOk(series.baselineUp.length > 0, "tension flow creates bullish HMA baseline points");
+  assertOk(series.baselineDown.length > 0, "tension flow creates bearish HMA baseline points");
+  assertOk(series.upperRibbon.length > 0, "tension flow creates upper ribbon");
+  assertOk(series.lowerRibbon.length > 0, "tension flow creates lower ribbon");
+  assertEqual(
+    series.baselineUp.some((point) => point.time === "2026-06-03"),
+    false,
+    "tension flow ignores bars without valid OHLC",
+  );
+  assertOk(series.signals.some((signal) => signal.side === "buy"), "tension flow emits buy START signals");
+  assertOk(series.signals.some((signal) => signal.side === "sell"), "tension flow emits sell START signals");
+  assertOk(series.latest?.status === "strong" || series.latest?.status === "overextended", "tension flow exposes latest energy status");
+}
+
+function testBuildsTensionFlowTrendBacktestSummary() {
+  const summary = buildTensionFlowTrendBacktestSummary(tensionFlowTrendBars(), {
+    atrStopMultiplier: 0.8,
+    hmaLength: 3,
+    maxTrades: 4,
+    ribbonWidth: 0.4,
+    riskRewardRatio: 0.8,
+    signalGap: 2,
+    stopAtrLength: 3,
+    zScoreLength: 4,
+  });
+
+  assertOk(summary.signalCount >= 2, "tension flow backtest counts START signals");
+  assertEqual(summary.totalClosed, summary.winCount + summary.lossCount, "tension flow backtest separates wins and losses");
+  assertOk(summary.items.some((item) => item.key === "winRate"), "tension flow backtest exposes win-rate card");
+  assertOk(summary.items.some((item) => item.key === "energy"), "tension flow backtest exposes energy card");
+  assertOk(summary.winRate >= 0 && summary.winRate <= 1, "tension flow backtest win rate is normalized");
+}
+
+function testBuildsLightweightAlphaTrendSeries() {
+  const series = buildLightweightAlphaTrendSeries(alphaTrendSignalBars(), {
+    multiplier: 1,
+    period: 3,
+  });
+
+  assertOk(series.current.length > 0, "lightweight alphatrend exposes current line data");
+  assertOk(series.lag.length > 0, "lightweight alphatrend exposes lag line data");
+  assertOk(series.fill.length > 0, "lightweight alphatrend exposes fill band data");
+  assertEqual(series.signals.map((signal) => signal.side).join(","), "sell,buy", "lightweight alphatrend maps BUY/SELL markers");
+  assertEqual(series.signals[0]?.id, "alphatrend:sell:2026-06-02", "lightweight alphatrend creates stable sell marker id");
+  assertEqual(series.signals[1]?.id, "alphatrend:buy:2026-06-10", "lightweight alphatrend creates stable buy marker id");
+}
+
+function testAlphaTrendFallsBackToRsiWhenVolumeIsMissing() {
+  const volumeSeries = buildAlphaTrendSeries([
+    { date: "2026-05-18", open: 10, high: 10.4, low: 9.5, close: 9.8, volume: null },
+    { date: "2026-05-19", open: 9.8, high: 10, low: 8.8, close: 9.1, volume: null },
+    { date: "2026-05-20", open: 9.1, high: 9.4, low: 8.1, close: 8.5, volume: null },
+    { date: "2026-05-21", open: 8.5, high: 8.8, low: 7.7, close: 8.1, volume: null },
+    { date: "2026-05-22", open: 8.1, high: 9.2, low: 7.9, close: 8.9, volume: null },
+    { date: "2026-05-25", open: 8.9, high: 10.5, low: 8.7, close: 10.2, volume: null },
+    { date: "2026-05-26", open: 10.2, high: 11.8, low: 10, close: 11.3, volume: null },
+  ], {
+    multiplier: 1,
+    period: 3,
+  });
+  const forcedRsiSeries = buildAlphaTrendSeries([
+    { date: "2026-05-18", open: 10, high: 10.4, low: 9.5, close: 9.8, volume: 100 },
+    { date: "2026-05-19", open: 9.8, high: 10, low: 8.8, close: 9.1, volume: 130 },
+    { date: "2026-05-20", open: 9.1, high: 9.4, low: 8.1, close: 8.5, volume: 150 },
+    { date: "2026-05-21", open: 8.5, high: 8.8, low: 7.7, close: 8.1, volume: 160 },
+    { date: "2026-05-22", open: 8.1, high: 9.2, low: 7.9, close: 8.9, volume: 190 },
+    { date: "2026-05-25", open: 8.9, high: 10.5, low: 8.7, close: 10.2, volume: 220 },
+    { date: "2026-05-26", open: 10.2, high: 11.8, low: 10, close: 11.3, volume: 260 },
+  ], {
+    multiplier: 1,
+    noVolumeData: true,
+    period: 3,
+  });
+
+  assertEqual(volumeSeries.source, "rsi", "missing volume automatically uses RSI calculation");
+  assertEqual(forcedRsiSeries.source, "rsi", "explicit noVolumeData uses RSI calculation");
+  assertEqual(
+    volumeSeries.points.map((point) => point.alphaTrend ?? "-").join(","),
+    forcedRsiSeries.points.map((point) => point.alphaTrend ?? "-").join(","),
+    "automatic RSI fallback matches explicit RSI mode",
+  );
+}
+
+function testBuildsStableLightweightMaPeriodKey() {
+  const first = buildLightweightMaPeriodKey([5, 20, 60, 120]);
+  const second = buildLightweightMaPeriodKey([5, 20, 60, 120]);
+  const cleaned = buildLightweightMaPeriodKey([5, 0, 20, 20, 60, 120, 120.5]);
+
+  assertEqual(first, second, "same MA periods produce stable key across array instances");
+  assertEqual(cleaned, "5,20,60,120", "MA key removes invalid and duplicate periods");
+}
+
+function testBuildsLightweightVisibleLogicalRange() {
+  const latestWindow = buildLightweightVisibleLogicalRange({
+    total: 260,
+    visibleCount: 120,
+    rightOffset: 0,
+  });
+  assertEqual(latestWindow?.from, 140, "latest 120-bar window starts at total - visible");
+  assertEqual(latestWindow?.to, 259, "latest 120-bar window ends at latest bar");
+
+  const shiftedWindow = buildLightweightVisibleLogicalRange({
+    total: 260,
+    visibleCount: 120,
+    rightOffset: 10,
+  });
+  assertEqual(shiftedWindow?.from, 130, "right offset shifts window into history");
+  assertEqual(shiftedWindow?.to, 249, "right offset keeps requested visible count");
+
+  const allWindow = buildLightweightVisibleLogicalRange({
+    total: 80,
+    visibleCount: 120,
+    rightOffset: 10,
+  });
+  assertEqual(allWindow?.from, 0, "oversized window clamps to first bar");
+  assertEqual(allWindow?.to, 79, "oversized window clamps to latest bar");
+}
+
+function testBuildsLightweightPriceLines() {
+  const lines = buildLightweightPriceLines([
+    { id: "latest", label: "最新", price: 1291.91, tone: "good", style: "dotted", axisLabelVisible: true },
+    { id: "buy", label: "计划买入", price: 1260, tone: "warn", style: "solid" },
+    { id: "invalid", label: "无效", price: null, tone: "neutral" },
+  ]);
+
+  assertEqual(lines.length, 2, "price lines drop missing prices");
+  assertEqual(lines[0]?.title, "最新", "price line keeps readable title");
+  assertEqual(lines[0]?.axisLabelVisible, true, "latest price line keeps axis label");
+  assertEqual(lines[0]?.lineStyle, "dotted", "price line keeps requested style");
+  assertEqual(lines[1]?.color, "rgba(245, 158, 11, 0.84)", "warn tone maps to amber");
 }
 
 function testBuildsReadableStrategyGateText() {
@@ -283,6 +770,43 @@ function testBuildsStrategyTradeMarkers() {
   assertEqual(isActionableStrategyTradeMarker({ signal_name: "V2多指标共振", direction: "neutral" }), false, "neutral strategy observations are not actionable markers");
 }
 
+function testUsesRedGreenTradingViewTradeMarkerColors() {
+  assertEqual(tradingViewTradeMarkerColor("buy"), "#22c55e", "buy markers use green");
+  assertEqual(tradingViewTradeMarkerColor("opportunity"), "#22c55e", "opportunity markers use green");
+  assertEqual(tradingViewTradeMarkerColor("sell"), "#ef4444", "sell markers use red");
+  assertEqual(tradingViewTradeMarkerColor("risk"), "#ef4444", "risk markers use red");
+  assertEqual(tradingViewTradeMarkerColor("reduce"), "#ef4444", "reduce markers use red");
+}
+
+function testBuildsTradingViewTradeMarkerReadout() {
+  const buy = buildTradingViewTradeMarkerReadout({
+    date: "2026-06-10",
+    fallbackPrice: 13.1,
+    label: "AT BUY",
+    prefix: "AlphaTrend",
+    price: 12.98,
+    side: "buy",
+  });
+  assertEqual(buy?.title, "AlphaTrend 买点", "buy marker readout names buy point");
+  assertEqual(buy?.subtitle, "AT BUY", "buy marker readout keeps indicator label");
+  assertEqual(buy?.date, "2026-06-10", "buy marker readout keeps signal date");
+  assertEqual(buy?.price, 12.98, "buy marker readout prefers signal price");
+  assertEqual(buy?.tone, "good", "buy marker readout uses good tone");
+
+  const sell = buildTradingViewTradeMarkerReadout({
+    date: "2026-06-02",
+    fallbackPrice: 9.44,
+    label: "ST Sell",
+    prefix: "SuperTrend",
+    price: null,
+    side: "sell",
+  });
+  assertEqual(sell?.title, "SuperTrend 卖点", "sell marker readout names sell point");
+  assertEqual(sell?.price, 9.44, "sell marker readout falls back to candle price");
+  assertEqual(sell?.tone, "risk", "sell marker readout uses risk tone");
+  assertEqual(buildTradingViewTradeMarkerReadout({ date: "", side: "buy" }), null, "marker readout requires a date");
+}
+
 function testBuildsHistoricalStrategyTradeMarkersFromBacktest() {
   const fromTrades = buildStrategyBacktestTradeMarkers({
     symbol: "01024.HK",
@@ -332,6 +856,9 @@ const baseChartPrefs = {
   ma: true,
   ema: true,
   boll: true,
+  supertrend: false,
+  alphaTrend: false,
+  tensionFlowTrend: false,
   vwap: true,
   mike: true,
   levels: true,
@@ -375,6 +902,17 @@ const baseChartParams = {
   emaSlow: 26,
   bollPeriod: 20,
   bollMultiplier: 2,
+  superTrendAtrPeriod: 10,
+  superTrendMultiplier: 3,
+  alphaTrendPeriod: 14,
+  alphaTrendMultiplier: 1,
+  tensionFlowHmaLength: 50,
+  tensionFlowZScoreLength: 50,
+  tensionFlowRibbonWidth: 0.5,
+  tensionFlowSignalGap: 30,
+  tensionFlowAtrStopMultiplier: 2,
+  tensionFlowRiskReward: 1,
+  tensionFlowMaxTrades: 100,
   macdFast: 12,
   macdSlow: 26,
   macdSignal: 9,
@@ -679,10 +1217,16 @@ function testResolvesLimitCandleState() {
 
 function testAppliesTrendChartPreferencePreset() {
   const prefs = applyChartPreferencePreset({ ...baseChartPrefs, ene: false }, "trend");
+  const fullPrefs = applyChartPreferencePreset(baseChartPrefs, "full");
 
   assertEqual(prefs.ma, true, "trend preset keeps moving averages");
   assertEqual(prefs.ema, true, "trend preset enables EMA");
   assertEqual(prefs.boll, true, "trend preset keeps BOLL");
+  assertEqual(prefs.supertrend, true, "trend preset keeps SuperTrend");
+  assertEqual(prefs.alphaTrend, true, "trend preset enables AlphaTrend");
+  assertEqual(prefs.tensionFlowTrend, true, "trend preset enables Tension Flow Trend");
+  assertEqual(fullPrefs.alphaTrend, true, "full preset enables AlphaTrend");
+  assertEqual(fullPrefs.tensionFlowTrend, true, "full preset enables Tension Flow Trend");
   assertEqual(prefs.ene, true, "trend preset enables ENE envelope");
   assertEqual(prefs.limitLines, true, "trend preset keeps A-share limit price lines");
   assertEqual(prefs.trendRegime, true, "trend preset enables trend background");
@@ -712,8 +1256,10 @@ function testBuildsChartLayerSummary() {
 
   assertEqual(summary.length, 5, "layer summary exposes preset plus layer groups");
   assertEqual(preset?.value, "趋势", "layer summary names matched preset");
-  assertEqual(overlays?.value, "8项", "layer summary counts active main overlays");
-  assertOk(overlays?.detail.includes("ENE"), "trend overlay summary includes ENE");
+  assertEqual(overlays?.value, "11项", "layer summary counts active main overlays");
+  assertOk(overlays?.detail.includes("ST"), "trend overlay summary includes SuperTrend");
+  assertOk(overlays?.detail.includes("AT"), "trend overlay summary includes AlphaTrend");
+  assertOk(overlays?.detail.includes("TFT"), "trend overlay summary includes Tension Flow Trend");
   assertOk(overlays?.detail.includes("一目"), "trend overlay summary includes Ichimoku");
   assertOk((subcharts?.enabledCount || 0) > 0, "layer summary counts active subcharts");
   assertOk(annotations?.detail.includes("趋势带"), "layer summary exposes annotation layers");
@@ -781,6 +1327,11 @@ function testAppliesShortTermChartParameterPreset() {
   assertEqual(params.macdSlow, 13, "short preset uses faster MACD slow period");
   assertEqual(params.macdSignal, 5, "short preset uses faster MACD signal period");
   assertEqual(params.rsiPeriod, 7, "short preset uses shorter RSI period");
+  assertEqual(params.superTrendAtrPeriod, 7, "short preset uses shorter SuperTrend ATR period");
+  assertEqual(params.alphaTrendPeriod, 7, "short preset uses shorter AlphaTrend period");
+  assertEqual(params.alphaTrendMultiplier, 1, "short preset keeps AlphaTrend multiplier conservative");
+  assertEqual(params.tensionFlowHmaLength, 34, "short preset uses faster Tension Flow HMA");
+  assertEqual(params.tensionFlowSignalGap, 18, "short preset reduces Tension Flow cooldown");
   assertEqual(params.atrPeriod, 10, "short preset uses shorter ATR period");
 }
 
@@ -2252,12 +2803,28 @@ testBuildsMeasuredRangeStats();
 testMeasuredRangeStatsKeepSelectionDirection();
 testHandlesMissingBarsExplicitly();
 testBuildsIntradayMinuteBarsFromRealtimePoints();
+testBuildsLightweightChartSeriesFromMarketBars();
+testBuildsLightweightChartOverlays();
+testBuildsLightweightSuperTrendSeriesAndSignals();
+testBuildsLightweightTrendHoverReadouts();
+testBuildsAlphaTrendSeriesAndSignals();
+testBuildsAlphaTrendBacktestSummary();
+testBuildsAlphaTrendOptimizationSummary();
+testBuildsLightweightTensionFlowTrendSeriesAndSignals();
+testBuildsTensionFlowTrendBacktestSummary();
+testBuildsLightweightAlphaTrendSeries();
+testAlphaTrendFallsBackToRsiWhenVolumeIsMissing();
+testBuildsStableLightweightMaPeriodKey();
+testBuildsLightweightVisibleLogicalRange();
+testBuildsLightweightPriceLines();
 testBuildsReadableStrategyGateText();
 testBuildsReadableStrategyDecisionCopy();
 testBuildsStrategyFactorTooltip();
 testBuildsStrategyScoreAndStrengthTooltips();
 testBuildsTradePlanAndRiskTooltips();
 testBuildsStrategyTradeMarkers();
+testUsesRedGreenTradingViewTradeMarkerColors();
+testBuildsTradingViewTradeMarkerReadout();
 testBuildsHistoricalStrategyTradeMarkersFromBacktest();
 testBuildsVolumeProfileLevelAnnotations();
 testBuildsFutuStyleAdvancedIndicators();
@@ -2325,6 +2892,8 @@ testBuildsKlineEventDensity();
 testBuildsCompactAnnotationDisplay();
 testDenseChartLayersOnlyRenderInFullMode();
 testBuildsKlineEventBacktestSummary();
+testBuildsSuperTrendBacktestSummary();
+testBuildsSuperTrendBacktestSummaryWithTrendBreakoutFilter();
 testBuildsRelativeStrengthOverlaySeries();
 testBuildsRelativeStrengthOverlaySeriesForPeriodBars();
 testBuildsRelativeStrengthOverlaySeriesSkipsMissingValues();
